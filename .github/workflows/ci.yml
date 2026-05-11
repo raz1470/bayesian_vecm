@@ -1,0 +1,64 @@
+# GitHub Actions CI workflow.
+# Runs lint + tests on every push to main and every pull request.
+# Docs: https://docs.github.com/en/actions
+
+name: CI
+
+# When does this workflow run?
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel an old in-flight run if a new commit is pushed to the same branch/PR.
+# Saves CI minutes and avoids confusing "stale" status checks.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint & test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    # Matrix: run the whole job once per Python version listed.
+    # Catches version-specific issues early.
+    strategy:
+      fail-fast: false  # don't cancel the 3.12 job if 3.11 fails (or vice versa)
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      # 1. Check out the code.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Install uv. Astral's official action handles caching too.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          # Cache key includes the lockfile so cache invalidates when deps change.
+          cache-dependency-glob: "uv.lock"
+
+      # 3. Install the requested Python version (uv handles this).
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      # 4. Install project + dev dependencies into an isolated venv.
+      #    --frozen ensures CI uses exactly the versions in uv.lock — no surprise upgrades.
+      - name: Install dependencies
+        run: uv sync --all-extras --frozen
+
+      # 5. Lint with ruff.
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      # 6. Check formatting (doesn't modify files; fails if anything is unformatted).
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      # 7. Run the test suite.
+      - name: Pytest
+        run: uv run pytest
