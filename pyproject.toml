@@ -1,0 +1,112 @@
+# ---------------------------------------------------------------------------
+# Build system: tells pip/uv which tool to use to build the package.
+# hatchling is a modern, lightweight build backend. Good default.
+# ---------------------------------------------------------------------------
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# ---------------------------------------------------------------------------
+# Core project metadata. This is what shows up on PyPI.
+# ---------------------------------------------------------------------------
+[project]
+name = "bayesian_vecm"
+version = "0.0.1"
+description = "Bayesian Vector Error Correction Models in Python"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Ryan O'Sullivan", email = "raz1470@hotmail.co.uk" },
+]
+keywords = ["bayesian", "vecm", "time-series", "econometrics", "cointegration"]
+
+# Classifiers help PyPI categorize your package and improve discoverability.
+# Full list: https://pypi.org/classifiers/
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Typing :: Typed",
+]
+
+# Runtime dependencies. Empty for now — we'll add libraries (pymc, numpy, etc.)
+# in a later step once we start writing real code.
+dependencies = []
+
+# Optional dependency groups. Users install these with `pip install bayesian_vecm[dev]`.
+# `dev` is for development tooling; you can add more groups like `[docs]`, `[test]` later.
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+]
+
+# Links shown on the PyPI page. Update these once you have a GitHub repo.
+[project.urls]
+Homepage = "https://github.com/raz1470/bayesian_vecm"
+Repository = "https://github.com/raz1470/bayesian_vecm"
+Issues = "https://github.com/raz1470/bayesian_vecm/issues"
+
+# ---------------------------------------------------------------------------
+# Hatchling: tell it where the actual package code lives (src layout).
+# ---------------------------------------------------------------------------
+[tool.hatch.build.targets.wheel]
+packages = ["src/bayesian_vecm"]
+
+# ---------------------------------------------------------------------------
+# Ruff: linter + formatter. Replaces flake8, isort, and black.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Selected rule families:
+#   E, W  = pycodestyle errors and warnings
+#   F     = pyflakes (unused imports, undefined names, etc.)
+#   I     = isort (import ordering)
+#   N     = pep8-naming
+#   UP    = pyupgrade (suggests modern syntax)
+#   B     = flake8-bugbear (common bug patterns)
+#   SIM   = flake8-simplify
+#   RUF   = ruff-specific rules
+select = ["E", "W", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---------------------------------------------------------------------------
+# pytest configuration.
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = [
+    "-ra",                      # show short summary for all non-passing tests
+    "--strict-markers",         # error on unknown @pytest.mark.* markers
+    "--strict-config",          # error on unknown config keys
+    "--cov=bayesian_vecm",      # measure coverage of our package
+    "--cov-report=term-missing",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["bayesian_vecm"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
