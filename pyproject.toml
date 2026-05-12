@@ -36,9 +36,11 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-# Runtime dependencies. Empty for now — we'll add libraries (pymc, numpy, etc.)
-# in a later step once we start writing real code.
-dependencies = []
+# Runtime dependencies. Add libraries as the code grows; pymc/arviz come later
+# once we start wiring up the Bayesian model itself.
+dependencies = [
+    "numpy>=1.26",
+]
 
 # Optional dependency groups. Users install these with `pip install bayesian_vecm[dev]`.
 # `dev` is for development tooling; you can add more groups like `[docs]`, `[test]` later.
