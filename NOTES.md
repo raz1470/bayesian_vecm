@@ -59,10 +59,15 @@ model.sample_posterior_predictive(steps=12)
   - `src/bayesian_vecm/_data.py` with `validate_endog`, `difference`, `lag_matrix` (lag-major ordering, statsmodels-compatible).
   - `tests/test_data.py` with 22 unit tests, all passing.
 
+**Update 2026-05-15:**
+
+- **Docs/learning track kicked off.** Added `notebooks/01_data_utilities_walkthrough.ipynb` — a beginner-friendly walkthrough of `validate_endog`, `difference`, and `lag_matrix` with synthetic-data demos and a primer on where each helper fits into the VECM equation. Convention: one numbered notebook per public-API slice.
+
 **Not yet done:**
 
 - Any actual VECM model code (just preprocessing primitives so far).
 - Pandas integration tests (we duck-type via `.to_numpy()`; haven't tested against a real pandas DataFrame).
+- **CI execution of notebooks.** Notebooks aren't run in CI yet, so the docs/learning track is at risk of silent drift. Add a job that runs `jupyter nbconvert --to notebook --execute notebooks/*.ipynb` and fails on errors. Also decide on outputs strategy — leaning toward `nbstripout` as a git filter so committed `.ipynb` files have outputs cleared and diffs stay small, but worth revisiting once we have 2–3 notebooks.
 
 ## Workflow reminder
 
@@ -76,15 +81,60 @@ git push -u origin feat/<slice-name>
 git switch main && git pull && git branch -d feat/<slice-name>
 ```
 
-## Picking up next session — recommended candidates
+## Next slice — `cointegration_design` (decisions locked in)
 
-Pick one (in roughly this order):
+**Branch:** `feat/cointegration-design`
 
-1. **`cointegration_design` helper.** Combines `difference` + `lag_matrix` into the regression triple a VECM actually needs: `(ΔY, ΔX, Y_{-1})` where `ΔY` is the LHS, `ΔX` stacks lagged differences, and `Y_{-1}` is the level-lag for the error-correction term. Still a pure function; another easy TDD slice.
-2. **`BayesianVECM` class skeleton.** Mirror the `pymc_marketing.MMM` shape: `__init__` accepts `k_ar_diff`, `coint_rank`, `deterministic`, `priors`; `fit()` / `idata` / `summary()` / `sample_posterior_predictive()` as stubs that `raise NotImplementedError`. This forces the API decisions before any PyMC code, and `raise NotImplementedError` is already excluded from coverage.
-3. **First PyMC model.** Start with the simplest case: known cointegration rank `r=1`, no deterministic terms, weakly-informative priors on `α`, `β`, `Γ`, and `Σ`. This is where the real econometrics begins (identification of `β` is the tricky part — beta is only identified up to a rotation without a normalisation).
+**Goal.** A single helper that turns raw `(T, K)` data into the three regression matrices the VECM equation actually consumes. The equation:
 
-Why option 1 next: it's the natural follow-on to `_data.py`, keeps the testable-pure-functions streak going, and the result is the exact input the eventual PyMC model needs.
+```
+Δy_t = α β' y_{t-1} + Γ_1 Δy_{t-1} + … + Γ_k Δy_{t-k} + ε_t
+```
+
+so we need, for each usable time `t`:
+
+- `delta_y`  : Δy_t                                  — shape `(T_eff, K)`     (LHS)
+- `delta_x`  : [Δy_{t-1}, …, Δy_{t-k}] stacked       — shape `(T_eff, K*k)`   (Γ blocks)
+- `y_lag1`   : y_{t-1}                               — shape `(T_eff, K)`     (β feeds on this; this is what makes it a VECM vs a VAR-in-differences)
+
+Effective sample size: `T_eff = T − k − 1`. Earliest usable `t` is `k + 2`.
+
+**API decisions (simplicity-first):**
+
+- Return type: a `typing.NamedTuple` called `CointegrationDesign(delta_y, delta_x, y_lag1)`. Self-documenting, unpackable, no methods.
+- Deterministic terms (`"n" / "co" / "ci" / "lo" / "li"`) **deferred** to a follow-up slice. This PR ships only the "no constants, no trends" case.
+- `validate_endog` is called *inside* `cointegration_design` — so callers can pass raw DataFrame/ndarray without ceremony.
+- New module: `src/bayesian_vecm/_design.py`. Keeps `_data.py` as pure preprocessing; design matrices are a separate concept.
+
+**Signature sketch:**
+
+```python
+from typing import NamedTuple
+from numpy.typing import NDArray
+import numpy as np
+
+class CointegrationDesign(NamedTuple):
+    delta_y: NDArray[np.float64]  # (T_eff, K)
+    delta_x: NDArray[np.float64]  # (T_eff, K * k_ar_diff)
+    y_lag1: NDArray[np.float64]   # (T_eff, K)
+
+def cointegration_design(data, k_ar_diff: int) -> CointegrationDesign: ...
+```
+
+**Tests to write first (TDD):**
+
+- Hand-built tiny example: `T=5, K=2, k_ar_diff=1`, verify all three matrices row-by-row.
+- Shape: `delta_y.shape == (T - k - 1, K)`, `delta_x.shape == (T - k - 1, K*k)`, `y_lag1.shape == (T - k - 1, K)`.
+- `k_ar_diff = 0` → `delta_x.shape[1] == 0`, but `delta_y` and `y_lag1` still work.
+- Rejects `k_ar_diff < 0` and `k_ar_diff >= T - 1`.
+- Accepts DataFrame-like input (uses the `_FakeFrame` trick from `test_data.py`).
+- Alignment check: row `i` of all three matrices corresponds to the same time index in the original data.
+
+## After cointegration_design — candidates
+
+1. **Deterministic-terms follow-up.** Add `deterministic` parameter to `cointegration_design` covering at least `"n"` (current default), `"co"` (constant in Γ block) and `"ci"` (constant in cointegration relation).
+2. **`BayesianVECM` class skeleton.** Mirror the `pymc_marketing.MMM` shape: `__init__` accepts `k_ar_diff`, `coint_rank`, `deterministic`, `priors`; `fit()` / `idata` / `summary()` / `sample_posterior_predictive()` as stubs that `raise NotImplementedError`. Forces API decisions before any PyMC code.
+3. **First PyMC model.** Simplest case: known cointegration rank `r=1`, no deterministic terms, weakly-informative priors on `α`, `β`, `Γ`, `Σ`. Real econometrics starts here — identification of `β` is the tricky part (β is only identified up to a rotation without a normalisation, e.g. `β[:r, :] = I_r`).
 
 ## Useful commands
 
@@ -115,3 +165,11 @@ uv build
 ## Domain-learning track
 
 Ryan is **learning VECMs as we build**, so explanations of the econometrics (cointegration, error-correction term, identification, lag selection, etc.) should accompany the code as it's written.
+
+**Convention.** One numbered Jupyter notebook per public-API slice, living in `notebooks/`:
+
+- Filename pattern: `NN_<topic>.ipynb` (e.g. `01_data_utilities_walkthrough.ipynb`).
+- Each notebook explains *what* each helper does, *why* a VECM needs it, and demos it on small synthetic data — written for a reader meeting VECMs for the first time.
+- Trigger for a new notebook: "did this slice ship something a learner needs to understand?" Internal refactors don't need one.
+- Notebooks are runnable docs *and* lightweight integration tests — when CI execution lands (see TODO in the status section), a broken explanation becomes a failing build.
+- Once the catalogue grows, consider graduating to a docs site (Sphinx + nbsphinx, or MkDocs + mkdocs-jupyter). Defer until the `BayesianVECM` skeleton is in.
