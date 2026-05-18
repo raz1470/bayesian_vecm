@@ -170,6 +170,27 @@ This slice depends on option 1 only if you want `deterministic` in the construct
 
 Should NOT be tackled until option 2 is in — the class skeleton needs to exist before there's anywhere to wire the PyMC graph into.
 
+## Future directions (parking lot)
+
+Forward-looking items raised during planning on 2026-05-18. Not committed to and not on the critical path — captured here so they don't get lost. Tackle step by step, after the baseline estimation slice (option 3) lands.
+
+### References to mine later
+
+- **`bvhar`** — Python package for Bayesian VAR / VHAR with shrinkage priors. Doesn't do VECM/cointegration, but a useful reference for Bayesian time-series patterns in PyMC-adjacent territory: prior specification, hyperparameter handling, posterior summaries, and what a "good" Bayesian time-series API looks like in 2026.
+- **VECM in brand marketing** — Ryan's Medium article: <https://medium.com/@raz1470/capturing-the-long-term-causal-effect-of-brand-marketing-bc577621a627>. The motivating use case for the whole package: brand investment has long-term effects that plain regression / MMM smears over short windows; VECM captures the cointegrating relationship between brand spend and the outcome variable. Worth linking from the README once the package is usable, and worth distilling into an "applied example" notebook later — separate from the methodology walkthroughs in `notebooks/`.
+
+### Modelling extensions
+
+In rough order of when to attempt them, once the baseline estimator lands.
+
+- **Sparse priors (horseshoe).** With `K` variables and `k` lags, the `Γ` block alone has `K²·k` parameters; `α` and `β` scale with `K` and `r`. Most entries are likely near zero in practice. A horseshoe prior (Carvalho, Polson & Scott 2010) or regularised horseshoe (Piironen & Vehtari 2017) on the `Γ` matrices — and possibly on `α` — would shrink the irrelevant ones toward zero while keeping real signals. More adaptive than the classical Minnesota prior, and doesn't require hand-tuning a shrinkage hyperparameter. **When:** after the fixed-rank constant-`Σ` model samples cleanly — otherwise you can't tell whether sampling pathologies come from the prior or the parameterisation.
+- **Stochastic volatility.** Replace constant `Σ` with time-varying covariance. Standard recipes: Cogley-Sargent / Primiceri (2005) Cholesky-SV, factor SV, or univariate SV on each residual. Largely orthogonal to `α` / `β` / `Γ` estimation — can be layered on as an additional block. **When:** after horseshoe. Becomes important if this is ever pointed at finance data, where heteroskedasticity is the rule.
+- **Uncertain cointegration rank.** Current plan fixes `r` at the class level. Inferring `r` jointly is meaningfully harder. Two viable routes: (i) fit at each plausible `r` and Bayesian-model-average via marginal likelihoods; (ii) put a shrinkage prior on the singular values of `αβ′` so `r` emerges from the posterior — see Strachan & Inder (2004), Villani (2005, 2006). **When:** last. Research-grade; defer until everything else is solid so there's a known-good fixed-`r` estimator to validate against.
+
+### Sequencing thought
+
+Fixed-`r`, constant-`Σ`, weakly-informative-prior VECM first (option 3 in the next-slice list). Then layer extensions: horseshoe → stochastic volatility → rank uncertainty. Each extension should ship behind a flag or as an optional argument rather than replacing the baseline, so the baseline stays available as both a teaching example and a sampling-diagnostic reference.
+
 ## Session learnings (2026-05-15)
 
 Lessons worth not re-learning:
