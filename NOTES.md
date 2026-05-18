@@ -71,6 +71,15 @@ model.sample_posterior_predictive(steps=12)
   - Kept private (no `__init__.py` re-export), mirroring `_data.py`.
 - **Walkthrough notebook 02** added: `notebooks/02_cointegration_design_walkthrough.ipynb`. Frames the alignment problem, derives `T_eff = T - k - 1`, demos the hand-built tiny example, the `k = 0` and `k = 2` cases, and an end-to-end synthetic cointegrated example. First mention of the β-identification problem in the docs — flagged as the natural place to expand once model code lands.
 
+**Update 2026-05-18:**
+
+- **Future directions parking lot added** (this branch): captures `bvhar` as a reference, the Medium-article brand-marketing use case, and a sequenced list of modelling extensions (sparse priors → stochastic volatility → uncertain cointegration rank). Non-binding planning section — see "Future directions (parking lot)" below.
+- **Deterministic-terms follow-up shipped** (this branch; originally planned as `feat/cointegration-design-deterministic`, folded into `docs/future-directions` to avoid a second PR for adjacent work):
+  - `cointegration_design` now accepts `deterministic: str = "n"`. Single codes in v0: `"n"`, `"co"`, `"ci"`, `"lo"`, `"li"`. Compound codes (Johansen cases 4 and 5) are rejected with a clear v0.x-follow-up message.
+  - Outside terms (`"co"`, `"lo"`) append a column to `delta_x`; inside terms (`"ci"`, `"li"`) append to `y_lag1`. Trend columns are 1-indexed (`[1, 2, …, T_eff]`).
+  - `tests/test_design.py` grew from 21 to 47 tests (26 new, parametrised across codes and lag counts). 100% coverage held on `_design.py`.
+  - Notebook 02 gained `§6 Deterministic terms` — inside-vs-outside explained economically, demo cell showing each code's effect on the design, and a quick example of the compound-code rejection message. `§6` "What this unlocks" renumbered to `§7`.
+
 **Not yet done:**
 
 - Any actual VECM model code (preprocessing + design matrices only; no estimation yet).
@@ -92,44 +101,9 @@ git switch main && git pull && git branch -d feat/<slice-name>
 
 ## Next slice — pick from these
 
-Three real candidates, in roughly increasing order of scope and risk. **Recommended starting point: option 1** — it cleanly extends the helper we just shipped, the API surface is already partly designed (we know what `deterministic="n"` means because it's the implicit current behaviour), and it knocks off a TODO before we start touching PyMC.
+Two real candidates, in roughly increasing order of scope and risk. **Recommended starting point: option 1** — the API decisions need to land before any PyMC code, and `NotImplementedError` stubs are cheap. (The previous option 1 — deterministic-terms follow-up — shipped on 2026-05-18; see the Status section.)
 
-### Option 1 (recommended) — Deterministic-terms follow-up
-
-**Branch:** `feat/cointegration-design-deterministic`
-
-**Goal.** Add a `deterministic` parameter to `cointegration_design` so it can produce design matrices for the full statsmodels family of cases:
-
-| Code | Meaning | Where the term sits |
-| --- | --- | --- |
-| `"n"` | No deterministic terms (current behaviour) | — |
-| `"co"` | Constant only, outside the cointegration relation | Added as a column to `delta_x` |
-| `"ci"` | Constant restricted to the cointegration relation | Added as a column to `y_lag1` |
-| `"lo"` | Linear trend, outside the cointegration relation | Added as a column to `delta_x` |
-| `"li"` | Linear trend restricted to the cointegration relation | Added as a column to `y_lag1` |
-
-Statsmodels supports combinations (e.g. `"colo"`) — decide whether to support those or keep it to single-character codes for v0.
-
-**Signature change:**
-
-```python
-def cointegration_design(
-    data,
-    k_ar_diff: int,
-    deterministic: str = "n",
-) -> CointegrationDesign: ...
-```
-
-**Tests to write first (TDD):**
-
-- Each code produces the right additional column(s) and they end up in the right matrix.
-- Shapes update: `delta_x.shape[1]` and `y_lag1.shape[1]` reflect the added columns.
-- Unknown code (e.g. `"xyz"`) raises a clear `ValueError`.
-- `deterministic="n"` (default) still produces the exact output of the current implementation. Use the existing hand-built example here to make sure nothing regressed.
-
-**Domain learning to capture in a notebook:** *what* each deterministic case means economically. "Constant in cointegration relation" vs "constant outside" sounds like jargon until you realise it's the difference between "the equilibrium has a non-zero level" and "each variable has a drift on top of the equilibrium". Worth a short notebook 03 — possibly as a section appended to notebook 02 rather than a fresh notebook, depending on how much there is to say.
-
-### Option 2 — `BayesianVECM` class skeleton
+### Option 1 (recommended) — `BayesianVECM` class skeleton
 
 **Branch:** `feat/bayesian-vecm-skeleton`
 
@@ -158,9 +132,7 @@ class BayesianVECM:
 - Does `coint_rank` go in `__init__` or in `fit()`? Statsmodels passes it to the class; pymc_marketing-style would put it in `fit()` so the same class can be re-fit with different ranks. Worth picking deliberately.
 - Does the class store the input `endog` after `fit()`, or only `idata`?
 
-This slice depends on option 1 only if you want `deterministic` in the constructor signature to be meaningful — and even then, the skeleton can accept the parameter and just pass it through to a not-yet-existent design step.
-
-### Option 3 — First PyMC model
+### Option 2 — First PyMC model
 
 **Branch:** `feat/first-pymc-model`
 
@@ -168,11 +140,11 @@ This slice depends on option 1 only if you want `deterministic` in the construct
 
 **This is where the real econometrics begins.** The piece to think hardest about is the **identification of β**: $\alpha \beta'$ is invariant under $(\alpha, \beta) \to (\alpha R^{-1}, \beta R^{\top})$ for any invertible $R$, so without a normalisation (the standard choice is `β[:r, :] = I_r`) the posterior over `β` alone is non-identified and sampling will struggle. Worth reading the relevant section of *Johansen 1995* before writing any PyMC code.
 
-Should NOT be tackled until option 2 is in — the class skeleton needs to exist before there's anywhere to wire the PyMC graph into.
+Should NOT be tackled until option 1 is in — the class skeleton needs to exist before there's anywhere to wire the PyMC graph into.
 
 ## Future directions (parking lot)
 
-Forward-looking items raised during planning on 2026-05-18. Not committed to and not on the critical path — captured here so they don't get lost. Tackle step by step, after the baseline estimation slice (option 3) lands.
+Forward-looking items raised during planning on 2026-05-18. Not committed to and not on the critical path — captured here so they don't get lost. Tackle step by step, after the baseline estimation slice (option 2 in the next-slice list — first PyMC model) lands.
 
 ### References to mine later
 
@@ -189,7 +161,7 @@ In rough order of when to attempt them, once the baseline estimator lands.
 
 ### Sequencing thought
 
-Fixed-`r`, constant-`Σ`, weakly-informative-prior VECM first (option 3 in the next-slice list). Then layer extensions: horseshoe → stochastic volatility → rank uncertainty. Each extension should ship behind a flag or as an optional argument rather than replacing the baseline, so the baseline stays available as both a teaching example and a sampling-diagnostic reference.
+Fixed-`r`, constant-`Σ`, weakly-informative-prior VECM first (option 2 in the next-slice list). Then layer extensions: horseshoe → stochastic volatility → rank uncertainty. Each extension should ship behind a flag or as an optional argument rather than replacing the baseline, so the baseline stays available as both a teaching example and a sampling-diagnostic reference.
 
 ## Session learnings (2026-05-15)
 
