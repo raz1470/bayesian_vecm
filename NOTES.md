@@ -86,6 +86,14 @@ model.sample_posterior_predictive(steps=12)
   - **`coint_rank` lives in `__init__`**, not `fit()`. Changing `r` is a full PyMC-graph rebuild (α and β are both `K×r`), so "re-fit with a different rank" was never cheap. A rank-selection loop `for r in [...]: BayesianVECM(coint_rank=r).fit(data)` is barely longer and keeps each fitted `idata` available for the eventual rank-uncertainty / model-averaging work.
   - **`endog` will be stored on the fitted object as `self.endog_`** (sklearn-style trailing-underscore convention for "set during fit") *and* inside `idata.constant_data`. Forecasting needs the last `k_ar_diff + 1` rows to seed the recursion — making callers re-pass them is friction and a footgun. Two storage locations serve different needs: live access vs. self-contained serialised record.
 - **Cross-branch caveat — merge ordering.** The skeleton validates `deterministic` against `{"n", "co", "ci", "lo", "li"}`. On `main` today `cointegration_design` doesn't accept a `deterministic` argument at all — that support is on `origin/docs/future-directions` waiting for its PR. Functionally the two are independent right now (because `fit` raises `NotImplementedError`, the design helper isn't actually called), but for the cleanest history: **merge `docs/future-directions` first, then rebase this branch onto the new `main` before opening its PR.**
+**Update 2026-05-18:**
+
+- **Future directions parking lot added** (this branch): captures `bvhar` as a reference, the Medium-article brand-marketing use case, and a sequenced list of modelling extensions (sparse priors → stochastic volatility → uncertain cointegration rank). Non-binding planning section — see "Future directions (parking lot)" below.
+- **Deterministic-terms follow-up shipped** (this branch; originally planned as `feat/cointegration-design-deterministic`, folded into `docs/future-directions` to avoid a second PR for adjacent work):
+  - `cointegration_design` now accepts `deterministic: str = "n"`. Single codes in v0: `"n"`, `"co"`, `"ci"`, `"lo"`, `"li"`. Compound codes (Johansen cases 4 and 5) are rejected with a clear v0.x-follow-up message.
+  - Outside terms (`"co"`, `"lo"`) append a column to `delta_x`; inside terms (`"ci"`, `"li"`) append to `y_lag1`. Trend columns are 1-indexed (`[1, 2, …, T_eff]`).
+  - `tests/test_design.py` grew from 21 to 47 tests (26 new, parametrised across codes and lag counts). 100% coverage held on `_design.py`.
+  - Notebook 02 gained `§6 Deterministic terms` — inside-vs-outside explained economically, demo cell showing each code's effect on the design, and a quick example of the compound-code rejection message. `§6` "What this unlocks" renumbered to `§7`.
 
 **Not yet done:**
 
@@ -118,6 +126,9 @@ The two earlier candidates have both shipped: deterministic-terms is on `origin/
 **Goal.** Simplest possible VECM that actually samples: known cointegration rank `r = 1`, `deterministic = "n"`, weakly-informative priors on `α`, `β`, `Γ_1, ..., Γ_k`, and `Σ`. Targets a small synthetic cointegrated dataset (the one in notebook 02 is a good starting point).
 
 **Where it plugs in.** `BayesianVECM.fit(endog)` should:
+Two real candidates, in roughly increasing order of scope and risk. **Recommended starting point: option 1** — the API decisions need to land before any PyMC code, and `NotImplementedError` stubs are cheap. (The previous option 1 — deterministic-terms follow-up — shipped on 2026-05-18; see the Status section.)
+
+### Option 1 (recommended) — `BayesianVECM` class skeleton
 
 1. Call `validate_endog(endog)` (already exists in `_data.py`).
 2. Call `cointegration_design(endog, k_ar_diff=self.k_ar_diff, deterministic=self.deterministic)` to get the three aligned matrices.
@@ -136,10 +147,37 @@ The two earlier candidates have both shipped: deterministic-terms is on `origin/
 **Branch:** `chore/consolidate-deterministic-codes`
 
 **Goal.** Remove the duplication that opens up once `docs/future-directions` and the skeleton are both on `main`. Introduce a private `src/bayesian_vecm/_constants.py` (or similar) holding `VALID_DETERMINISTIC = frozenset({"n", "co", "ci", "lo", "li"})`. Both `_design.py` and `_model.py` import from it.
+### Option 2 — First PyMC model
 
 Trivial in scope; the real value is doing it *before* either set drifts.
 
 **Order of operations.** This slice can only land after both prerequisites are on `main`: the `feat/bayesian-vecm-skeleton` PR and the `docs/future-directions` PR. Both can go in either order; this cleanup chases them.
+**Goal.** Simplest possible VECM: known cointegration rank `r = 1`, `deterministic = "n"`, weakly-informative priors on `α`, `β`, `Γ_1, ..., Γ_k`, and `Σ`. Targets a small synthetic cointegrated dataset (the one in notebook 02 is a good starting point).
+
+**This is where the real econometrics begins.** The piece to think hardest about is the **identification of β**: $\alpha \beta'$ is invariant under $(\alpha, \beta) \to (\alpha R^{-1}, \beta R^{\top})$ for any invertible $R$, so without a normalisation (the standard choice is `β[:r, :] = I_r`) the posterior over `β` alone is non-identified and sampling will struggle. Worth reading the relevant section of *Johansen 1995* before writing any PyMC code.
+
+Should NOT be tackled until option 1 is in — the class skeleton needs to exist before there's anywhere to wire the PyMC graph into.
+
+## Future directions (parking lot)
+
+Forward-looking items raised during planning on 2026-05-18. Not committed to and not on the critical path — captured here so they don't get lost. Tackle step by step, after the baseline estimation slice (option 2 in the next-slice list — first PyMC model) lands.
+
+### References to mine later
+
+- **`bvhar`** — Python package for Bayesian VAR / VHAR with shrinkage priors. Doesn't do VECM/cointegration, but a useful reference for Bayesian time-series patterns in PyMC-adjacent territory: prior specification, hyperparameter handling, posterior summaries, and what a "good" Bayesian time-series API looks like in 2026.
+- **VECM in brand marketing** — Ryan's Medium article: <https://medium.com/@raz1470/capturing-the-long-term-causal-effect-of-brand-marketing-bc577621a627>. The motivating use case for the whole package: brand investment has long-term effects that plain regression / MMM smears over short windows; VECM captures the cointegrating relationship between brand spend and the outcome variable. Worth linking from the README once the package is usable, and worth distilling into an "applied example" notebook later — separate from the methodology walkthroughs in `notebooks/`.
+
+### Modelling extensions
+
+In rough order of when to attempt them, once the baseline estimator lands.
+
+- **Sparse priors (horseshoe).** With `K` variables and `k` lags, the `Γ` block alone has `K²·k` parameters; `α` and `β` scale with `K` and `r`. Most entries are likely near zero in practice. A horseshoe prior (Carvalho, Polson & Scott 2010) or regularised horseshoe (Piironen & Vehtari 2017) on the `Γ` matrices — and possibly on `α` — would shrink the irrelevant ones toward zero while keeping real signals. More adaptive than the classical Minnesota prior, and doesn't require hand-tuning a shrinkage hyperparameter. **When:** after the fixed-rank constant-`Σ` model samples cleanly — otherwise you can't tell whether sampling pathologies come from the prior or the parameterisation.
+- **Stochastic volatility.** Replace constant `Σ` with time-varying covariance. Standard recipes: Cogley-Sargent / Primiceri (2005) Cholesky-SV, factor SV, or univariate SV on each residual. Largely orthogonal to `α` / `β` / `Γ` estimation — can be layered on as an additional block. **When:** after horseshoe. Becomes important if this is ever pointed at finance data, where heteroskedasticity is the rule.
+- **Uncertain cointegration rank.** Current plan fixes `r` at the class level. Inferring `r` jointly is meaningfully harder. Two viable routes: (i) fit at each plausible `r` and Bayesian-model-average via marginal likelihoods; (ii) put a shrinkage prior on the singular values of `αβ′` so `r` emerges from the posterior — see Strachan & Inder (2004), Villani (2005, 2006). **When:** last. Research-grade; defer until everything else is solid so there's a known-good fixed-`r` estimator to validate against.
+
+### Sequencing thought
+
+Fixed-`r`, constant-`Σ`, weakly-informative-prior VECM first (option 2 in the next-slice list). Then layer extensions: horseshoe → stochastic volatility → rank uncertainty. Each extension should ship behind a flag or as an optional argument rather than replacing the baseline, so the baseline stays available as both a teaching example and a sampling-diagnostic reference.
 
 ## Session learnings (2026-05-15)
 

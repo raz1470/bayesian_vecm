@@ -232,3 +232,140 @@ class TestLagMajorOrdering:
             ]
         )
         np.testing.assert_array_equal(result.delta_x, expected_delta_x)
+
+
+# ---------------------------------------------------------------------------
+# Deterministic terms.
+#
+# Single-character codes only in v0:
+#     "n"  — no deterministic terms (default; current behaviour)
+#     "co" — constant *outside* cointegration relation → column on delta_x
+#     "ci" — constant *inside* cointegration relation  → column on y_lag1
+#     "lo" — linear trend *outside* relation           → column on delta_x
+#     "li" — linear trend *inside* relation            → column on y_lag1
+#
+# Trend columns are 1-indexed: [1, 2, ..., T_eff]. Origin is arbitrary
+# (only the slope coefficient is invariant; the intercept absorbs the shift),
+# so we pick the convention that keeps the column strictly positive.
+#
+# Compound codes (e.g. "colo", "cili") — Johansen cases 4 and 5 — are deferred
+# to a follow-up slice.
+# ---------------------------------------------------------------------------
+class TestDeterministicTerms:
+    def test_default_is_n_and_matches_no_arg_behaviour(self) -> None:
+        explicit = cointegration_design(TINY_Y, k_ar_diff=1, deterministic="n")
+        implicit = cointegration_design(TINY_Y, k_ar_diff=1)
+        np.testing.assert_array_equal(explicit.delta_y, implicit.delta_y)
+        np.testing.assert_array_equal(explicit.delta_x, implicit.delta_x)
+        np.testing.assert_array_equal(explicit.y_lag1, implicit.y_lag1)
+
+    def test_co_appends_ones_column_to_delta_x(self) -> None:
+        result = cointegration_design(TINY_Y, k_ar_diff=1, deterministic="co")
+        n_eff = TINY_Y.shape[0] - 2  # T - k_ar_diff - 1
+        expected_delta_x = np.column_stack([EXPECTED_DELTA_X, np.ones(n_eff)])
+        np.testing.assert_array_equal(result.delta_x, expected_delta_x)
+        np.testing.assert_array_equal(result.y_lag1, EXPECTED_Y_LAG1)
+        np.testing.assert_array_equal(result.delta_y, EXPECTED_DELTA_Y)
+
+    def test_ci_appends_ones_column_to_y_lag1(self) -> None:
+        result = cointegration_design(TINY_Y, k_ar_diff=1, deterministic="ci")
+        n_eff = TINY_Y.shape[0] - 2
+        expected_y_lag1 = np.column_stack([EXPECTED_Y_LAG1, np.ones(n_eff)])
+        np.testing.assert_array_equal(result.y_lag1, expected_y_lag1)
+        np.testing.assert_array_equal(result.delta_x, EXPECTED_DELTA_X)
+        np.testing.assert_array_equal(result.delta_y, EXPECTED_DELTA_Y)
+
+    def test_lo_appends_trend_column_to_delta_x(self) -> None:
+        result = cointegration_design(TINY_Y, k_ar_diff=1, deterministic="lo")
+        n_eff = TINY_Y.shape[0] - 2
+        trend = np.arange(1, n_eff + 1, dtype=float)
+        expected_delta_x = np.column_stack([EXPECTED_DELTA_X, trend])
+        np.testing.assert_array_equal(result.delta_x, expected_delta_x)
+        np.testing.assert_array_equal(result.y_lag1, EXPECTED_Y_LAG1)
+        np.testing.assert_array_equal(result.delta_y, EXPECTED_DELTA_Y)
+
+    def test_li_appends_trend_column_to_y_lag1(self) -> None:
+        result = cointegration_design(TINY_Y, k_ar_diff=1, deterministic="li")
+        n_eff = TINY_Y.shape[0] - 2
+        trend = np.arange(1, n_eff + 1, dtype=float)
+        expected_y_lag1 = np.column_stack([EXPECTED_Y_LAG1, trend])
+        np.testing.assert_array_equal(result.y_lag1, expected_y_lag1)
+        np.testing.assert_array_equal(result.delta_x, EXPECTED_DELTA_X)
+        np.testing.assert_array_equal(result.delta_y, EXPECTED_DELTA_Y)
+
+
+# ---------------------------------------------------------------------------
+# Shape contract under deterministic terms — generalises TestShapes above.
+# ---------------------------------------------------------------------------
+class TestDeterministicShapes:
+    @pytest.mark.parametrize(
+        ("code", "extra_delta_x_cols", "extra_y_lag1_cols"),
+        [
+            ("n", 0, 0),
+            ("co", 1, 0),
+            ("ci", 0, 1),
+            ("lo", 1, 0),
+            ("li", 0, 1),
+        ],
+    )
+    @pytest.mark.parametrize("k_ar_diff", [0, 1, 2])
+    def test_shapes_match_spec(
+        self,
+        code: str,
+        extra_delta_x_cols: int,
+        extra_y_lag1_cols: int,
+        k_ar_diff: int,
+    ) -> None:
+        n_obs, n_vars = 10, 3
+        data = np.arange(n_obs * n_vars, dtype=float).reshape(n_obs, n_vars)
+
+        result = cointegration_design(data, k_ar_diff=k_ar_diff, deterministic=code)
+
+        n_eff = n_obs - k_ar_diff - 1
+        assert result.delta_y.shape == (n_eff, n_vars)
+        assert result.delta_x.shape == (n_eff, n_vars * k_ar_diff + extra_delta_x_cols)
+        assert result.y_lag1.shape == (n_eff, n_vars + extra_y_lag1_cols)
+
+
+# ---------------------------------------------------------------------------
+# Edge case: k_ar_diff = 0 combined with an outside deterministic term.
+# delta_x has zero columns from the lag block, so the entire matrix is the
+# deterministic column.
+# ---------------------------------------------------------------------------
+class TestDeterministicZeroLagDifferences:
+    def test_co_with_zero_lag_differences_is_single_ones_column(self) -> None:
+        result = cointegration_design(TINY_Y, k_ar_diff=0, deterministic="co")
+        n_eff = TINY_Y.shape[0] - 1
+        assert result.delta_x.shape == (n_eff, 1)
+        np.testing.assert_array_equal(result.delta_x, np.ones((n_eff, 1)))
+
+    def test_lo_with_zero_lag_differences_is_single_trend_column(self) -> None:
+        result = cointegration_design(TINY_Y, k_ar_diff=0, deterministic="lo")
+        n_eff = TINY_Y.shape[0] - 1
+        expected = np.arange(1, n_eff + 1, dtype=float).reshape(-1, 1)
+        assert result.delta_x.shape == (n_eff, 1)
+        np.testing.assert_array_equal(result.delta_x, expected)
+
+
+# ---------------------------------------------------------------------------
+# Validation of the `deterministic` argument.
+# ---------------------------------------------------------------------------
+class TestDeterministicValidation:
+    def test_rejects_unknown_code(self) -> None:
+        with pytest.raises(ValueError, match="deterministic"):
+            cointegration_design(TINY_Y, k_ar_diff=1, deterministic="xyz")
+
+    def test_rejects_compound_code_with_helpful_message(self) -> None:
+        # Compound codes (e.g. "colo", "cili") are a documented follow-up.
+        # The error message must call this out so users know to wait for v0.x
+        # rather than wonder if they've typed the code wrong.
+        with pytest.raises(ValueError, match="compound"):
+            cointegration_design(TINY_Y, k_ar_diff=1, deterministic="colo")
+
+    def test_rejects_empty_string(self) -> None:
+        with pytest.raises(ValueError, match="deterministic"):
+            cointegration_design(TINY_Y, k_ar_diff=1, deterministic="")
+
+    def test_rejects_uppercase_code(self) -> None:
+        with pytest.raises(ValueError, match="deterministic"):
+            cointegration_design(TINY_Y, k_ar_diff=1, deterministic="CO")
