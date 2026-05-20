@@ -33,25 +33,51 @@ Design decisions captured here
   serialised ``idata`` is self-contained for reproducibility independent of
   the live object.
 
-Attributes set during ``fit`` (none defined yet — the methods are stubs)
------------------------------------------------------------------------
+Attributes set during ``fit``
+-----------------------------
 The trailing-underscore convention distinguishes init-time config from
 fit-time state, mirroring scikit-learn:
 
 * ``endog_`` : ``ndarray`` of shape ``(T, K)`` — the input passed to ``fit``.
-* ``idata_`` : ``arviz.InferenceData`` — the full posterior record.
+* ``idata_`` : ``arviz.InferenceData`` — the full posterior record, with
+  the raw ``endog`` and design matrices stashed inside ``constant_data`` so
+  a serialised idata can stand on its own.
 * ``variable_names_`` : ``list[str] | None`` — column labels, if the input
   exposed them via a DataFrame-like ``.columns`` attribute.
+
+v0 scope
+--------
+``fit`` only estimates the simplest VECM that actually samples: known
+cointegration rank :math:`r = 1`, ``deterministic="n"``, weakly-informative
+defaults for :math:`\\alpha, \\beta, \\Gamma, \\Sigma`. Other configurations
+were accepted at construction time to lock in the public API, but raise
+:class:`NotImplementedError` from inside the PyMC graph builder.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+import arviz as az
+import pymc as pm
+import xarray as xr
+
+from bayesian_vecm._data import validate_endog
+from bayesian_vecm._design import cointegration_design
+from bayesian_vecm._pymc import build_pymc_model
+
 # Valid deterministic-term codes for v0. Mirrors the set accepted by
-# ``cointegration_design`` once the deterministic-terms work merges to main.
-# Compound Johansen codes (cases 4 and 5) are deferred to a follow-up.
+# ``cointegration_design``. Compound Johansen codes (cases 4 and 5) are
+# deferred to a follow-up.
 _VALID_DETERMINISTIC = frozenset({"n", "co", "ci", "lo", "li"})
+
+# Default headline parameters shown by ``summary()``. ``Gamma`` is added
+# conditionally when ``k_ar_diff > 0``.
+_SUMMARY_VAR_NAMES_BASE = ("alpha", "beta", "Sigma")
+
+_NOT_FITTED_MSG = (
+    "BayesianVECM has not been fitted yet; call .fit(endog) first."
+)
 
 
 class BayesianVECM:
@@ -75,10 +101,13 @@ class BayesianVECM:
 
     .. warning::
 
-        This is a v0 skeleton. ``fit``, ``idata``, ``summary``, and
-        ``sample_posterior_predictive`` all raise :class:`NotImplementedError`.
-        The class exists to lock in the public API; the PyMC graph and
-        sampling code arrive in the next slice.
+        This is a v0 implementation. ``fit``, ``idata`` and ``summary`` are
+        live, but only for ``coint_rank=1`` + ``deterministic="n"``. Other
+        configurations are accepted at construction time (the public API is
+        locked in) but raise :class:`NotImplementedError` from inside the
+        PyMC graph builder. ``sample_posterior_predictive`` is deferred to
+        its own follow-up slice — forecasting through the VAR recursion is
+        meaningfully its own design problem.
 
     Parameters
     ----------
@@ -130,13 +159,14 @@ class BayesianVECM:
         >>> model.deterministic
         'ci'
 
-    Calling ``fit`` (or any other estimation method) raises until the next
-    slice lands::
+    For a non-default configuration (``coint_rank=1, deterministic="n"``
+    is the only one ``fit`` currently estimates), ``fit`` raises a
+    :class:`NotImplementedError` from the PyMC graph builder::
 
         >>> model.fit(...)                       # doctest: +SKIP
         Traceback (most recent call last):
             ...
-        NotImplementedError: BayesianVECM.fit is not implemented yet ...
+        NotImplementedError: deterministic='ci' is not yet supported ...
     """
 
     def __init__(
@@ -169,8 +199,25 @@ class BayesianVECM:
         self.deterministic = deterministic
         self.priors = priors
 
-    def fit(self, endog: Any) -> BayesianVECM:
+    def fit(
+        self,
+        endog: Any,
+        *,
+        draws: int = 1000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        progressbar: bool = True,
+        **sample_kwargs: Any,
+    ) -> BayesianVECM:
         """Fit the model to ``endog`` by running PyMC sampling.
+
+        v0 scope: only ``coint_rank=1`` and ``deterministic="n"`` are
+        actually estimated. Other configurations were accepted at
+        construction time to lock in the public API, but trigger a
+        :class:`NotImplementedError` here. The PyMC graph for the wider
+        envelope arrives in a follow-up slice.
 
         Parameters
         ----------
@@ -178,7 +225,15 @@ class BayesianVECM:
             Endogenous time series of shape ``(T, K)``. Accepts anything
             :func:`bayesian_vecm._data.validate_endog` accepts — including
             objects with a ``.to_numpy()`` method, such as a
-            ``pandas.DataFrame``.
+            ``pandas.DataFrame``. Column labels (if present) are captured
+            into ``self.variable_names_``.
+        draws, tune, chains, target_accept, random_seed, progressbar
+            Forwarded to :func:`pm.sample`. The defaults aim at "reasonable
+            for a small VECM": four chains of 1000 draws after 1000 tuning
+            iterations, with a slightly cautious ``target_accept=0.9``.
+        **sample_kwargs
+            Additional keyword arguments forwarded to :func:`pm.sample` —
+            for example ``cores``, ``init``, or ``nuts_sampler``.
 
         Returns
         -------
@@ -188,45 +243,108 @@ class BayesianVECM:
         Raises
         ------
         NotImplementedError
-            Always — estimation is not implemented in this slice. The PyMC
-            graph and sampler arrive in the next slice
-            (``feat/first-pymc-model``).
+            If ``coint_rank != 1`` or ``deterministic != "n"`` — the PyMC
+            graph for those configurations is not yet implemented.
+        ValueError
+            If ``endog`` fails validation, or if ``priors`` is malformed.
         """
-        raise NotImplementedError(
-            "BayesianVECM.fit is not implemented yet — arriving in the feat/first-pymc-model slice."
+        # Capture column labels before validate_endog drops the DataFrame wrapper.
+        variable_names: list[str] | None = None
+        if hasattr(endog, "columns"):
+            variable_names = [str(c) for c in endog.columns]
+
+        endog_arr = validate_endog(endog)
+
+        design = cointegration_design(
+            endog_arr,
+            k_ar_diff=self.k_ar_diff,
+            deterministic=self.deterministic,
         )
+
+        model = build_pymc_model(
+            design,
+            k_ar_diff=self.k_ar_diff,
+            coint_rank=self.coint_rank,
+            deterministic=self.deterministic,
+            priors=self.priors,
+        )
+
+        with model:
+            idata = pm.sample(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                target_accept=target_accept,
+                random_seed=random_seed,
+                progressbar=progressbar,
+                **sample_kwargs,
+            )
+
+        # Stash the raw endog in constant_data so a serialised idata is a
+        # self-contained record — forecasting only needs the last few rows,
+        # but anyone reloading the file can reconstruct everything.
+        endog_da_kwargs: dict[str, Any] = {"dims": ("time", "variable")}
+        if variable_names is not None:
+            endog_da_kwargs["coords"] = {"variable": variable_names}
+        idata.constant_data["endog"] = xr.DataArray(endog_arr, **endog_da_kwargs)
+
+        # Fit-time state — sklearn-style trailing-underscore convention.
+        self.endog_ = endog_arr
+        self.idata_ = idata
+        self.variable_names_ = variable_names
+        return self
 
     @property
-    def idata(self) -> Any:
-        """Posterior record from the most recent ``fit`` as an ``arviz.InferenceData``.
+    def idata(self) -> az.InferenceData:
+        """Posterior record from the most recent ``fit``.
+
+        Returns
+        -------
+        arviz.InferenceData
+            The full posterior trace, including ``constant_data`` with the
+            raw ``endog`` and the design matrices.
 
         Raises
         ------
-        NotImplementedError
-            Always in v0 — accessor exists to lock the attribute name. After
-            ``fit`` lands this becomes a thin getter for ``self.idata_``.
+        RuntimeError
+            If :meth:`fit` has not been called.
         """
-        raise NotImplementedError(
-            "BayesianVECM.idata is not implemented yet — arriving in the "
-            "feat/first-pymc-model slice."
-        )
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+        return self.idata_
 
-    def summary(self) -> Any:
-        """Return a tabular summary of the posterior.
+    def summary(self, **summary_kwargs: Any) -> Any:
+        """Return a tabular summary of the headline posterior parameters.
 
-        Wraps :func:`arviz.summary` for the fitted parameters and adds
-        VECM-specific diagnostics (β identification, error-correction
-        coefficients, residual variances).
+        Thin wrapper around :func:`arviz.summary`. By default reports
+        :math:`\\alpha`, :math:`\\beta`, :math:`\\Sigma`, and — when
+        ``k_ar_diff > 0`` — :math:`\\Gamma`. Pass ``var_names=...`` to
+        override; any other ``arviz.summary`` keyword (``hdi_prob``,
+        ``round_to``, etc.) is forwarded through.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per scalar parameter, columns ``mean``, ``sd``,
+            ``hdi_3%``, ``hdi_97%``, ``ess_bulk``, ``ess_tail``, ``r_hat``
+            (defaults from ArviZ).
 
         Raises
         ------
-        NotImplementedError
-            Always in v0 — see :meth:`fit`.
+        RuntimeError
+            If :meth:`fit` has not been called.
         """
-        raise NotImplementedError(
-            "BayesianVECM.summary is not implemented yet — arriving after "
-            "the feat/first-pymc-model slice."
-        )
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+
+        if "var_names" not in summary_kwargs:
+            var_names = list(_SUMMARY_VAR_NAMES_BASE)
+            if self.k_ar_diff > 0:
+                # Insert before Sigma so the printout reads alpha, beta, Gamma, Sigma.
+                var_names.insert(2, "Gamma")
+            summary_kwargs["var_names"] = var_names
+
+        return az.summary(self.idata_, **summary_kwargs)
 
     def sample_posterior_predictive(self, steps: int) -> Any:
         """Forecast ``steps`` periods ahead from the fitted posterior.
@@ -254,5 +372,8 @@ class BayesianVECM:
         """
         raise NotImplementedError(
             "BayesianVECM.sample_posterior_predictive is not implemented yet — "
-            "arriving after the feat/first-pymc-model slice."
+            "deferred to its own follow-up slice. The first-PyMC-model slice "
+            "shipped fit, idata and summary; forecasting is meaningfully its "
+            "own design problem (drawing innovations from Σ, rolling the "
+            "VAR recursion forward) and is the next thing on the roadmap."
         )
