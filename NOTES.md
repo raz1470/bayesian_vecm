@@ -41,7 +41,7 @@ model.sample_posterior_predictive(steps=12)
 | Env / deps | `uv` + `uv.lock` | Fast, reproducible, current best practice. |
 | Lint + format | `ruff` | Replaces flake8 / isort / black. Configured in `pyproject.toml`. |
 | Tests | `pytest` + `pytest-cov` | Standard. Configured in `pyproject.toml`. |
-| Min Python | 3.11 | Matches modern scientific Python. |
+| Min Python | 3.12 | Required by arviz 1.x; bumped 2026-05-20. |
 | License | MIT | Permissive, standard for OSS Python. |
 | CI | GitHub Actions, matrix on Py 3.11 + 3.12 | `.github/workflows/ci.yml` runs ruff + pytest on push to main and PRs. |
 
@@ -85,7 +85,17 @@ model.sample_posterior_predictive(steps=12)
   - **Priors are a plain `dict[str, dict]`**, inspired by `pymc_marketing.MMM`'s pattern but without adopting their `Prior` class. Keys are parameter names (`"alpha"`, `"beta"`, `"Gamma"`, `"Sigma"`); values are `{"dist": "<Name>", **kwargs}` distribution specs. JSON-serialisable, easy to document, forward-compatible if we later want a richer `Prior` class. `priors=None` and `priors={}` are both legal — both mean "use defaults", chosen at `fit` time.
   - **`coint_rank` lives in `__init__`**, not `fit()`. Changing `r` is a full PyMC-graph rebuild (α and β are both `K×r`), so "re-fit with a different rank" was never cheap. A rank-selection loop `for r in [...]: BayesianVECM(coint_rank=r).fit(data)` is barely longer and keeps each fitted `idata` available for the eventual rank-uncertainty / model-averaging work.
   - **`endog` will be stored on the fitted object as `self.endog_`** (sklearn-style trailing-underscore convention for "set during fit") *and* inside `idata.constant_data`. Forecasting needs the last `k_ar_diff + 1` rows to seed the recursion — making callers re-pass them is friction and a footgun. Two storage locations serve different needs: live access vs. self-contained serialised record.
-- **Cross-branch caveat — merge ordering.** The skeleton validates `deterministic` against `{"n", "co", "ci", "lo", "li"}`. On `main` today `cointegration_design` doesn't accept a `deterministic` argument at all — that support is on `origin/docs/future-directions` waiting for its PR. Functionally the two are independent right now (because `fit` raises `NotImplementedError`, the design helper isn't actually called), but for the cleanest history: **merge `docs/future-directions` first, then rebase this branch onto the new `main` before opening its PR.**
+- **Cross-branch caveat — merge ordering.** The skeleton validates `deterministic` against `{"n", "co", "ci", "lo", "li"}`. On `main` today `cointegration_design` doesn't accept a `deterministic` argument at all — that support is on `origin/docs/future-directions` waiting for its PR. Functionally the two are independent right now (because `fit` raises `NotImplementedError`, the design helper isn't actually called), but for the cleanest history: **merge `docs/future-directions` first, then rebase this branch onto the new `main` before opening its PR.** *(Resolved — both PRs are on `main` as of 2026-05-19 later.)*
+
+**Update 2026-05-19 (later) — first PyMC model shipped** (branch `feat/first-pymc-model`):
+
+- **`BayesianVECM.fit` is live** for the v0 envelope (`coint_rank=1` + `deterministic="n"`). Runs validate → design → build → sample → store. Sampler defaults: 4 chains × 1000 draws after 1000 tune, `target_accept=0.9`. Outside the v0 envelope the call raises `NotImplementedError` from inside the PyMC graph builder — the public API has accepted the wider configuration since the skeleton, but the graph isn't there yet.
+- **β-identification problem solved** the Johansen way: pin `β[:r, :] = I_r` inside the graph. For `r = 1` the first entry of β is a `pt.eye(1)` block stacked on top of a `(K - 1, r)` free RV; the fixed entry isn't a random variable at all, so it can't drift. The full `(K, r)` β matrix is exposed as a `pm.Deterministic` so downstream consumers don't have to remember the normalisation. Closes the loop on the identification narrative kicked off in notebook 02 §5 and notebook 03 §7.
+- **`model.idata` (property)** and **`model.summary()`** are live — thin wrappers around `idata_` and `arviz.summary`. Both raise `RuntimeError("BayesianVECM has not been fitted yet")` if called before `fit`. Fit-time state lives on `self` as `endog_`, `idata_`, `variable_names_` (sklearn convention); `endog` is also stashed inside `idata.constant_data` so a serialised file is self-contained.
+- **New private module `src/bayesian_vecm/_pymc.py`** owns the graph: `build_pymc_model(design, *, k_ar_diff, coint_rank, deterministic, priors)`. Keeps `_model.py` thin — `fit` is just orchestration. Default priors: `α ~ Normal(0, 1.0)`, `β_free ~ Normal(0, 5.0)`, `Γ ~ Normal(0, 0.5)`, `Σ ~ LKJCholeskyCov(η=2, sd_dist=HalfNormal(1.0))`. User `priors` dict overrides any of the four; Σ has its own narrower override surface (`eta`, `sd_sigma`) because LKJCholeskyCov doesn't fit the `{"dist": ..., **kwargs}` pattern used by the others.
+- **Tests:** new `tests/test_pymc.py` with ~22 unit tests (graph construction, scope guards, prior plumbing, β-pin sanity). `tests/test_model.py` grew with end-to-end integration tests on the synthetic cointegrated series — these actually run `pm.sample` (tiny `draws=20, chains=1` to keep wall time manageable). A module-scoped `fitted_model` fixture pays the PyTensor compile cost once and shares the result across the integration tests.
+- **Notebook 04** shipped: `notebooks/04_first_pymc_model_walkthrough.ipynb`. Bivariate cointegrated DGP with `β = (1, -0.5)`, `α = (-0.4, 0.2)`. Demonstrates the identification pin (`β[0, 0] == 1.0` bit-exact in every draw), parameter recovery via `model.summary()`, and the "Γ posterior is just noise" property since the DGP has no short-run dynamics.
+
 **Update 2026-05-18:**
 
 - **Future directions parking lot added** (this branch): captures `bvhar` as a reference, the Medium-article brand-marketing use case, and a sequenced list of modelling extensions (sparse priors → stochastic volatility → uncertain cointegration rank). Non-binding planning section — see "Future directions (parking lot)" below.
@@ -95,12 +105,23 @@ model.sample_posterior_predictive(steps=12)
   - `tests/test_design.py` grew from 21 to 47 tests (26 new, parametrised across codes and lag counts). 100% coverage held on `_design.py`.
   - Notebook 02 gained `§6 Deterministic terms` — inside-vs-outside explained economically, demo cell showing each code's effect on the design, and a quick example of the compound-code rejection message. `§6` "What this unlocks" renumbered to `§7`.
 
+**Update 2026-05-20 — dep drift fix, folded into the same branch:**
+
+A `uv sync` between sessions crossed two major version boundaries: PyMC 5 → 6 (removes `pm.ConstantData`) and ArviZ 0.23 → 1.1 (DataTree rewrite — `idata.groups` is now a property, not a method). Notebook 04 broke on both; tests had stayed green because they use `chains=1` and never call `idata.groups()`.
+
+- `_pymc.py`: three `pm.ConstantData(...)` calls → `pm.Data(...)`. Same non-mutable semantics; design matrices still land in `idata.constant_data`.
+- `notebooks/04_first_pymc_model_walkthrough.ipynb`: `model.idata_.groups()` → `model.idata_.groups`.
+- `pyproject.toml`: floors bumped to the now-known-good versions — `pymc>=6.0`, `arviz>=1.1`. No upper caps (standard practice for libraries heading to PyPI).
+- **Min Python bumped 3.11 → 3.12.** ArviZ 1.x requires `>=3.12`; reflected in `requires-python`, classifiers, and the CI matrix (now `["3.12"]` only).
+
 **Not yet done:**
 
-- **Actual VECM estimation.** The class skeleton is in but every estimation method (`fit`, `idata`, `summary`, `sample_posterior_predictive`) raises `NotImplementedError`. The PyMC graph is the next slice — see "Next slice" below.
-- **`_VALID_DETERMINISTIC` will be duplicated** in `_model.py` (now) and `_design.py` (once `docs/future-directions` merges). Consolidate into a shared private constant — likely a new `src/bayesian_vecm/_constants.py` that both import from. Small cleanup, not blocking.
-- Pandas integration tests (we duck-type via `.to_numpy()`; haven't tested against a real pandas DataFrame).
-- **CI execution of notebooks.** Notebooks aren't run in CI yet, so the docs/learning track is at risk of silent drift. Add a job that runs `uv run jupyter nbconvert --to notebook --execute notebooks/*.ipynb` and fails on errors. Also decide on outputs strategy — leaning toward `nbstripout` as a git filter so committed `.ipynb` files have outputs cleared and diffs stay small, but worth revisiting once we have 3+ notebooks.
+- **`sample_posterior_predictive`.** Still raises `NotImplementedError`. Forecasting through the VAR recursion (seed from `self.endog_[-(k_ar_diff + 1):]`, draw ε from posterior Σ, roll forward N steps) is meaningfully its own design problem and is the next slice — see "Next slice" below.
+- **Higher cointegration rank (`r > 1`).** The free β block becomes `(K - r) × r`; the graph already factors this out but the v0 scope guard rejects `r != 1`. Need to also decide how to surface rank uncertainty (model averaging across separate fits is the plan, per notebook 03 §2).
+- **Deterministic terms in the graph.** `cointegration_design` already produces augmented design matrices for `co`, `ci`, `lo`, `li`; the PyMC graph just needs to grow a coefficient block for them. v0 scope guard currently rejects anything other than `"n"`.
+- **`_VALID_DETERMINISTIC` duplication** — still present in `_model.py` and now also as `VALID_DETERMINISTIC` in `_design.py`. Consolidate into a shared private constant (`src/bayesian_vecm/_constants.py`). Small cleanup, not blocking; same as Option 2 in the previous notes.
+- Pandas integration tests (we duck-type via `.to_numpy()`; the new integration tests use a `_FakeDF` test double rather than pandas itself).
+- **CI execution of notebooks (now overdue).** Notebooks aren't run in CI yet. The 2026-05-20 dep-drift fix was exactly the failure mode this would catch — tests were green while notebook 04 was broken on two separate APIs. Add a job that runs `uv run jupyter nbconvert --to notebook --execute notebooks/*.ipynb` and fails on errors. Outputs strategy: leaning toward `nbstripout` as a git filter so committed `.ipynb` files have outputs cleared and diffs stay small.
 - **Pre-commit hook.** A local hook running `ruff format` and `ruff check` would have caught two CI bounces in the 2026-05-15 session. Smaller than the notebook-CI work; could land first.
 
 ## Workflow reminder
@@ -117,11 +138,37 @@ git switch main && git pull && git branch -d feat/<slice-name>
 
 ## Next slice — pick from these
 
-The two earlier candidates have both shipped: deterministic-terms is on `origin/docs/future-directions` awaiting its PR, and the `BayesianVECM` skeleton landed on this branch. **Recommended starting point: option 1** — the skeleton just locked the API, so this is where the real econometrics finally begins. Option 2 is a small cleanup tax that should land alongside or shortly after.
+All three previous candidates have now shipped: deterministic-terms (PR #5), `BayesianVECM` skeleton (PR #6), and first PyMC model (this branch). The remaining roadmap items split into "extend the estimator" and "infrastructure cleanups". **Recommended starting point: option 1** — forecasting closes the loop on the original target API at the top of this file and is the most user-visible next step.
 
-### Option 1 (recommended) — First PyMC model
+### Option 1 (recommended) — `sample_posterior_predictive` (forecasting)
 
-**Branch:** `feat/first-pymc-model`
+**Branch:** `feat/posterior-predictive`
+
+**Goal.** Implement the last `NotImplementedError` on `BayesianVECM`. Roll the VAR recursion forward `steps` periods from the end of `self.endog_`, drawing innovations from posterior `Σ` so forecast uncertainty propagates correctly.
+
+**Where it plugs in.** `BayesianVECM.sample_posterior_predictive(steps)` should:
+
+1. Pull the last `k_ar_diff + 1` rows of `self.endog_` (also available via `idata_.constant_data["endog"]`) to seed the recursion.
+2. For each posterior draw of `(α, β, Γ, Σ)`, compute `Δy_{T+h}`, draw `ε ~ MvN(0, Σ)`, integrate to get `y_{T+h}`, slide the window, repeat for `h = 1, …, steps`.
+3. Return a fresh `arviz.InferenceData` with a `posterior_predictive` group holding `y` of shape `(chain, draw, steps, K)`.
+
+**Design questions to settle.** Vectorise via PyTensor (the natural PyMC idiom) vs. loop in NumPy (simpler to read, slower)? Return levels `y` only, or also `Δy`? Carry `variable_names_` onto the output dims (yes — same convention as `endog` in `constant_data`).
+
+**Walkthrough notebook 05:** fit on notebook-04's synthetic series, forecast 20 periods ahead, plot the fan chart (median + 80%/94% HDI bands), compare against held-out DGP draws. Headline visual is "uncertainty propagation through the recursion".
+
+### Option 2 — Expand the PyMC graph to the v0 envelope
+
+**Branch:** `feat/wider-graph`
+
+**Goal.** Drop the two `NotImplementedError` scope guards in `_pymc.py` — support `coint_rank > 1` and the four non-`n` deterministic codes the design helper already produces matrices for.
+
+**Substantive pieces.** For `r > 1` the free β block becomes `(K - r, r)` and `pt.eye(r)` continues to handle the normalisation block cleanly. For deterministic terms, `cointegration_design` already appends the right columns to `delta_x` or `y_lag1`; the graph just needs an extra coefficient block (inside terms broaden the β-applied vector, outside terms broaden the Γ-applied vector). Tests should cover all five codes × a couple of `r` values.
+
+### Option 3 — Defunct candidate: ~~First PyMC model~~ (legacy text below)
+
+The remaining option-numbered subsections in this section refer to the pre-first-PyMC-model state and are out of date; treat them as historical context until someone trims them in a docs slice. Action items they describe (consolidating `_VALID_DETERMINISTIC`, adding a pre-commit hook, executing notebooks in CI) are still relevant — see the "Not yet done" section above for current framing.
+
+#### Legacy text (kept for archaeology)
 
 **Goal.** Simplest possible VECM that actually samples: known cointegration rank `r = 1`, `deterministic = "n"`, weakly-informative priors on `α`, `β`, `Γ_1, ..., Γ_k`, and `Σ`. Targets a small synthetic cointegrated dataset (the one in notebook 02 is a good starting point).
 
@@ -162,6 +209,10 @@ Should NOT be tackled until option 1 is in — the class skeleton needs to exist
 
 Forward-looking items raised during planning on 2026-05-18. Not committed to and not on the critical path — captured here so they don't get lost. Tackle step by step, after the baseline estimation slice (option 2 in the next-slice list — first PyMC model) lands.
 
+### Known issues
+
+- **macOS + Jupyter `pm.sample` parallel-mode `EOFError`.** First multi-chain fit from a Jupyter cell on macOS died with a bare `EOFError` from `ProcessAdapter.recv_draw` — worker process died during `"spawn"` startup, parent saw closed pipe with no traceback. `cores=1` works fine. Possible causes: BLAS/OpenMP fork-safety, PyTensor compile in worker, Jupyter `__main__` weirdness. Worth investigating because users will hit this; workaround for now is `cores=1`. Could be as simple as setting `mp_ctx="forkserver"` as a default on macOS inside `BayesianVECM.fit`.
+
 ### References to mine later
 
 - **`bvhar`** — Python package for Bayesian VAR / VHAR with shrinkage priors. Doesn't do VECM/cointegration, but a useful reference for Bayesian time-series patterns in PyMC-adjacent territory: prior specification, hyperparameter handling, posterior summaries, and what a "good" Bayesian time-series API looks like in 2026.
@@ -196,6 +247,14 @@ Lessons from the skeleton-shipping session:
 - **Run git operations from the local terminal, not from inside Cowork.** The Cowork shell sandbox can read, write, and *rename* files in the worktree (including `.git/`), but it cannot **unlink** them — even ones it just created. That breaks every destructive git operation: `git switch` (can't replace worktree files), `git branch -d` (can't remove the ref file), `git restore .`, lock cleanup. File reads/writes/edits via Cowork are fine for *code* changes; for branch management, commits, and any `rm`-flavoured cleanup, do it from `~/Documents/repos/claude/bayesian_vecm` in a normal terminal. Workaround if you ever get a stale `.git/index.lock` you can't delete: `mv .git/index.lock .git/index.lock.OLD` works where `rm` doesn't, and gets git unblocked.
 - **macOS zsh doesn't treat `#` as a comment in interactive mode** unless you've opted in. If you paste a block that mixes commands and `# comments`, an apostrophe later in a comment (e.g. "they're") opens a string that never closes, dropping you into `quote>`. Either strip comments from pasted blocks, or add `setopt interactivecomments` to `~/.zshrc` once. Ctrl+C escapes the `quote>` prompt; no harm done if nothing has run yet.
 - **iCloud Drive silently corrupts the venv.** The repo currently lives at `~/Documents/repos/claude/bayesian_vecm`, and "Documents in iCloud" is enabled, so iCloud sync touches `.venv/`. Symptom: tests fail to collect with `ModuleNotFoundError: No module named 'bayesian_vecm'` even though `uv pip list` shows the package as installed. Diagnosis: iCloud was duplicating files into `site-packages/` with " 2", " 3", " 4" name suffixes whenever it detected a sync conflict, and the editable-install `.pth` file (`_editable_impl_bayesian_vecm.pth`, which should point at `src/`) was getting clobbered — missing trailing newline, multiple conflicting copies. Quick mitigation applied this session: `xattr -w com.apple.fileprovider.ignore#P 1 ~/Documents/repos/claude/bayesian_vecm/.venv` to stop iCloud touching the venv (undocumented but effective). **Real fix:** move the repo out of `~/Documents/` entirely — e.g. `~/code/bayesian_vecm` or `~/Developer/bayesian_vecm`. Until that happens, *any* time tests start failing with import errors and `uv pip list` says the package is installed, suspect iCloud first: `rm -rf .venv && uv sync --all-extras` is the recovery command.
+
+## Session learnings (2026-05-20)
+
+Lessons from the dep-drift firefight:
+
+- **Open lower bounds + `uv sync` = silent major-version drift.** `pymc>=5.28.5` and `arviz>=0.23.4` happily resolved to PyMC 6 and ArviZ 1.x once those landed on PyPI. The lockfile recorded the change but no human review caught it. Pin floors at the known-good *current* version after every dep work session — the floor is documentation of "I tested against this", not just a minimum. No upper caps on a library going to PyPI (causes downstream resolution headaches); instead lean on notebook-CI to catch the next major bump fast.
+- **Tests-green isn't notebooks-green.** The integration tests in `test_model.py` use `chains=1` (single-process) and don't probe `idata.groups()`, so they sailed past both today's bugs. Argues for executing notebooks in CI sooner rather than later — see the "Not yet done" item, which just earned a sharp justification.
+- **macOS + Jupyter + `pm.sample` parallel mode** can die with a bare `EOFError` from the multiprocessing pipe — a worker dies during `"spawn"` startup and the parent just sees a closed pipe with no traceback. Diagnostic: re-run with `cores=1`. If that succeeds, the model is fine; if it fails, you get the real error. Didn't root-cause today (the synthetic-data fit takes 4 seconds with `cores=1`, so it's not pressing) — see new parking-lot item under "Future directions".
 
 ## Useful commands
 
