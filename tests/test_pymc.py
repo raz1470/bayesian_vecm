@@ -16,7 +16,6 @@ import pytest
 from bayesian_vecm._design import cointegration_design
 from bayesian_vecm._pymc import build_pymc_model
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -154,9 +153,7 @@ class TestPriors:
         assert isinstance(model, pm.Model)
 
     def test_empty_dict_uses_defaults(self, design_k1):
-        model = build_pymc_model(
-            design_k1, k_ar_diff=1, coint_rank=1, deterministic="n", priors={}
-        )
+        model = build_pymc_model(design_k1, k_ar_diff=1, coint_rank=1, deterministic="n", priors={})
         assert isinstance(model, pm.Model)
 
     def test_user_alpha_override(self, design_k1):

@@ -236,10 +236,7 @@ def build_pymc_model(
         # mu_t = alpha beta' y_{t-1} + Gamma Delta_x_t, in matrix form:
         #   (T_eff, K) @ (K, r) @ (r, K) + (T_eff, Kk) @ (Kk, K) -> (T_eff, K)
         ec_term = pm.math.dot(pm.math.dot(y_lag1, beta), alpha.T)
-        if k_ar_diff > 0:
-            mu = ec_term + pm.math.dot(delta_x, gamma.T)
-        else:
-            mu = ec_term
+        mu = ec_term + pm.math.dot(delta_x, gamma.T) if k_ar_diff > 0 else ec_term
 
         # --- Likelihood: row-wise MvNormal with shared Sigma ----------------
         # Using chol directly (rather than cov=Sigma) avoids redundant

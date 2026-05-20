@@ -75,9 +75,7 @@ _VALID_DETERMINISTIC = frozenset({"n", "co", "ci", "lo", "li"})
 # conditionally when ``k_ar_diff > 0``.
 _SUMMARY_VAR_NAMES_BASE = ("alpha", "beta", "Sigma")
 
-_NOT_FITTED_MSG = (
-    "BayesianVECM has not been fitted yet; call .fit(endog) first."
-)
+_NOT_FITTED_MSG = "BayesianVECM has not been fitted yet; call .fit(endog) first."
 
 
 class BayesianVECM:

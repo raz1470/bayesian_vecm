@@ -292,6 +292,7 @@ def test_summary_accepts_var_names_override(fitted_model: BayesianVECM) -> None:
 
 def test_dataframe_input_captures_variable_names() -> None:
     """Column labels round-trip into ``variable_names_`` when endog is a DataFrame-like."""
+
     # Use a minimal DataFrame-like duck type — avoids forcing pandas as a test dep.
     class _FakeDF:
         def __init__(self, arr: np.ndarray, columns: list[str]) -> None:
