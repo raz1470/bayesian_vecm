@@ -14,7 +14,7 @@ name = "bayesian_vecm"
 version = "0.0.1"
 description = "Bayesian Vector Error Correction Models in Python"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { file = "LICENSE" }
 authors = [
     { name = "Ryan O'Sullivan", email = "raz1470@hotmail.co.uk" },
@@ -29,7 +29,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
@@ -39,7 +38,9 @@ classifiers = [
 # Runtime dependencies. Add libraries as the code grows; pymc/arviz come later
 # once we start wiring up the Bayesian model itself.
 dependencies = [
+    "arviz>=1.1",
     "numpy>=1.26",
+    "pymc>=6.0",
 ]
 
 # Optional dependency groups. Users install these with `pip install bayesian_vecm[dev]`.
@@ -68,7 +69,7 @@ packages = ["src/bayesian_vecm"]
 # ---------------------------------------------------------------------------
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 src = ["src", "tests"]
 
 [tool.ruff.lint]

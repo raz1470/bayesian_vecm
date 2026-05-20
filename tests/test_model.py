@@ -1,22 +1,21 @@
-"""Tests for the ``BayesianVECM`` skeleton.
+"""Tests for the ``BayesianVECM`` class.
 
-This is a stub class — ``fit``, ``idata``, ``summary``, and
-``sample_posterior_predictive`` all raise :class:`NotImplementedError` in v0.
-What we *can* test, and do, is:
+Two layers of testing live here:
 
-1. The configuration stored in ``__init__`` round-trips correctly for defaults
-   and for every supported deterministic code.
-2. Invalid configuration is rejected at construction time, not silently
-   deferred — fail fast on typos and shape mistakes.
-3. The estimation methods do in fact raise ``NotImplementedError`` (so the
-   class is honest about what's not implemented yet, and so coverage's
-   ``raise NotImplementedError`` exclusion stays accurate).
-4. ``BayesianVECM`` is re-exported from the package root, since the target
-   API in ``NOTES.md`` is ``from bayesian_vecm import BayesianVECM``.
+1. **Construction + validation** — fast tests covering defaults, every
+   deterministic code, eager rejection of bad config. These predate any
+   PyMC code and are unchanged by the first-PyMC-model slice.
+2. **Estimation** — ``fit`` is now live for ``coint_rank=1`` +
+   ``deterministic="n"``. The integration test at the bottom of the file
+   actually samples (briefly) so we exercise the full validate → design
+   → build → sample → store-state pipeline, plus the not-yet-fitted error
+   paths on ``idata`` and ``summary``. ``sample_posterior_predictive``
+   stays a stub — forecasting is its own follow-up slice.
 """
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 import bayesian_vecm
@@ -136,27 +135,184 @@ def test_empty_dict_priors_is_accepted() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Estimation methods are honest stubs
+# Pre-fit error paths
 # ---------------------------------------------------------------------------
-def test_fit_raises_not_implemented() -> None:
+def test_idata_before_fit_raises_runtime_error() -> None:
+    """Accessing ``idata`` before ``fit`` should fail loudly, not return ``None``."""
     model = BayesianVECM()
-    with pytest.raises(NotImplementedError, match="fit is not implemented"):
-        model.fit(endog=None)
-
-
-def test_idata_property_raises_not_implemented() -> None:
-    model = BayesianVECM()
-    with pytest.raises(NotImplementedError, match="idata is not implemented"):
+    with pytest.raises(RuntimeError, match="has not been fitted yet"):
         _ = model.idata
 
 
-def test_summary_raises_not_implemented() -> None:
+def test_summary_before_fit_raises_runtime_error() -> None:
     model = BayesianVECM()
-    with pytest.raises(NotImplementedError, match="summary is not implemented"):
+    with pytest.raises(RuntimeError, match="has not been fitted yet"):
         model.summary()
 
 
 def test_sample_posterior_predictive_raises_not_implemented() -> None:
+    """Forecasting is deferred to its own follow-up slice."""
     model = BayesianVECM()
-    with pytest.raises(NotImplementedError, match="sample_posterior_predictive is not implemented"):
+    with pytest.raises(NotImplementedError, match="sample_posterior_predictive"):
         model.sample_posterior_predictive(steps=12)
+
+
+# ---------------------------------------------------------------------------
+# v0 scope guards on ``fit``
+# ---------------------------------------------------------------------------
+def test_fit_with_coint_rank_above_one_raises_not_implemented() -> None:
+    """The PyMC graph only supports r=1 in v0 — fit should fail loudly."""
+    rng = np.random.default_rng(0)
+    endog = rng.normal(size=(40, 2)).cumsum(axis=0)
+    model = BayesianVECM(coint_rank=2)
+    with pytest.raises(NotImplementedError, match="coint_rank=2"):
+        model.fit(endog, draws=5, tune=5, chains=1, progressbar=False)
+
+
+def test_fit_with_non_n_deterministic_raises_not_implemented() -> None:
+    rng = np.random.default_rng(0)
+    endog = rng.normal(size=(40, 2)).cumsum(axis=0)
+    model = BayesianVECM(deterministic="ci")
+    with pytest.raises(NotImplementedError, match="deterministic="):
+        model.fit(endog, draws=5, tune=5, chains=1, progressbar=False)
+
+
+# ---------------------------------------------------------------------------
+# Integration test — actually sample
+# ---------------------------------------------------------------------------
+# These run pm.sample, so they're slower than the rest of the suite (PyTensor
+# compilation dominates). Kept to a minimum and configured for speed: small
+# T, K=2, 1 chain, tiny draws/tune. We're checking the plumbing end-to-end,
+# not posterior quality.
+
+
+def _tiny_cointegrated_series(n_obs: int = 60, seed: int = 0) -> np.ndarray:
+    rng = np.random.default_rng(seed=seed)
+    y = np.zeros((n_obs, 2))
+    y[0] = rng.normal(size=2)
+    for t in range(1, n_obs):
+        ec = y[t - 1, 0] - 0.5 * y[t - 1, 1]
+        y[t, 0] = y[t - 1, 0] - 0.4 * ec + rng.normal(scale=0.5)
+        y[t, 1] = y[t - 1, 1] + 0.2 * ec + rng.normal(scale=0.5)
+    return y
+
+
+@pytest.fixture(scope="module")
+def fitted_model() -> BayesianVECM:
+    """A model fitted once and shared across the integration tests below.
+
+    Module-scoped so we pay the PyTensor compile cost once. Tiny sample
+    config: this is a smoke test of the plumbing, not a stats check.
+    """
+    model = BayesianVECM(k_ar_diff=1, coint_rank=1, deterministic="n")
+    model.fit(
+        _tiny_cointegrated_series(),
+        draws=20,
+        tune=20,
+        chains=1,
+        progressbar=False,
+        random_seed=0,
+        compute_convergence_checks=False,
+    )
+    return model
+
+
+def test_fit_returns_self_for_chaining(fitted_model: BayesianVECM) -> None:
+    """``fit`` returns ``self`` so ``model.fit(...).summary()`` works."""
+    # The fixture has already fitted; we just check the type.
+    assert isinstance(fitted_model, BayesianVECM)
+
+
+def test_fit_sets_trailing_underscore_attributes(fitted_model: BayesianVECM) -> None:
+    assert hasattr(fitted_model, "endog_")
+    assert hasattr(fitted_model, "idata_")
+    assert hasattr(fitted_model, "variable_names_")
+    # ndarray-like attributes
+    assert fitted_model.endog_.shape == (60, 2)
+    # variable_names_ is None for raw ndarray input (no .columns)
+    assert fitted_model.variable_names_ is None
+
+
+def test_fit_stores_endog_in_idata_constant_data(fitted_model: BayesianVECM) -> None:
+    """A serialised idata must be self-contained — endog stashed inside it."""
+    assert "endog" in fitted_model.idata_.constant_data
+    np.testing.assert_array_equal(
+        fitted_model.idata_.constant_data["endog"].values,
+        fitted_model.endog_,
+    )
+
+
+def test_idata_property_returns_inference_data(fitted_model: BayesianVECM) -> None:
+    import arviz as az
+
+    assert isinstance(fitted_model.idata, az.InferenceData)
+    # Headline groups must be present.
+    assert "posterior" in fitted_model.idata
+    assert "constant_data" in fitted_model.idata
+
+
+def test_posterior_has_expected_variable_names(fitted_model: BayesianVECM) -> None:
+    posterior_vars = set(fitted_model.idata.posterior.data_vars)
+    # Free parameters
+    assert "alpha" in posterior_vars
+    assert "beta_free" in posterior_vars
+    assert "Gamma" in posterior_vars
+    # Deterministics
+    assert "beta" in posterior_vars
+    assert "Sigma" in posterior_vars
+
+
+def test_beta_first_entry_is_one_in_every_posterior_draw(fitted_model: BayesianVECM) -> None:
+    """The identification normalisation: β[0, 0] = 1 in every draw, every chain."""
+    beta = fitted_model.idata.posterior["beta"].values
+    # Shape: (chain, draw, K, r). For our config: (1, 20, 2, 1).
+    assert beta.shape == (1, 20, 2, 1)
+    np.testing.assert_array_equal(beta[..., 0, 0], 1.0)
+
+
+def test_summary_returns_dataframe_with_expected_rows(fitted_model: BayesianVECM) -> None:
+    summary = fitted_model.summary()
+    # Each row is a scalar parameter; for K=2, r=1, k_ar_diff=1 we expect:
+    #   alpha (K*r = 2), beta (K*r = 2), Gamma (K*K*k = 4), Sigma (K*K = 4)
+    # = 12 rows total. We test the row labels rather than counts to avoid
+    # tying the test to ArviZ's exact indexing format.
+    index_strs = [str(i) for i in summary.index]
+    assert any(s.startswith("alpha") for s in index_strs)
+    assert any(s.startswith("beta") for s in index_strs)
+    assert any(s.startswith("Gamma") for s in index_strs)
+    assert any(s.startswith("Sigma") for s in index_strs)
+
+
+def test_summary_accepts_var_names_override(fitted_model: BayesianVECM) -> None:
+    """User can request a subset of parameters."""
+    summary = fitted_model.summary(var_names=["alpha"])
+    index_strs = [str(i) for i in summary.index]
+    assert all(s.startswith("alpha") for s in index_strs)
+
+
+def test_dataframe_input_captures_variable_names() -> None:
+    """Column labels round-trip into ``variable_names_`` when endog is a DataFrame-like."""
+
+    # Use a minimal DataFrame-like duck type — avoids forcing pandas as a test dep.
+    class _FakeDF:
+        def __init__(self, arr: np.ndarray, columns: list[str]) -> None:
+            self._arr = arr
+            self.columns = columns
+
+        def to_numpy(self) -> np.ndarray:
+            return self._arr
+
+    df = _FakeDF(_tiny_cointegrated_series(), columns=["gdp", "cpi"])
+    model = BayesianVECM().fit(
+        df,
+        draws=5,
+        tune=5,
+        chains=1,
+        progressbar=False,
+        random_seed=0,
+        compute_convergence_checks=False,
+    )
+    assert model.variable_names_ == ["gdp", "cpi"]
+    # And the names land in idata.constant_data["endog"]'s "variable" coord.
+    coord = model.idata.constant_data["endog"].coords["variable"].values.tolist()
+    assert coord == ["gdp", "cpi"]
