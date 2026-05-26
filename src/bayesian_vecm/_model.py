@@ -59,6 +59,7 @@ from __future__ import annotations
 from typing import Any
 
 import arviz as az
+import numpy as np
 import pymc as pm
 import xarray as xr
 
@@ -344,34 +345,75 @@ class BayesianVECM:
 
         return az.summary(self.idata_, **summary_kwargs)
 
-    def sample_posterior_predictive(self, steps: int) -> Any:
+    def sample_posterior_predictive(
+        self,
+        steps: int,
+        *,
+        random_seed: int | None = None,
+    ) -> xr.DataTree:
         """Forecast ``steps`` periods ahead from the fitted posterior.
 
-        Uses the last :math:`k\\_ar\\_diff + 1` rows of ``self.endog_`` to
-        seed the recursion, propagating posterior uncertainty in
-        :math:`\\alpha, \\beta, \\Gamma_i, \\Sigma` through to the forecast
-        distribution.
+        Rolls the VECM recursion forward in levels:
+
+        .. math::
+
+            \\Delta y_{T+h} = \\alpha \\beta' y_{T+h-1}
+                             + \\sum_{i=1}^{k} \\Gamma_i \\, \\Delta y_{T+h-i}
+                             + \\varepsilon_{T+h},
+                             \\quad \\varepsilon_{T+h} \\sim \\mathcal{N}(0, \\Sigma)
+
+            y_{T+h} = y_{T+h-1} + \\Delta y_{T+h}
+
+        for :math:`h = 1, \\dots, \\text{steps}`. The last
+        :math:`k_{\\text{ar\\_diff}} + 1` rows of ``self.endog_`` seed the
+        window. Posterior uncertainty in :math:`\\alpha, \\beta, \\Gamma,
+        \\Sigma` is propagated through the recursion: a separate innovation is
+        drawn at each step for each posterior draw, so forecast uncertainty
+        widens correctly with the horizon.
 
         Parameters
         ----------
         steps
             Number of periods to forecast. Must be at least ``1``.
+        random_seed
+            Seed for the NumPy random generator used to draw innovations.
+            Pass an integer for reproducible forecasts; ``None`` (the
+            default) gives a fresh unseeded generator.
 
         Returns
         -------
-        arviz.InferenceData
-            A new ``InferenceData`` whose ``posterior_predictive`` group
-            holds the forecast draws.
+        xarray.DataTree
+            A DataTree whose ``posterior_predictive`` child node
+            contains:
+
+            * ``y`` — forecast levels, shape
+              ``(chain, draw, steps, K)``.
+            * ``delta_y`` — forecast first differences, same shape.
+
+            Both arrays carry a ``forecast_step`` coordinate running from
+            ``1`` to ``steps``, and a ``variable`` coordinate if
+            ``self.variable_names_`` is set.
 
         Raises
         ------
-        NotImplementedError
-            Always in v0 — see :meth:`fit`.
+        RuntimeError
+            If :meth:`fit` has not been called.
+        ValueError
+            If ``steps`` is less than ``1``.
         """
-        raise NotImplementedError(
-            "BayesianVECM.sample_posterior_predictive is not implemented yet — "
-            "deferred to its own follow-up slice. The first-PyMC-model slice "
-            "shipped fit, idata and summary; forecasting is meaningfully its "
-            "own design problem (drawing innovations from Σ, rolling the "
-            "VAR recursion forward) and is the next thing on the roadmap."
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+        if steps < 1:
+            raise ValueError(f"steps must be at least 1; got steps={steps}")
+
+        from bayesian_vecm._forecast import forecast_posterior
+
+        rng = np.random.default_rng(random_seed)
+        return forecast_posterior(
+            idata=self.idata_,
+            endog=self.endog_,
+            k_ar_diff=self.k_ar_diff,
+            steps=steps,
+            variable_names=self.variable_names_,
+            rng=rng,
         )
