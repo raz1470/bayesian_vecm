@@ -150,11 +150,23 @@ def test_summary_before_fit_raises_runtime_error() -> None:
         model.summary()
 
 
-def test_sample_posterior_predictive_raises_not_implemented() -> None:
-    """Forecasting is deferred to its own follow-up slice."""
+def test_sample_posterior_predictive_before_fit_raises_runtime_error() -> None:
+    """Calling sample_posterior_predictive before fit must fail loudly."""
     model = BayesianVECM()
-    with pytest.raises(NotImplementedError, match="sample_posterior_predictive"):
-        model.sample_posterior_predictive(steps=12)
+    with pytest.raises(RuntimeError, match="has not been fitted yet"):
+        model.sample_posterior_predictive(steps=4)
+
+
+@pytest.mark.parametrize("bad_steps", [0, -1, -10])
+def test_sample_posterior_predictive_non_positive_steps_raises_value_error(
+    bad_steps: int,
+) -> None:
+    """steps < 1 has no meaning; reject it eagerly."""
+    model = BayesianVECM()
+    # Patch the fitted-state sentinel so we reach the steps check.
+    model.idata_ = object()  # type: ignore[assignment]
+    with pytest.raises(ValueError, match="steps must be at least 1"):
+        model.sample_posterior_predictive(steps=bad_steps)
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +302,99 @@ def test_summary_accepts_var_names_override(fitted_model: BayesianVECM) -> None:
     assert all(s.startswith("alpha") for s in index_strs)
 
 
+# ---------------------------------------------------------------------------
+# Integration tests — sample_posterior_predictive
+# ---------------------------------------------------------------------------
+# These reuse the module-scoped fitted_model fixture so we don't pay the
+# PyTensor compile cost again. Forecasting is NumPy-only, so these are fast
+# once the fixture is warm.
+
+_FORECAST_STEPS = 8
+
+
+@pytest.fixture(scope="module")
+def forecast_idata(fitted_model: BayesianVECM) -> object:
+    """Shared forecast InferenceData produced from the module-level fitted_model."""
+    return fitted_model.sample_posterior_predictive(steps=_FORECAST_STEPS, random_seed=42)
+
+
+def test_sample_posterior_predictive_returns_datatree(
+    forecast_idata: object,
+) -> None:
+    import xarray as xr
+
+    assert isinstance(forecast_idata, xr.DataTree)
+
+
+def test_sample_posterior_predictive_has_posterior_predictive_group(
+    forecast_idata: object,
+) -> None:
+    # DataTree child nodes are checked via "name" in tree
+    assert "posterior_predictive" in forecast_idata.children
+
+
+def test_sample_posterior_predictive_y_shape(
+    fitted_model: BayesianVECM,
+    forecast_idata: object,
+) -> None:
+    """y must have shape (chain, draw, steps, K)."""
+    y = forecast_idata.posterior_predictive["y"]
+    n_chains = fitted_model.idata_.posterior.dims["chain"]
+    n_draws = fitted_model.idata_.posterior.dims["draw"]
+    n_vars = fitted_model.endog_.shape[1]
+    assert y.shape == (n_chains, n_draws, _FORECAST_STEPS, n_vars)
+
+
+def test_sample_posterior_predictive_delta_y_shape(
+    fitted_model: BayesianVECM,
+    forecast_idata: object,
+) -> None:
+    """delta_y must have the same shape as y."""
+    y = forecast_idata.posterior_predictive["y"]
+    dy = forecast_idata.posterior_predictive["delta_y"]
+    assert dy.shape == y.shape
+
+
+def test_sample_posterior_predictive_forecast_step_coord(
+    forecast_idata: object,
+) -> None:
+    """forecast_step coordinate runs 1 … steps."""
+    coords = forecast_idata.posterior_predictive.coords["forecast_step"].values
+    np.testing.assert_array_equal(coords, np.arange(1, _FORECAST_STEPS + 1))
+
+
+def test_sample_posterior_predictive_y_values_are_finite(
+    forecast_idata: object,
+) -> None:
+    """No NaN or Inf in the forecast — a sign of numerical blow-up."""
+    y = forecast_idata.posterior_predictive["y"].values
+    assert np.all(np.isfinite(y))
+
+
+def test_sample_posterior_predictive_random_seed_reproducible(
+    fitted_model: BayesianVECM,
+) -> None:
+    """The same seed should produce bit-identical forecast draws."""
+    idata_a = fitted_model.sample_posterior_predictive(steps=5, random_seed=7)
+    idata_b = fitted_model.sample_posterior_predictive(steps=5, random_seed=7)
+    np.testing.assert_array_equal(
+        idata_a.posterior_predictive["y"].values,
+        idata_b.posterior_predictive["y"].values,
+    )
+
+
+def test_sample_posterior_predictive_different_seeds_differ(
+    fitted_model: BayesianVECM,
+) -> None:
+    """Two different seeds should give different draws (with overwhelming probability)."""
+    idata_a = fitted_model.sample_posterior_predictive(steps=5, random_seed=1)
+    idata_b = fitted_model.sample_posterior_predictive(steps=5, random_seed=2)
+    assert not np.array_equal(
+        idata_a.posterior_predictive["y"].values,
+        idata_b.posterior_predictive["y"].values,
+    )
+
+
 def test_dataframe_input_captures_variable_names() -> None:
     """Column labels round-trip into ``variable_names_`` when endog is a DataFrame-like."""
 
@@ -316,3 +421,29 @@ def test_dataframe_input_captures_variable_names() -> None:
     # And the names land in idata.constant_data["endog"]'s "variable" coord.
     coord = model.idata.constant_data["endog"].coords["variable"].values.tolist()
     assert coord == ["gdp", "cpi"]
+
+
+def test_sample_posterior_predictive_variable_names_in_coords() -> None:
+    """When the model was fit on named data, the names land in the forecast coords."""
+
+    class _FakeDF:
+        def __init__(self, arr: np.ndarray, columns: list[str]) -> None:
+            self._arr = arr
+            self.columns = columns
+
+        def to_numpy(self) -> np.ndarray:
+            return self._arr
+
+    df = _FakeDF(_tiny_cointegrated_series(), columns=["gdp", "cpi"])
+    model = BayesianVECM().fit(
+        df,
+        draws=5,
+        tune=5,
+        chains=1,
+        progressbar=False,
+        random_seed=0,
+        compute_convergence_checks=False,
+    )
+    pp = model.sample_posterior_predictive(steps=3, random_seed=0)
+    variable_coord = pp.posterior_predictive.coords["variable"].values.tolist()
+    assert variable_coord == ["gdp", "cpi"]

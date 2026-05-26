@@ -114,9 +114,17 @@ A `uv sync` between sessions crossed two major version boundaries: PyMC 5 → 6 
 - `pyproject.toml`: floors bumped to the now-known-good versions — `pymc>=6.0`, `arviz>=1.1`. No upper caps (standard practice for libraries heading to PyPI).
 - **Min Python bumped 3.11 → 3.12.** ArviZ 1.x requires `>=3.12`; reflected in `requires-python`, classifiers, and the CI matrix (now `["3.12"]` only).
 
+**Update 2026-05-26 — `sample_posterior_predictive` shipped** (branch `feat/posterior-predictive`):
+
+- **`BayesianVECM.sample_posterior_predictive(steps, *, random_seed)` is live.** Rolls the VAR recursion forward `steps` periods for every posterior draw simultaneously. New private module `src/bayesian_vecm/_forecast.py` owns the logic: `forecast_posterior(idata, endog, k_ar_diff, steps, variable_names, rng)`.
+- **Implementation:** NumPy-only (no PyTensor). The (chain × draw) dimension is fully vectorised with einsum; only a single Python loop over forecast steps is needed. Innovations drawn from the posterior Cholesky of Σ, pre-computed once. Returns an `xr.DataTree` with a `posterior_predictive` child node holding `y` (levels) and `delta_y` (differences), both shape `(chain, draw, steps, K)`, with `forecast_step` coord (1…steps) and `variable` coord if column names were provided at fit time.
+- **ArviZ 1.x note:** `az.InferenceData(group=ds)` constructor kwargs are gone — `az.InferenceData` is now just an alias for `xr.DataTree`. Use `xr.DataTree.from_dict({"group_name": ds})` to construct a new InferenceData-equivalent.
+- **Tests:** 9 new tests in `test_model.py` covering pre-fit RuntimeError, bad-steps ValueError, return type, shape, finite values, `forecast_step` coord, seed reproducibility, and variable names in coords. Total test count: 150 (was 141).
+- **Notebook 05** added: `notebooks/05_posterior_predictive_walkthrough.ipynb`. Same DGP as nb04, T=100 split 80/20, fan chart with 80%/94% HDI bands and held-out actuals overlaid, band-width table showing uncertainty compounding, coverage check, and error-correction term plot. Includes a `FAST_SAMPLING` flag (draws=200/tune=200/chains=2 when True) so `nbconvert --execute` finishes in under 2 minutes.
+- **`matplotlib` added as a dev dependency** (`uv add --dev matplotlib`) — required by notebook 05; not a runtime dep of the package itself.
+
 **Not yet done:**
 
-- **`sample_posterior_predictive`.** Still raises `NotImplementedError`. Forecasting through the VAR recursion (seed from `self.endog_[-(k_ar_diff + 1):]`, draw ε from posterior Σ, roll forward N steps) is meaningfully its own design problem and is the next slice — see "Next slice" below.
 - **Higher cointegration rank (`r > 1`).** The free β block becomes `(K - r) × r`; the graph already factors this out but the v0 scope guard rejects `r != 1`. Need to also decide how to surface rank uncertainty (model averaging across separate fits is the plan, per notebook 03 §2).
 - **Deterministic terms in the graph.** `cointegration_design` already produces augmented design matrices for `co`, `ci`, `lo`, `li`; the PyMC graph just needs to grow a coefficient block for them. v0 scope guard currently rejects anything other than `"n"`.
 - **`_VALID_DETERMINISTIC` duplication** — still present in `_model.py` and now also as `VALID_DETERMINISTIC` in `_design.py`. Consolidate into a shared private constant (`src/bayesian_vecm/_constants.py`). Small cleanup, not blocking; same as Option 2 in the previous notes.
@@ -136,27 +144,13 @@ git push -u origin feat/<slice-name>
 git switch main && git pull && git branch -d feat/<slice-name>
 ```
 
+**Cowork / Claude session rule:** The very first thing to do after reading this file is to confirm which branch is active (`cat .git/HEAD`) and create a feature branch if on `main` — before touching any source files. Do not write code directly on `main`; the branch guard will reject the push and the working-tree changes will be stranded on the wrong branch.
+
 ## Next slice — pick from these
 
-All three previous candidates have now shipped: deterministic-terms (PR #5), `BayesianVECM` skeleton (PR #6), and first PyMC model (this branch). The remaining roadmap items split into "extend the estimator" and "infrastructure cleanups". **Recommended starting point: option 1** — forecasting closes the loop on the original target API at the top of this file and is the most user-visible next step.
+Both `sample_posterior_predictive` and notebook 05 shipped on 2026-05-26 (PR `feat/posterior-predictive`), completing the original target API and its teaching layer. **Recommended starting point: option 1** — widening the graph to the full v0 envelope is the highest-value next estimator step.
 
-### Option 1 (recommended) — `sample_posterior_predictive` (forecasting)
-
-**Branch:** `feat/posterior-predictive`
-
-**Goal.** Implement the last `NotImplementedError` on `BayesianVECM`. Roll the VAR recursion forward `steps` periods from the end of `self.endog_`, drawing innovations from posterior `Σ` so forecast uncertainty propagates correctly.
-
-**Where it plugs in.** `BayesianVECM.sample_posterior_predictive(steps)` should:
-
-1. Pull the last `k_ar_diff + 1` rows of `self.endog_` (also available via `idata_.constant_data["endog"]`) to seed the recursion.
-2. For each posterior draw of `(α, β, Γ, Σ)`, compute `Δy_{T+h}`, draw `ε ~ MvN(0, Σ)`, integrate to get `y_{T+h}`, slide the window, repeat for `h = 1, …, steps`.
-3. Return a fresh `arviz.InferenceData` with a `posterior_predictive` group holding `y` of shape `(chain, draw, steps, K)`.
-
-**Design questions to settle.** Vectorise via PyTensor (the natural PyMC idiom) vs. loop in NumPy (simpler to read, slower)? Return levels `y` only, or also `Δy`? Carry `variable_names_` onto the output dims (yes — same convention as `endog` in `constant_data`).
-
-**Walkthrough notebook 05:** fit on notebook-04's synthetic series, forecast 20 periods ahead, plot the fan chart (median + 80%/94% HDI bands), compare against held-out DGP draws. Headline visual is "uncertainty propagation through the recursion".
-
-### Option 2 — Expand the PyMC graph to the v0 envelope
+### Option 1 (recommended) — Expand the PyMC graph to the v0 envelope
 
 **Branch:** `feat/wider-graph`
 
@@ -255,6 +249,16 @@ Lessons from the dep-drift firefight:
 - **Open lower bounds + `uv sync` = silent major-version drift.** `pymc>=5.28.5` and `arviz>=0.23.4` happily resolved to PyMC 6 and ArviZ 1.x once those landed on PyPI. The lockfile recorded the change but no human review caught it. Pin floors at the known-good *current* version after every dep work session — the floor is documentation of "I tested against this", not just a minimum. No upper caps on a library going to PyPI (causes downstream resolution headaches); instead lean on notebook-CI to catch the next major bump fast.
 - **Tests-green isn't notebooks-green.** The integration tests in `test_model.py` use `chains=1` (single-process) and don't probe `idata.groups()`, so they sailed past both today's bugs. Argues for executing notebooks in CI sooner rather than later — see the "Not yet done" item, which just earned a sharp justification.
 - **macOS + Jupyter + `pm.sample` parallel mode** can die with a bare `EOFError` from the multiprocessing pipe — a worker dies during `"spawn"` startup and the parent just sees a closed pipe with no traceback. Diagnostic: re-run with `cores=1`. If that succeeds, the model is fine; if it fails, you get the real error. Didn't root-cause today (the synthetic-data fit takes 4 seconds with `cores=1`, so it's not pressing) — see new parking-lot item under "Future directions".
+
+## Session learnings (2026-05-26)
+
+Lessons from the `sample_posterior_predictive` + notebook 05 session:
+
+- **ArviZ 1.x dropped the `InferenceData(**group_kwargs)` constructor.** `az.InferenceData` is now a deprecated alias for `xr.DataTree`. Constructing a new InferenceData-equivalent with a named group requires `xr.DataTree.from_dict({"group_name": ds})` — the old `az.InferenceData(posterior_predictive=ds)` pattern raises `TypeError: DataTree.__init__() got an unexpected keyword argument`.
+- **`replace_all=True` on a quoted string also replaces string literals.** When using a bulk find-and-replace to remove quotes from type annotations (UP037), double-check that the target string doesn't also appear as a value in `hasattr(obj, "ClassName")` or `"ClassName" in __all__` — those need to stay quoted. The safe approach is to fix UP037 violations one at a time or run `uv run ruff check --fix .` to let ruff do it.
+- **`matplotlib` is not a transitive dependency of PyMC/ArviZ in the venv.** Even though PyMC's full install pulls it in on many systems, `uv sync` only installs what's explicitly declared. Any notebook that uses `matplotlib` needs `uv add --dev matplotlib` — otherwise nbconvert fails immediately with `ModuleNotFoundError`.
+- **`nbconvert --execute` kernel startup takes 30–60 seconds.** The asyncio selector is waiting for the kernel process to finish importing PyMC/ArviZ before it responds. Do not Ctrl+C during this phase — it looks stuck but isn't. If execution genuinely hangs beyond ~2 minutes on a tiny notebook, check that the kernelspec is registered: `uv run python -m ipykernel install --sys-prefix`.
+- **Add a `FAST_SAMPLING` flag to every notebook that calls `pm.sample`.** Default to `True` (small draws/tune) so nbconvert and CI finish in a reasonable time; set to `False` for publication-quality runs. Document the flag at the top of the sampling config cell.
 
 ## Useful commands
 
