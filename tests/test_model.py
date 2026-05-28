@@ -20,7 +20,7 @@ import pytest
 
 import bayesian_vecm
 from bayesian_vecm import BayesianVECM
-from bayesian_vecm._model import _VALID_DETERMINISTIC
+from bayesian_vecm._constants import VALID_DETERMINISTIC as _VALID_DETERMINISTIC
 
 
 # ---------------------------------------------------------------------------

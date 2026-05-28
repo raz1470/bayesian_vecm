@@ -63,14 +63,10 @@ import numpy as np
 import pymc as pm
 import xarray as xr
 
+from bayesian_vecm._constants import VALID_DETERMINISTIC
 from bayesian_vecm._data import validate_endog
 from bayesian_vecm._design import cointegration_design
 from bayesian_vecm._pymc import build_pymc_model
-
-# Valid deterministic-term codes for v0. Mirrors the set accepted by
-# ``cointegration_design``. Compound Johansen codes (cases 4 and 5) are
-# deferred to a follow-up.
-_VALID_DETERMINISTIC = frozenset({"n", "co", "ci", "lo", "li"})
 
 # Default headline parameters shown by ``summary()``. ``Gamma`` is added
 # conditionally when ``k_ar_diff > 0``.
@@ -181,8 +177,8 @@ class BayesianVECM:
         if coint_rank < 1:
             raise ValueError(f"coint_rank must be at least 1; got coint_rank={coint_rank}")
 
-        if deterministic not in _VALID_DETERMINISTIC:
-            valid = sorted(_VALID_DETERMINISTIC)
+        if deterministic not in VALID_DETERMINISTIC:
+            valid = sorted(VALID_DETERMINISTIC)
             raise ValueError(
                 f"deterministic must be one of {valid}; got deterministic={deterministic!r}. "
                 "Compound Johansen codes (cases 4 and 5) are a v0.x follow-up."
