@@ -41,20 +41,8 @@ from typing import Any, NamedTuple
 import numpy as np
 from numpy.typing import NDArray
 
+from bayesian_vecm._constants import VALID_DETERMINISTIC
 from bayesian_vecm._data import difference, lag_matrix, validate_endog
-
-#: Single-character ``deterministic`` codes accepted in v0.
-#:
-#: * ``"n"``  — no deterministic terms (default).
-#: * ``"co"`` — constant *outside* the cointegration relation; appended as a
-#:   column to ``delta_x``.
-#: * ``"ci"`` — constant *inside* the cointegration relation; appended as a
-#:   column to ``y_lag1``.
-#: * ``"lo"`` — linear trend *outside* the cointegration relation; appended as
-#:   a column to ``delta_x``.
-#: * ``"li"`` — linear trend *inside* the cointegration relation; appended as
-#:   a column to ``y_lag1``.
-VALID_DETERMINISTIC: tuple[str, ...] = ("n", "co", "ci", "lo", "li")
 
 
 class CointegrationDesign(NamedTuple):
@@ -135,16 +123,16 @@ def cointegration_design(
         # they've mistyped a code or hit the (intentional) v0 gap on compound
         # cases like "colo" / "cili" — Johansen cases 4 and 5 — which are a
         # planned follow-up.
+        _valid_sorted = sorted(VALID_DETERMINISTIC)
         if _looks_like_compound_code(deterministic):
             raise ValueError(
                 f"deterministic={deterministic!r} looks like a compound code. "
                 "Compound deterministic cases (Johansen cases 4 and 5, e.g. "
                 "'colo', 'cili') are a planned follow-up; v0 supports only "
-                f"single codes {VALID_DETERMINISTIC}."
+                f"single codes {_valid_sorted}."
             )
         raise ValueError(
-            f"deterministic must be one of {VALID_DETERMINISTIC}; "
-            f"got deterministic={deterministic!r}."
+            f"deterministic must be one of {_valid_sorted}; got deterministic={deterministic!r}."
         )
 
     # Clean and shape-check the data first with the default min_obs=2. The
