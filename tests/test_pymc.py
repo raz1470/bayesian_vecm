@@ -33,6 +33,24 @@ def _synthetic_cointegrated(n_obs: int = 80, seed: int = 42) -> np.ndarray:
     return y
 
 
+def _synthetic_trivariate_r2(n_obs: int = 100, seed: int = 7) -> np.ndarray:
+    """Trivariate series with cointegration rank 2.
+
+    Two cointegrating relations: [1, 0, -0.5] and [0, 1, -0.3].
+    The third variable is a random walk that both relations load on.
+    """
+    rng = np.random.default_rng(seed=seed)
+    y = np.zeros((n_obs, 3))
+    y[0] = rng.normal(size=3)
+    for t in range(1, n_obs):
+        ec1 = y[t - 1, 0] - 0.5 * y[t - 1, 2]
+        ec2 = y[t - 1, 1] - 0.3 * y[t - 1, 2]
+        y[t, 0] = y[t - 1, 0] - 0.3 * ec1 + rng.normal(scale=0.5)
+        y[t, 1] = y[t - 1, 1] - 0.3 * ec2 + rng.normal(scale=0.5)
+        y[t, 2] = y[t - 1, 2] + 0.1 * ec1 + 0.1 * ec2 + rng.normal(scale=0.5)
+    return y
+
+
 @pytest.fixture
 def design_k1():
     """Design with k_ar_diff=1 from a small bivariate cointegrated series."""
@@ -43,6 +61,12 @@ def design_k1():
 def design_k0():
     """Design with k_ar_diff=0 — pure error-correction case."""
     return cointegration_design(_synthetic_cointegrated(), k_ar_diff=0)
+
+
+@pytest.fixture
+def design_trivariate_r2():
+    """Trivariate design, k_ar_diff=1, for r=2 tests."""
+    return cointegration_design(_synthetic_trivariate_r2(), k_ar_diff=1)
 
 
 def _build_default(design, *, k_ar_diff=1):
@@ -115,22 +139,8 @@ class TestBuildHappyPath:
 
 
 class TestScopeGuards:
-    def test_coint_rank_other_than_1_raises(self, design_k1):
-        with pytest.raises(NotImplementedError, match="coint_rank=2"):
-            build_pymc_model(
-                design_k1,
-                k_ar_diff=1,
-                coint_rank=2,
-                deterministic="n",
-            )
-
     @pytest.mark.parametrize("code", ["co", "ci", "lo", "li"])
     def test_deterministic_other_than_n_raises(self, design_k1, code):
-        # Note: this test passes a k_ar_diff=1, deterministic='n' design but
-        # asks for a non-'n' code in build_pymc_model. The shape-consistency
-        # checks would fire first if we passed a design with extra columns.
-        # The scope guard runs before the shape checks, so this is fine —
-        # this test pins the guard ordering.
         with pytest.raises(NotImplementedError, match="deterministic="):
             build_pymc_model(
                 design_k1,
@@ -138,6 +148,72 @@ class TestScopeGuards:
                 coint_rank=1,
                 deterministic=code,
             )
+
+
+# ---------------------------------------------------------------------------
+# r > 1: higher cointegration rank
+# ---------------------------------------------------------------------------
+
+
+class TestHigherRank:
+    def test_r2_returns_pm_model(self, design_trivariate_r2):
+        model = build_pymc_model(
+            design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n"
+        )
+        assert isinstance(model, pm.Model)
+
+    def test_r2_named_vars_present(self, design_trivariate_r2):
+        model = build_pymc_model(
+            design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n"
+        )
+        names = set(model.named_vars)
+        assert {"alpha", "beta_free", "beta", "Gamma", "Sigma_chol", "Sigma"} <= names
+
+    def test_r2_beta_shape(self, design_trivariate_r2):
+        """beta should be (K, r) = (3, 2) for a trivariate r=2 model."""
+        model = build_pymc_model(
+            design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n"
+        )
+        with model:
+            value = pm.draw(model.named_vars["beta"], draws=1, random_seed=0)
+        assert value.shape == (3, 2)
+
+    def test_r2_beta_pin_is_identity(self, design_trivariate_r2):
+        """Top r x r block of beta must be I_r in every draw."""
+        model = build_pymc_model(
+            design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n"
+        )
+        with model:
+            value = pm.draw(model.named_vars["beta"], draws=1, random_seed=0)
+        # value shape: (3, 2); top 2x2 block must equal I_2
+        np.testing.assert_array_equal(value[:2, :], np.eye(2))
+
+    def test_r2_beta_free_rows_are_not_pinned(self, design_trivariate_r2):
+        """The free row(s) of beta should vary across draws."""
+        model = build_pymc_model(
+            design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n"
+        )
+        with model:
+            draws = pm.draw(model.named_vars["beta"], draws=50, random_seed=0)
+        # draws shape: (50, 3, 2); row index 2 (the free row) should vary
+        free_row = draws[:, 2, :]
+        assert free_row.std() > 0.0
+
+    def test_r2_alpha_shape(self, design_trivariate_r2):
+        """alpha should be (K, r) = (3, 2)."""
+        model = build_pymc_model(
+            design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n"
+        )
+        with model:
+            value = pm.draw(model.named_vars["alpha"], draws=1, random_seed=0)
+        assert value.shape == (3, 2)
+
+    def test_r1_beta_shape_unchanged(self, design_k1):
+        """Existing r=1 bivariate model: beta still (2, 1)."""
+        model = _build_default(design_k1)
+        with model:
+            value = pm.draw(model.named_vars["beta"], draws=1, random_seed=0)
+        assert value.shape == (2, 1)
 
 
 # ---------------------------------------------------------------------------

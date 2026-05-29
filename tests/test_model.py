@@ -170,17 +170,8 @@ def test_sample_posterior_predictive_non_positive_steps_raises_value_error(
 
 
 # ---------------------------------------------------------------------------
-# v0 scope guards on ``fit``
+# Scope guards on ``fit``
 # ---------------------------------------------------------------------------
-def test_fit_with_coint_rank_above_one_raises_not_implemented() -> None:
-    """The PyMC graph only supports r=1 in v0 — fit should fail loudly."""
-    rng = np.random.default_rng(0)
-    endog = rng.normal(size=(40, 2)).cumsum(axis=0)
-    model = BayesianVECM(coint_rank=2)
-    with pytest.raises(NotImplementedError, match="coint_rank=2"):
-        model.fit(endog, draws=5, tune=5, chains=1, progressbar=False)
-
-
 def test_fit_with_non_n_deterministic_raises_not_implemented() -> None:
     rng = np.random.default_rng(0)
     endog = rng.normal(size=(40, 2)).cumsum(axis=0)
@@ -222,6 +213,7 @@ def fitted_model() -> BayesianVECM:
         draws=20,
         tune=20,
         chains=1,
+        cores=1,
         progressbar=False,
         random_seed=0,
         compute_convergence_checks=False,
@@ -413,6 +405,7 @@ def test_dataframe_input_captures_variable_names() -> None:
         draws=5,
         tune=5,
         chains=1,
+        cores=1,
         progressbar=False,
         random_seed=0,
         compute_convergence_checks=False,
@@ -440,6 +433,7 @@ def test_sample_posterior_predictive_variable_names_in_coords() -> None:
         draws=5,
         tune=5,
         chains=1,
+        cores=1,
         progressbar=False,
         random_seed=0,
         compute_convergence_checks=False,
