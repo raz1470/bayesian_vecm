@@ -157,32 +157,24 @@ class TestScopeGuards:
 
 class TestHigherRank:
     def test_r2_returns_pm_model(self, design_trivariate_r2):
-        model = build_pymc_model(
-            design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n"
-        )
+        model = build_pymc_model(design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n")
         assert isinstance(model, pm.Model)
 
     def test_r2_named_vars_present(self, design_trivariate_r2):
-        model = build_pymc_model(
-            design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n"
-        )
+        model = build_pymc_model(design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n")
         names = set(model.named_vars)
         assert {"alpha", "beta_free", "beta", "Gamma", "Sigma_chol", "Sigma"} <= names
 
     def test_r2_beta_shape(self, design_trivariate_r2):
         """beta should be (K, r) = (3, 2) for a trivariate r=2 model."""
-        model = build_pymc_model(
-            design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n"
-        )
+        model = build_pymc_model(design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n")
         with model:
             value = pm.draw(model.named_vars["beta"], draws=1, random_seed=0)
         assert value.shape == (3, 2)
 
     def test_r2_beta_pin_is_identity(self, design_trivariate_r2):
         """Top r x r block of beta must be I_r in every draw."""
-        model = build_pymc_model(
-            design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n"
-        )
+        model = build_pymc_model(design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n")
         with model:
             value = pm.draw(model.named_vars["beta"], draws=1, random_seed=0)
         # value shape: (3, 2); top 2x2 block must equal I_2
@@ -190,9 +182,7 @@ class TestHigherRank:
 
     def test_r2_beta_free_rows_are_not_pinned(self, design_trivariate_r2):
         """The free row(s) of beta should vary across draws."""
-        model = build_pymc_model(
-            design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n"
-        )
+        model = build_pymc_model(design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n")
         with model:
             draws = pm.draw(model.named_vars["beta"], draws=50, random_seed=0)
         # draws shape: (50, 3, 2); row index 2 (the free row) should vary
@@ -201,9 +191,7 @@ class TestHigherRank:
 
     def test_r2_alpha_shape(self, design_trivariate_r2):
         """alpha should be (K, r) = (3, 2)."""
-        model = build_pymc_model(
-            design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n"
-        )
+        model = build_pymc_model(design_trivariate_r2, k_ar_diff=1, coint_rank=2, deterministic="n")
         with model:
             value = pm.draw(model.named_vars["alpha"], draws=1, random_seed=0)
         assert value.shape == (3, 2)
