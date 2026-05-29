@@ -45,7 +45,42 @@ model.sample_posterior_predictive(steps=12)
 | License | MIT | Permissive, standard for OSS Python. |
 | CI | GitHub Actions, matrix on Py 3.11 + 3.12 | `.github/workflows/ci.yml` runs ruff + pytest on push to main and PRs. |
 
-## Status as of last session (2026-05-12)
+## Status as of last session (2026-05-29)
+
+**Update 2026-05-29 — `feat/wider-graph` PR 1 (in progress on `feat/wider-graph`):**
+
+- **`coint_rank > 1` supported in the PyMC graph.** Removed the `coint_rank != 1` scope guard from `_pymc.py`. The β-pin construction already used `r` generically (`pt.eye(r)` stacked on a `(K-r, r)` free block), so no graph logic needed changing — only the guard and docstrings.
+- **`test_pymc.py` updated:** removed `test_coint_rank_other_than_1_raises`, added `_synthetic_trivariate_r2` DGP helper, `design_trivariate_r2` fixture, and `TestHigherRank` class (6 tests: model builds, named vars, beta shape `(3,2)`, top block is `I_2`, free row varies, alpha shape `(3,2)`, regression test for `r=1`).
+- **`test_model.py` updated:** removed stale `test_fit_with_coint_rank_above_one_raises_not_implemented`; added `cores=1` to all `pm.sample` calls in tests to work around the macOS multiprocessing spawn deadlock.
+- **`uv run pytest` hangs on macOS** — use `.venv/bin/pytest` directly instead. `uv run` appears to deadlock during pytest startup in this environment.
+- **Suite: 155 passed, 97% coverage.**
+
+**Not yet done (remaining in `feat/wider-graph`):**
+
+- **Deterministic terms in the PyMC graph** — PR 2. Read shapes dynamically off the design matrices; outside terms widen Γ, inside terms widen β. Tests across all 5 codes × `r=1,2`.
+- **Notebook 06** — trivariate `r=2` example + deterministic term demo. Ships with PR 2.
+- **nbstripout pre-commit hook migration** — the git clean filter crashes when 5 notebooks are staged simultaneously (`rfc3987_syntax 1.1.0` rebuilds Lark parsers from scratch on every process startup). Fix: move nbstripout from git clean filter to a pre-commit hook (sequential, single process). Small chore PR after `feat/wider-graph` merges.
+
+## Status as of last session (2026-05-28)
+
+**Update 2026-05-28 — housekeeping sprint (all merged to `main`):**
+
+- **`_constants.py` introduced** (PR `chore/consolidate-deterministic-codes`): `VALID_DETERMINISTIC` moved from `_design.py` and `_model.py` into a new `src/bayesian_vecm/_constants.py`. Both modules now import from there. `tests/test_model.py` updated to import from `_constants` too.
+- **Pre-commit hook** (PR `chore/pre-commit-hook`): `.pre-commit-config.yaml` added with `ruff-format` and `ruff` hooks from `astral-sh/ruff-pre-commit`. `pre-commit` added as a dev dep. Run `pre-commit install` once after cloning to activate.
+- **Notebook CI + nbstripout** (PR `chore/notebook-ci`):
+  - New `notebooks` job in `.github/workflows/ci.yml` runs `jupyter nbconvert --execute --inplace` on all notebooks with a 5-minute timeout. This is the CI guard that would have caught the 2026-05-20 dep-drift incident immediately.
+  - `nbstripout` added as a dev dep and wired via `.gitattributes` — committed notebooks always have outputs stripped, keeping diffs small.
+  - `notebooks/04_first_pymc_model_walkthrough.ipynb` gained a `FAST_SAMPLING` config cell (matching the pattern from notebook 05): `FAST_SAMPLING=True` → 200 draws / 200 tune / 2 chains; `False` → 1000/1000/4.
+  - `notebooks/03_bayesian_vecm_skeleton_walkthrough.ipynb` §6 updated: "honest stubs" section replaced with a "pre-fit guard" demo (all four estimation methods are now live; the section now shows that calling `idata`/`summary`/`sample_posterior_predictive` before `fit` raises `RuntimeError`, which is still the correct contract).
+  - CI now has 3 required status checks: `Lint & test`, `Execute notebooks`, and the pre-commit hook.
+
+**Not yet done:**
+
+- **Higher cointegration rank (`r > 1`) and deterministic terms in the PyMC graph** — see Option 1 below. This is the next slice.
+- Pandas integration tests.
+- `_pymc.py` coverage is 63% — the uncovered lines are the `NotImplementedError` scope guards that `feat/wider-graph` will delete, plus some prior-override branches.
+
+## Status as of earlier sessions
 
 **Done:**
 
@@ -125,12 +160,8 @@ A `uv sync` between sessions crossed two major version boundaries: PyMC 5 → 6 
 
 **Not yet done:**
 
-- **Higher cointegration rank (`r > 1`).** The free β block becomes `(K - r) × r`; the graph already factors this out but the v0 scope guard rejects `r != 1`. Need to also decide how to surface rank uncertainty (model averaging across separate fits is the plan, per notebook 03 §2).
-- **Deterministic terms in the graph.** `cointegration_design` already produces augmented design matrices for `co`, `ci`, `lo`, `li`; the PyMC graph just needs to grow a coefficient block for them. v0 scope guard currently rejects anything other than `"n"`.
-- **`_VALID_DETERMINISTIC` duplication** — still present in `_model.py` and now also as `VALID_DETERMINISTIC` in `_design.py`. Consolidate into a shared private constant (`src/bayesian_vecm/_constants.py`). Small cleanup, not blocking; same as Option 2 in the previous notes.
+- **Higher cointegration rank (`r > 1`) and deterministic terms in the PyMC graph** — the next slice (`feat/wider-graph`). See Option 1 below.
 - Pandas integration tests (we duck-type via `.to_numpy()`; the new integration tests use a `_FakeDF` test double rather than pandas itself).
-- **CI execution of notebooks (now overdue).** Notebooks aren't run in CI yet. The 2026-05-20 dep-drift fix was exactly the failure mode this would catch — tests were green while notebook 04 was broken on two separate APIs. Add a job that runs `uv run jupyter nbconvert --to notebook --execute notebooks/*.ipynb` and fails on errors. Outputs strategy: leaning toward `nbstripout` as a git filter so committed `.ipynb` files have outputs cleared and diffs stay small.
-- **Pre-commit hook.** A local hook running `ruff format` and `ruff check` would have caught two CI bounces in the 2026-05-15 session. Smaller than the notebook-CI work; could land first.
 
 ## Workflow reminder
 
@@ -146,58 +177,22 @@ git switch main && git pull && git branch -d feat/<slice-name>
 
 **Cowork / Claude session rule:** The very first thing to do after reading this file is to confirm which branch is active (`cat .git/HEAD`) and create a feature branch if on `main` — before touching any source files. Do not write code directly on `main`; the branch guard will reject the push and the working-tree changes will be stranded on the wrong branch.
 
-## Next slice — pick from these
+## Next slice
 
-Both `sample_posterior_predictive` and notebook 05 shipped on 2026-05-26 (PR `feat/posterior-predictive`), completing the original target API and its teaching layer. **Recommended starting point: option 1** — widening the graph to the full v0 envelope is the highest-value next estimator step.
-
-### Option 1 (recommended) — Expand the PyMC graph to the v0 envelope
+**Expand the PyMC graph to the v0 envelope**
 
 **Branch:** `feat/wider-graph`
 
-**Goal.** Drop the two `NotImplementedError` scope guards in `_pymc.py` — support `coint_rank > 1` and the four non-`n` deterministic codes the design helper already produces matrices for.
+**Goal.** Drop the two `NotImplementedError` scope guards in `_pymc.py` — support `coint_rank > 1` and the four non-`"n"` deterministic codes the design helper already produces matrices for.
 
-**Substantive pieces.** For `r > 1` the free β block becomes `(K - r, r)` and `pt.eye(r)` continues to handle the normalisation block cleanly. For deterministic terms, `cointegration_design` already appends the right columns to `delta_x` or `y_lag1`; the graph just needs an extra coefficient block (inside terms broaden the β-applied vector, outside terms broaden the Γ-applied vector). Tests should cover all five codes × a couple of `r` values.
+**Substantive pieces:**
 
-### Option 3 — Defunct candidate: ~~First PyMC model~~ (legacy text below)
-
-The remaining option-numbered subsections in this section refer to the pre-first-PyMC-model state and are out of date; treat them as historical context until someone trims them in a docs slice. Action items they describe (consolidating `_VALID_DETERMINISTIC`, adding a pre-commit hook, executing notebooks in CI) are still relevant — see the "Not yet done" section above for current framing.
-
-#### Legacy text (kept for archaeology)
-
-**Goal.** Simplest possible VECM that actually samples: known cointegration rank `r = 1`, `deterministic = "n"`, weakly-informative priors on `α`, `β`, `Γ_1, ..., Γ_k`, and `Σ`. Targets a small synthetic cointegrated dataset (the one in notebook 02 is a good starting point).
-
-**Where it plugs in.** `BayesianVECM.fit(endog)` should:
-Two real candidates, in roughly increasing order of scope and risk. **Recommended starting point: option 1** — the API decisions need to land before any PyMC code, and `NotImplementedError` stubs are cheap. (The previous option 1 — deterministic-terms follow-up — shipped on 2026-05-18; see the Status section.)
-
-### Option 1 (recommended) — `BayesianVECM` class skeleton
-
-1. Call `validate_endog(endog)` (already exists in `_data.py`).
-2. Call `cointegration_design(endog, k_ar_diff=self.k_ar_diff, deterministic=self.deterministic)` to get the three aligned matrices.
-3. Build a PyMC model that ties those matrices to `α`, `β`, `Γ_i`, `Σ`.
-4. Run `pm.sample(...)` and store the result as `self.idata_`.
-5. Store the raw `endog` as `self.endog_` and inside `idata_.constant_data`.
-
-**The piece to think hardest about is the identification of β.** $\alpha \beta'$ is invariant under $(\alpha, \beta) \to (\alpha R^{-1}, \beta R^{\top})$ for any invertible $R$, so without a normalisation (the standard choice is `β[:r, :] = I_r`) the posterior over `β` alone is non-identified and sampling will be a horror show. Worth reading the relevant section of *Johansen 1995* before writing PyMC code; notebook 02 §5 has a starter explanation.
-
-**Dependencies to add when this slice starts:** `pymc`, `arviz`. Both go in the main runtime deps in `pyproject.toml` (`uv add pymc arviz`). PyMC pulls in pytensor + numpyro/jax transitively; expect the lockfile to grow.
-
-**Walkthrough notebook 03:** the first PyMC model is a perfect candidate for a notebook — fit on the notebook-02 synthetic data, plot the posteriors of `α` and `β`, eyeball whether they recover the true cointegrating vector. Frame the β-identification choice as a teaching moment.
-
-### Option 2 — Consolidate `_VALID_DETERMINISTIC`
-
-**Branch:** `chore/consolidate-deterministic-codes`
-
-**Goal.** Remove the duplication that opens up once `docs/future-directions` and the skeleton are both on `main`. Introduce a private `src/bayesian_vecm/_constants.py` (or similar) holding `VALID_DETERMINISTIC = frozenset({"n", "co", "ci", "lo", "li"})`. Both `_design.py` and `_model.py` import from it.
-### Option 2 — First PyMC model
-
-Trivial in scope; the real value is doing it *before* either set drifts.
-
-**Order of operations.** This slice can only land after both prerequisites are on `main`: the `feat/bayesian-vecm-skeleton` PR and the `docs/future-directions` PR. Both can go in either order; this cleanup chases them.
-**Goal.** Simplest possible VECM: known cointegration rank `r = 1`, `deterministic = "n"`, weakly-informative priors on `α`, `β`, `Γ_1, ..., Γ_k`, and `Σ`. Targets a small synthetic cointegrated dataset (the one in notebook 02 is a good starting point).
-
-**This is where the real econometrics begins.** The piece to think hardest about is the **identification of β**: $\alpha \beta'$ is invariant under $(\alpha, \beta) \to (\alpha R^{-1}, \beta R^{\top})$ for any invertible $R$, so without a normalisation (the standard choice is `β[:r, :] = I_r`) the posterior over `β` alone is non-identified and sampling will struggle. Worth reading the relevant section of *Johansen 1995* before writing any PyMC code.
-
-Should NOT be tackled until option 1 is in — the class skeleton needs to exist before there's anywhere to wire the PyMC graph into.
+- **`r > 1`:** free β block becomes `(K - r, r)`; `pt.eye(r)` handles the normalisation. α shape becomes `(K, r)`. Σ and Γ are unchanged by rank.
+- **Deterministic terms:** `cointegration_design` already appends the right columns — the graph just needs to read shapes off the design matrices rather than hardcoding `K`:
+  - Outside terms (`"co"`, `"lo"`): `delta_x` has an extra column → Γ is `(K, K*k + 1)`.
+  - Inside terms (`"ci"`, `"li"`): `y_lag1` has an extra column → β is `(K+1, r)`, extra row is free (not pinned).
+- **Tests:** graph-construction tests (check variable shapes without sampling) across all five codes × `r=1` and `r=2`, plus a short integration test for the `r>1` path.
+- **Notebook 06:** trivariate `r=2` example + a deterministic term demo.
 
 ## Future directions (parking lot)
 
@@ -222,7 +217,23 @@ In rough order of when to attempt them, once the baseline estimator lands.
 
 ### Sequencing thought
 
-Fixed-`r`, constant-`Σ`, weakly-informative-prior VECM first (option 2 in the next-slice list). Then layer extensions: horseshoe → stochastic volatility → rank uncertainty. Each extension should ship behind a flag or as an optional argument rather than replacing the baseline, so the baseline stays available as both a teaching example and a sampling-diagnostic reference.
+Full v0 envelope (`feat/wider-graph`) first — `r > 1` and all deterministic codes. Then layer extensions: horseshoe → stochastic volatility → rank uncertainty. Each extension should ship behind a flag or as an optional argument rather than replacing the baseline, so the baseline stays available as both a teaching example and a sampling-diagnostic reference.
+
+## Session learnings (2026-05-29)
+
+- **`uv run pytest` hangs on macOS in this environment.** Use `.venv/bin/pytest` directly. `uv run` appears to deadlock during pytest startup — possibly a conflict between uv's process management and PyTensor/PyMC imports. Workaround: activate the venv (`source .venv/bin/activate`) and call `pytest` directly, or use `.venv/bin/pytest` without activating.
+- **`git add` doesn't persist across shell sessions.** When working with Cowork, each bash call is independent — staging done in one call is lost before the next. Always do `git add ... && git commit ...` in a single command.
+- **nbstripout git clean filter crashes when multiple notebooks are staged simultaneously.** `rfc3987_syntax 1.1.0` rebuilds Lark parsers from scratch on every Python process startup. With 5 notebooks modified, git spawns 5 filter processes in parallel and SIGINT is sent mid-init. Workaround: temporarily swap the filter to `cat` for the commit (`git config --local filter.nbstripout.clean "cat"`, commit, restore). Long-term fix: move nbstripout to a pre-commit hook (sequential) rather than a git clean filter (parallel).
+- **`rm -rf .venv && uv sync --all-extras` fixes a broken venv** but requires re-running `uv run python -m ipykernel install --sys-prefix` afterwards to restore the Jupyter kernelspec.
+
+## Session learnings (2026-05-28)
+
+Lessons from the housekeeping sprint:
+
+- **`nbstripout --install` uses `.git/info/attributes` by default (local only).** To share the filter with other contributors and CI, run `nbstripout --install --attributes .gitattributes` instead — this writes a `.gitattributes` file that can be committed to the repo.
+- **`nbconvert --inplace` doesn't prevent the glob from picking up `.nbconvert.ipynb` sidecar files** left over from a previous failed run. Clean up `notebooks/*.nbconvert*.ipynb` before re-running if a previous attempt errored partway through.
+- **New code cells added by script must include `"execution_count": null`** — nbconvert validates against the nbformat schema and will reject a code cell that's missing this field, even if `outputs` is an empty list.
+- **Notebook CI catches API drift that unit tests miss.** Notebook 03's "honest stubs" section was calling `m.fit(endog=None)` and expecting `NotImplementedError` — but `fit` now validates input first, so it raised `ValueError` instead. Tests were green; notebook CI would have caught this on the first run. Update notebook sections that document "not yet implemented" behaviour whenever the implementation catches up.
 
 ## Session learnings (2026-05-15)
 

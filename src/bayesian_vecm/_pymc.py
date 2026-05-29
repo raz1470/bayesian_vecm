@@ -1,22 +1,20 @@
-"""PyMC model graph for the v0 ``BayesianVECM``.
+"""PyMC model graph for the ``BayesianVECM``.
 
-This module is the home of the first piece of real econometrics in the
-package: turning the three design matrices from
+This module is the home of the real econometrics in the package: turning the
+three design matrices from
 :func:`bayesian_vecm._design.cointegration_design` into a PyMC graph that
 can sample.
 
-v0 scope
---------
-The model implemented here is the simplest VECM that actually samples:
+Current scope
+-------------
+The model supports:
 
-* Known cointegration rank :math:`r = 1`.
+* Known cointegration rank :math:`r \\geq 1`.
 * No deterministic terms (``deterministic="n"``).
 * Weakly-informative defaults for :math:`\\alpha, \\beta, \\Gamma, \\Sigma`.
 
-Anything outside that envelope raises :class:`NotImplementedError`. The next
-slice will widen support to higher ranks and the five deterministic-term
-codes; the public ``BayesianVECM`` class already accepts those configurations
-at construction time, but the graph below can't faithfully express them yet.
+Deterministic-term codes other than ``"n"`` still raise
+:class:`NotImplementedError` — that support arrives in the next slice.
 
 Identification of :math:`\\beta`
 --------------------------------
@@ -29,9 +27,9 @@ The cointegration term :math:`\\alpha \\beta' y_{t-1}` is invariant under
 for any invertible :math:`r \\times r` matrix :math:`R`. Without a
 normalisation the posterior is non-identified, the sampler wanders along the
 orbit, and divergences pile up. The standard fix (Johansen, 1995) is to pin
-:math:`\\beta[:r, :] = I_r`. For :math:`r = 1` that means the first entry of
-:math:`\\beta` is fixed at 1 and the remaining :math:`K - 1` entries are
-free parameters.
+:math:`\\beta[:r, :] = I_r`. The leading :math:`r \\times r` block is a
+constant; the remaining :math:`(K - r, r)` free entries are sampled. For
+:math:`r = 1` that means just the first entry is fixed at 1.
 
 The fixed entries are *not* stored as free random variables; the full
 :math:`(K, r)` :math:`\\beta` matrix is exposed as a :func:`pm.Deterministic`
@@ -67,8 +65,9 @@ All are weakly informative; any of the four can be overridden via the
 * :math:`\\alpha`: ``Normal(0, 1.0)``, shape :math:`(K, r)`. EC loadings are
   typically small and can be negative.
 * :math:`\\beta_{\\text{free}}`: ``Normal(0, 5.0)``, shape :math:`(K - r, r)`.
-  Cointegrating-vector entries can have arbitrary scale; the wider prior
-  is more permissive than :math:`\\alpha`'s.
+  Cointegrating-vector entries can have arbitrary scale; the wider prior is
+  more permissive than :math:`\\alpha`'s. Not present when ``K == r``
+  (fully cointegrated system — no free rows).
 * :math:`\\Gamma`: ``Normal(0, 0.5)``, shape :math:`(K, Kk)`. Short-run
   dynamics are typically small and centred at zero.
 * :math:`\\Sigma`: ``LKJCholeskyCov(eta=2.0, sd_dist=HalfNormal(1.0))``. The
@@ -119,11 +118,11 @@ def build_pymc_model(
         Number of lagged-difference blocks. ``0`` means no short-run dynamics
         and the :math:`\\Gamma` block is omitted from the graph.
     coint_rank
-        Cointegration rank :math:`r`. v0 only supports ``coint_rank=1``;
-        higher ranks raise :class:`NotImplementedError`.
+        Cointegration rank :math:`r`. Must satisfy ``1 <= coint_rank < K``
+        where ``K`` is the number of variables.
     deterministic
-        Deterministic-term code. v0 only supports ``"n"``; the other codes
-        raise :class:`NotImplementedError`.
+        Deterministic-term code. Currently only ``"n"`` is supported; the
+        other codes raise :class:`NotImplementedError`.
     priors
         Optional mapping from parameter name to distribution spec. Recognised
         keys: ``"alpha"``, ``"beta"``, ``"Gamma"``, ``"Sigma"``. Any key not
@@ -142,22 +141,14 @@ def build_pymc_model(
     Raises
     ------
     NotImplementedError
-        If ``coint_rank != 1`` or ``deterministic != "n"``. The PyMC graph
-        for those configurations arrives in a follow-up slice.
+        If ``deterministic != "n"``. Deterministic-term support arrives in a
+        follow-up slice.
     ValueError
         If ``priors`` contains unrecognised keys, an unknown distribution
         name, or unrecognised Sigma-override keys.
     TypeError
         If ``priors`` or any of its values is not a dict.
     """
-    # v0 scope guard. The skeleton accepts the wider configuration so the
-    # public API stays locked, but the graph below can't faithfully express it
-    # yet — better to fail loudly here than to silently misspecify.
-    if coint_rank != 1:
-        raise NotImplementedError(
-            f"coint_rank={coint_rank} is not yet supported by the PyMC graph; "
-            "v0 implements coint_rank=1 only. Higher ranks arrive in a follow-up slice."
-        )
     if deterministic != "n":
         raise NotImplementedError(
             f"deterministic={deterministic!r} is not yet supported by the PyMC graph; "
