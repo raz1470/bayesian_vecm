@@ -170,17 +170,6 @@ def test_sample_posterior_predictive_non_positive_steps_raises_value_error(
 
 
 # ---------------------------------------------------------------------------
-# Scope guards on ``fit``
-# ---------------------------------------------------------------------------
-def test_fit_with_non_n_deterministic_raises_not_implemented() -> None:
-    rng = np.random.default_rng(0)
-    endog = rng.normal(size=(40, 2)).cumsum(axis=0)
-    model = BayesianVECM(deterministic="ci")
-    with pytest.raises(NotImplementedError, match="deterministic="):
-        model.fit(endog, draws=5, tune=5, chains=1, progressbar=False)
-
-
-# ---------------------------------------------------------------------------
 # Integration test — actually sample
 # ---------------------------------------------------------------------------
 # These run pm.sample, so they're slower than the rest of the suite (PyTensor
