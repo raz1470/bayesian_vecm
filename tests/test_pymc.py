@@ -134,23 +134,6 @@ class TestBuildHappyPath:
 
 
 # ---------------------------------------------------------------------------
-# Scope guards
-# ---------------------------------------------------------------------------
-
-
-class TestScopeGuards:
-    @pytest.mark.parametrize("code", ["co", "ci", "lo", "li"])
-    def test_deterministic_other_than_n_raises(self, design_k1, code):
-        with pytest.raises(NotImplementedError, match="deterministic="):
-            build_pymc_model(
-                design_k1,
-                k_ar_diff=1,
-                coint_rank=1,
-                deterministic=code,
-            )
-
-
-# ---------------------------------------------------------------------------
 # r > 1: higher cointegration rank
 # ---------------------------------------------------------------------------
 
@@ -202,6 +185,146 @@ class TestHigherRank:
         with model:
             value = pm.draw(model.named_vars["beta"], draws=1, random_seed=0)
         assert value.shape == (2, 1)
+
+
+# ---------------------------------------------------------------------------
+# Deterministic terms
+# ---------------------------------------------------------------------------
+
+
+class TestDeterministicTerms:
+    """Graph-construction tests for all five deterministic codes x r=1,2.
+
+    No sampler is run — we use pm.draw to inspect parameter shapes.
+    """
+
+    # --- builds for all codes ------------------------------------------------
+
+    @pytest.mark.parametrize("code", ["co", "ci", "lo", "li"])
+    def test_builds_for_all_codes_r1(self, code):
+        data = _synthetic_cointegrated()
+        design = cointegration_design(data, k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=1, deterministic=code)
+        assert isinstance(model, pm.Model)
+
+    @pytest.mark.parametrize("code", ["n", "co", "ci", "lo", "li"])
+    def test_builds_for_all_codes_r2(self, code):
+        data = _synthetic_trivariate_r2()
+        design = cointegration_design(data, k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=2, deterministic=code)
+        assert isinstance(model, pm.Model)
+
+    # --- outside terms: Gamma widens, beta stays (K, r) ---------------------
+
+    @pytest.mark.parametrize("code", ["co", "lo"])
+    def test_outside_term_widens_gamma(self, code):
+        """K=2, k=1: Gamma normally (2, 2), with outside term (2, 3)."""
+        data = _synthetic_cointegrated()
+        design = cointegration_design(data, k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=1, deterministic=code)
+        with model:
+            value = pm.draw(model.named_vars["Gamma"], draws=1, random_seed=0)
+        assert value.shape == (2, 3)  # K=2, K*k + 1 = 3
+
+    @pytest.mark.parametrize("code", ["co", "lo"])
+    def test_outside_term_beta_shape_unchanged(self, code):
+        """Outside terms only affect delta_x; beta shape stays (K, r)."""
+        data = _synthetic_cointegrated()
+        design = cointegration_design(data, k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=1, deterministic=code)
+        with model:
+            value = pm.draw(model.named_vars["beta"], draws=1, random_seed=0)
+        assert value.shape == (2, 1)  # K=2, r=1
+
+    # --- inside terms: beta widens, Gamma stays (K, K*k) --------------------
+
+    @pytest.mark.parametrize("code", ["ci", "li"])
+    def test_inside_term_widens_beta(self, code):
+        """K=2, r=1: beta normally (2, 1), with inside term (3, 1)."""
+        data = _synthetic_cointegrated()
+        design = cointegration_design(data, k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=1, deterministic=code)
+        with model:
+            value = pm.draw(model.named_vars["beta"], draws=1, random_seed=0)
+        assert value.shape == (3, 1)  # K + 1 = 3, r=1
+
+    @pytest.mark.parametrize("code", ["ci", "li"])
+    def test_inside_term_beta_pin_preserved(self, code):
+        """The Johansen normalisation beta[0, 0] == 1 must hold for inside terms."""
+        data = _synthetic_cointegrated()
+        design = cointegration_design(data, k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=1, deterministic=code)
+        with model:
+            value = pm.draw(model.named_vars["beta"], draws=1, random_seed=0)
+        np.testing.assert_array_equal(value[0, 0], 1.0)
+
+    @pytest.mark.parametrize("code", ["ci", "li"])
+    def test_inside_term_gamma_shape_unchanged(self, code):
+        """Inside terms only affect y_lag1; Gamma shape stays (K, K*k)."""
+        data = _synthetic_cointegrated()
+        design = cointegration_design(data, k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=1, deterministic=code)
+        with model:
+            value = pm.draw(model.named_vars["Gamma"], draws=1, random_seed=0)
+        assert value.shape == (2, 2)  # K=2, K*k=2
+
+    # --- alpha shape is always (K, r) for all codes --------------------------
+
+    @pytest.mark.parametrize("code", ["n", "co", "ci", "lo", "li"])
+    def test_alpha_shape_always_k_r(self, code):
+        data = _synthetic_cointegrated()
+        design = cointegration_design(data, k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=1, deterministic=code)
+        with model:
+            value = pm.draw(model.named_vars["alpha"], draws=1, random_seed=0)
+        assert value.shape == (2, 1)  # K=2, r=1
+
+    # --- k=0 + outside term adds Gamma (edge case) ---------------------------
+
+    def test_outside_term_k0_adds_gamma(self):
+        """k_ar_diff=0 with 'co': delta_x gets one outside-term column.
+
+        Without this case Gamma would be absent (pure EC model); the outside
+        term changes that because delta_x_cols = 1 > 0.
+        """
+        data = _synthetic_cointegrated()
+        design = cointegration_design(data, k_ar_diff=0, deterministic="co")
+        model = build_pymc_model(design, k_ar_diff=0, coint_rank=1, deterministic="co")
+        assert "Gamma" in set(model.named_vars)
+        with model:
+            value = pm.draw(model.named_vars["Gamma"], draws=1, random_seed=0)
+        assert value.shape == (2, 1)  # K=2, delta_x_cols=1
+
+    # --- r=2 x all codes: shapes consistent ----------------------------------
+
+    @pytest.mark.parametrize("code", ["n", "co", "ci", "lo", "li"])
+    def test_r2_alpha_shape(self, code):
+        data = _synthetic_trivariate_r2()
+        design = cointegration_design(data, k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=2, deterministic=code)
+        with model:
+            value = pm.draw(model.named_vars["alpha"], draws=1, random_seed=0)
+        assert value.shape == (3, 2)  # K=3, r=2
+
+    @pytest.mark.parametrize("code", ["n", "co", "lo"])
+    def test_r2_beta_shape_outside_or_none(self, code):
+        """Outside/no-term codes: beta is (K, r) = (3, 2)."""
+        data = _synthetic_trivariate_r2()
+        design = cointegration_design(data, k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=2, deterministic=code)
+        with model:
+            value = pm.draw(model.named_vars["beta"], draws=1, random_seed=0)
+        assert value.shape == (3, 2)
+
+    @pytest.mark.parametrize("code", ["ci", "li"])
+    def test_r2_beta_shape_inside(self, code):
+        """Inside-term codes: beta is (K+1, r) = (4, 2)."""
+        data = _synthetic_trivariate_r2()
+        design = cointegration_design(data, k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=2, deterministic=code)
+        with model:
+            value = pm.draw(model.named_vars["beta"], draws=1, random_seed=0)
+        assert value.shape == (4, 2)
 
 
 # ---------------------------------------------------------------------------
