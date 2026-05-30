@@ -10,11 +10,19 @@ Current scope
 The model supports:
 
 * Known cointegration rank :math:`r \\geq 1`.
-* No deterministic terms (``deterministic="n"``).
+* All five deterministic codes: ``"n"``, ``"co"``, ``"ci"``, ``"lo"``, ``"li"``.
 * Weakly-informative defaults for :math:`\\alpha, \\beta, \\Gamma, \\Sigma`.
 
-Deterministic-term codes other than ``"n"`` still raise
-:class:`NotImplementedError` — that support arrives in the next slice.
+The graph reads shapes directly off the design matrices produced by
+:func:`bayesian_vecm._design.cointegration_design`, so deterministic columns
+are handled automatically:
+
+* Outside terms (``"co"``, ``"lo"``) append a column to ``delta_x``, which
+  widens :math:`\\Gamma` from :math:`(K, Kk)` to :math:`(K, Kk+1)`.
+* Inside terms (``"ci"``, ``"li"``) append a column to ``y_{t-1}``, which
+  widens :math:`\\beta` from :math:`(K, r)` to :math:`(K+1, r)`. The extra
+  row is free (not pinned), so the constant/trend inside the cointegration
+  relation is estimated from the data.
 
 Identification of :math:`\\beta`
 --------------------------------
@@ -121,8 +129,9 @@ def build_pymc_model(
         Cointegration rank :math:`r`. Must satisfy ``1 <= coint_rank < K``
         where ``K`` is the number of variables.
     deterministic
-        Deterministic-term code. Currently only ``"n"`` is supported; the
-        other codes raise :class:`NotImplementedError`.
+        Deterministic-term code. One of ``"n"``, ``"co"``, ``"ci"``,
+        ``"lo"``, ``"li"``. The graph reads shapes off the design matrices,
+        so no separate code path is needed per code.
     priors
         Optional mapping from parameter name to distribution spec. Recognised
         keys: ``"alpha"``, ``"beta"``, ``"Gamma"``, ``"Sigma"``. Any key not
@@ -140,21 +149,12 @@ def build_pymc_model(
 
     Raises
     ------
-    NotImplementedError
-        If ``deterministic != "n"``. Deterministic-term support arrives in a
-        follow-up slice.
     ValueError
         If ``priors`` contains unrecognised keys, an unknown distribution
         name, or unrecognised Sigma-override keys.
     TypeError
         If ``priors`` or any of its values is not a dict.
     """
-    if deterministic != "n":
-        raise NotImplementedError(
-            f"deterministic={deterministic!r} is not yet supported by the PyMC graph; "
-            "v0 implements deterministic='n' only. Deterministic terms arrive in a follow-up slice."
-        )
-
     user_priors = _validate_priors_dict(priors)
 
     delta_y = design.delta_y
@@ -164,18 +164,24 @@ def build_pymc_model(
     n_eff, n_vars = delta_y.shape
     r = coint_rank  # short alias used heavily below
 
-    # Sanity checks — these are guarantees from cointegration_design, but we
-    # assert them here because a mismatch would yield a misspecified graph.
-    if y_lag1.shape != (n_eff, n_vars):
+    # Read column counts off the actual design matrices rather than
+    # reconstructing them from k_ar_diff and deterministic.  This is the key
+    # move that makes deterministic-term support free: cointegration_design
+    # already appended the right columns, so the graph just needs to match.
+    #
+    #   y_lag1_cols = K           for "n", "co", "lo"
+    #               = K + 1       for "ci", "li"  (inside term appended)
+    #
+    #   delta_x_cols = K * k      for "n", "ci", "li"
+    #                = K * k + 1  for "co", "lo"  (outside term appended)
+    y_lag1_cols = y_lag1.shape[1]
+    delta_x_cols = delta_x.shape[1]
+
+    # Row-alignment sanity check — all three matrices must have T_eff rows.
+    if y_lag1.shape[0] != n_eff or delta_x.shape[0] != n_eff:
         raise ValueError(
-            f"design.y_lag1 has shape {y_lag1.shape}; expected ({n_eff}, {n_vars}). "
-            "Was the design built with deterministic='n'?"
-        )
-    expected_dx_cols = n_vars * k_ar_diff
-    if delta_x.shape != (n_eff, expected_dx_cols):
-        raise ValueError(
-            f"design.delta_x has shape {delta_x.shape}; expected ({n_eff}, {expected_dx_cols}). "
-            "Was the design built with deterministic='n' and the same k_ar_diff?"
+            f"design matrices are not row-aligned: delta_y has {n_eff} rows, "
+            f"y_lag1 has {y_lag1.shape[0]}, delta_x has {delta_x.shape[0]}."
         )
 
     with pm.Model() as model:
@@ -184,10 +190,12 @@ def build_pymc_model(
         # re-deriving the design from raw endog.
         pm.Data("delta_y", delta_y)
         pm.Data("y_lag1", y_lag1)
-        if k_ar_diff > 0:
+        if delta_x_cols > 0:
             pm.Data("delta_x", delta_x)
 
         # --- alpha: (K, r) loadings on the cointegration relation ------------
+        # alpha is always (K, r) regardless of deterministic code — the
+        # constant/trend rows in beta absorb inside terms, not alpha.
         alpha = _resolve_dist(
             name="alpha",
             user_spec=user_priors.get("alpha"),
@@ -195,28 +203,33 @@ def build_pymc_model(
             shape=(n_vars, r),
         )
 
-        # --- beta: (K, r) with top r x r block pinned at I_r -----------------
-        # Free part is (K - r, r); the leading r x r identity block is stacked
-        # on top as a constant so the full (K, r) matrix is recoverable from
-        # idata as a single Deterministic.
+        # --- beta: (y_lag1_cols, r) with top r x r block pinned at I_r ------
+        # For inside terms ("ci", "li") y_lag1_cols = K + 1, so beta gains an
+        # extra free row for the constant/trend loading inside the cointegrating
+        # relation.  Free part is (y_lag1_cols - r, r); the leading r x r
+        # identity block is stacked on top as a constant.
         beta_free = _resolve_dist(
             name="beta_free",
             user_spec=user_priors.get("beta"),
             default_spec={"dist": "Normal", "mu": 0.0, "sigma": 5.0},
-            shape=(n_vars - r, r),
+            shape=(y_lag1_cols - r, r),
         )
         beta = pm.Deterministic(
             "beta",
             pt.concatenate([pt.eye(r), beta_free], axis=0),
         )
 
-        # --- Gamma: (K, K * k_ar_diff) short-run dynamics --------------------
-        if k_ar_diff > 0:
+        # --- Gamma: (K, delta_x_cols) short-run dynamics + outside terms -----
+        # For outside terms ("co", "lo") delta_x_cols = K * k + 1, so Gamma
+        # gains an extra column for the constant/trend outside the cointegrating
+        # relation.  When delta_x_cols == 0 (k=0, no outside term) there are no
+        # short-run regressors and Gamma is omitted entirely.
+        if delta_x_cols > 0:
             gamma = _resolve_dist(
                 name="Gamma",
                 user_spec=user_priors.get("Gamma"),
                 default_spec={"dist": "Normal", "mu": 0.0, "sigma": 0.5},
-                shape=(n_vars, n_vars * k_ar_diff),
+                shape=(n_vars, delta_x_cols),
             )
 
         # --- Sigma: K x K covariance via LKJCholeskyCov ----------------------
@@ -225,9 +238,10 @@ def build_pymc_model(
 
         # --- Mean ------------------------------------------------------------
         # mu_t = alpha beta' y_{t-1} + Gamma Delta_x_t, in matrix form:
-        #   (T_eff, K) @ (K, r) @ (r, K) + (T_eff, Kk) @ (Kk, K) -> (T_eff, K)
+        #   (T_eff, K) = (T_eff, y_lag1_cols)(y_lag1_cols, r)(r, K)
+        #              + (T_eff, delta_x_cols)(delta_x_cols, K)
         ec_term = pm.math.dot(pm.math.dot(y_lag1, beta), alpha.T)
-        mu = ec_term + pm.math.dot(delta_x, gamma.T) if k_ar_diff > 0 else ec_term
+        mu = ec_term + pm.math.dot(delta_x, gamma.T) if delta_x_cols > 0 else ec_term
 
         # --- Likelihood: row-wise MvNormal with shared Sigma ----------------
         # Using chol directly (rather than cov=Sigma) avoids redundant
