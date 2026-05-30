@@ -6,3 +6,7 @@ repos:
       - id: ruff-format   # auto-formats .py and .ipynb files
       - id: ruff          # lint check (fails on violations ruff can't auto-fix)
         args: [--fix]     # auto-fix what it can; fail if anything remains
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.9.1
+    hooks:
+      - id: nbstripout    # strips notebook outputs before commit
