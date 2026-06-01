@@ -341,6 +341,69 @@ class BayesianVECM:
 
         return az.summary(self.idata_, **summary_kwargs)
 
+    def irf(
+        self,
+        steps: int,
+        *,
+        method: str = "girf",
+    ) -> xr.DataArray:
+        """Compute posterior Impulse Response Functions for *steps* horizons.
+
+        Returns a posterior distribution over IRF paths — the response of
+        each variable to a unit shock in each other variable, for every
+        posterior draw.
+
+        Two identification schemes are available:
+
+        * ``"girf"`` (default) — Generalised IRFs (Pesaran & Shin 1998).
+          Order-invariant; the right choice when contemporaneous feedback loops
+          exist among the endogenous variables (e.g. brand awareness |harr|
+          consideration |harr| organic sales).
+        * ``"cholesky"`` — Orthogonalised IRFs (Sims 1980).  Requires a
+          defensible recursive causal ordering among the variables.  Use only
+          when your system is genuinely triangular.
+
+        Parameters
+        ----------
+        steps
+            Number of periods ahead to compute IRFs.  Horizons
+            :math:`h = 0, 1, \\dots, \\text{steps}` are returned, giving
+            ``steps + 1`` entries along the ``horizon`` dimension.
+        method
+            Identification scheme — ``"girf"`` or ``"cholesky"``.
+
+        Returns
+        -------
+        xarray.DataArray
+            Shape ``(chain, draw, horizon, response_variable, shock_variable)``.
+            ``horizon`` runs from ``0`` (impact) to ``steps``.
+            Entry ``[..., h, i, j]`` is the response of variable :math:`i`
+            to a unit shock in variable :math:`j` at horizon :math:`h`.
+            ``response_variable`` and ``shock_variable`` coordinates are set
+            when ``self.variable_names_`` is available.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`fit` has not been called.
+        ValueError
+            If ``steps < 1`` or ``method`` is unrecognised.
+        """
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+        if steps < 1:
+            raise ValueError(f"steps must be at least 1; got steps={steps}")
+
+        from bayesian_vecm._irf import compute_irf
+
+        return compute_irf(
+            idata=self.idata_,
+            k_ar_diff=self.k_ar_diff,
+            steps=steps,
+            method=method,
+            variable_names=self.variable_names_,
+        )
+
     def sample_posterior_predictive(
         self,
         steps: int,
