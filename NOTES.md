@@ -45,6 +45,31 @@ model.sample_posterior_predictive(steps=12)
 | License | MIT | Permissive, standard for OSS Python. |
 | CI | GitHub Actions, matrix on Py 3.11 + 3.12 | `.github/workflows/ci.yml` runs ruff + pytest on push to main and PRs. |
 
+## Status as of last session (2026-06-01)
+
+**Update 2026-06-01 — `feat/irf` in progress (not yet merged to `main`):**
+
+- **IRF support shipped.** `src/bayesian_vecm/_irf.py` with `compute_irf(idata, k_ar_diff, steps, method, variable_names)`.
+- **Implementation:** VAR companion form — VECM is converted to levels VAR(p) with `p = k_ar_diff + 1`. Companion matrix `F` is iterated to produce `Phi_h = top-left K×K block of F^h` for `h = 0..steps`. Fully vectorised over (chain × draw); single Python loop over horizons.
+- **Two identification schemes:**
+  - `"girf"` (default) — Generalised IRFs (Pesaran & Shin 1998). `GIRF_h = Phi_h @ Sigma @ diag(Sigma)^{-1/2}`. Order-invariant; the right choice for systems with contemporaneous feedback (awareness ↔ consideration ↔ organic sales).
+  - `"cholesky"` — Orthogonalised IRFs (Sims 1980). `OIR_h = Phi_h @ P`. Available for recursive systems but not the default.
+- **Key design decision:** outside deterministic terms (`"co"`, `"lo"`) append an extra column to `Gamma` in the fitted posterior. That column is a constant/trend coefficient, not a VAR lag, and must not enter the companion matrix. `compute_irf` always slices `Gamma` to `K * k_ar_diff` columns before building `F`.
+- **`BayesianVECM.irf(steps, method="girf")`** — thin wrapper with pre-fit guard and steps validation. Returns `xr.DataArray (chain, draw, horizon, response_variable, shock_variable)`. Horizon coord runs 0..steps inclusive.
+- **`tests/test_irf.py`:** 19 tests — shape, dims, coords, finite values, h=0 mathematical identities for both methods, Cholesky upper-triangle zeros, own-shock positivity, determinism, long-run I(1) non-decay. All passed.
+- **Notebook 07** shipped: bivariate awareness/sales DGP, GIRF fan charts with 80%/95% HDI bands, I(1) non-decay table, GIRF vs Cholesky comparison under two orderings.
+- **Ruff N806 lesson:** uppercase variable names (`Kp`, `F`, `A1`, `G_prev`, `P`) fail the N806 rule in function scope — rename to lowercase (`kp`, `companion`, `a1`, `g_prev`, `p_chol`). Pre-commit hook caught these before push.
+- **Branch status:** `feat/irf` is ready to merge. Run `.venv/bin/jupyter nbconvert --to notebook --execute --inplace notebooks/07_irf_walkthrough.ipynb` before committing the notebook, then open a PR.
+- **Suite: 192 passed** (173 + 19 new IRF tests).
+
+**Motivation for GIRF as default (important for the brand marketing use case):**
+
+The target system is:
+- **Endogenous (cointegrated):** organic sales, brand awareness, consideration.
+- **Exogenous (future slice):** brand spend, interest rates / demand driver.
+
+Within the endogenous system the causal flow has feedback loops: awareness → consideration → sales, but also sales → awareness (word-of-mouth from buyers) and consideration → awareness (word-of-mouth from considerers). Any Cholesky ordering imposes a zero contemporaneous restriction that is wrong. GIRF is order-invariant and handles this correctly.
+
 ## Status as of last session (2026-05-30)
 
 **Update 2026-05-30 — `feat/wider-graph` complete (merged to `main`):**
@@ -177,26 +202,18 @@ git switch main && git pull && git branch -d feat/<slice-name>
 
 ## Next slice
 
-**Impulse Response Functions (IRFs)**
+**Exogenous regressors (`exog`) — contemporaneous brand spend effects**
 
-**Branch:** `feat/irf`
+**Branch:** `feat/exog` (not yet created)
 
-**Goal.** Add `BayesianVECM.irf(steps)` — a posterior distribution over IRF paths. This is one of the primary outputs practitioners use a VECM for: understanding how a shock to one variable propagates through the system over time.
+**Why now.** The brand marketing use case is the primary motivation for this package. The endogenous system (organic sales, brand awareness, consideration) is now fully estimable and has IRF output. The missing piece is brand spend entering as a contemporaneous exogenous driver. Once `exog` lands, the key marketing deliverable becomes a **counterfactual forecast diff** — run `sample_posterior_predictive` with two spend paths and take the difference — which is the Bayesian version of the methodology in Ryan's Medium article.
 
-**Why now.** IRFs are a core output method (like `sample_posterior_predictive`), not a modelling extension. Users will want this as soon as the model works. It also makes a natural notebook 07.
+**Goal.** See the "Exogenous regressors (`exog`) support" section below for the full spec. Short version:
+- `model.fit(endog, exog=brand_spend_df)` — contemporaneous effect in the short-run equation.
+- `model.fit(endog, exog_coint=brand_equity_df)` — effect inside the cointegrating relation.
+- `sample_posterior_predictive` and `irf` both need updating to accept future `exog` paths.
 
-**Substantive pieces:**
-
-- **`src/bayesian_vecm/_irf.py`** — `compute_irf(idata, k_ar_diff, steps)` function. Vectorised over posterior draws (chain × draw). The shock is a Cholesky-orthogonalised unit shock — shocks are uncorrelated, and the Cholesky of Σ is already in `idata`. Returns an array of shape `(chain, draw, steps, K, K)` — response of variable `i` to shock `j` at horizon `h`.
-- **`BayesianVECM.irf(steps)` method** — thin wrapper, returns an `xr.DataArray` with `horizon`, `response_variable`, and `shock_variable` coordinates.
-- **Tests** — shape `(chain, draw, steps, K, K)`, `h=0` response is the identity for orthogonalised shocks, long-run response reflects the cointegrating restriction (EC mechanism pulls the system back), pre-fit `RuntimeError`.
-- **Notebook 07** — IRF plots with posterior HDI bands. Same bivariate DGP as notebooks 04–05; show how a shock to `y0` propagates to both variables, and how the error-correction term damps the response back to the cointegrating relation.
-
-**Implementation notes:**
-
-- The VAR companion form is useful for computing IRFs efficiently: stack the VECM into a levels VAR, then iterate the companion matrix. For each posterior draw: reconstruct the companion matrix from `(alpha, beta, Gamma, Sigma)`, then multiply out `h` steps.
-- Orthogonalised IRFs require a Cholesky ordering assumption — document this clearly. The default ordering is the variable order in `endog`; a future extension could expose a `cholesky_order` argument.
-- Cumulative IRFs (summed over horizons) are also useful for I(1) systems — worth adding as an option.
+**Sequencing note.** The post-IRF output methods (fittedvalues, resid, var_rep, diagnostic tests) are small and can slot in before or after `exog` — they don't block anything.
 
 ## Exogenous regressors (`exog`) support
 
@@ -268,6 +285,14 @@ In rough order of when to attempt them, once the baseline estimator lands.
 ### Sequencing thought
 
 Full v0 envelope (`feat/wider-graph`) first — `r > 1` and all deterministic codes. Then layer extensions: horseshoe → stochastic volatility → rank uncertainty. Each extension should ship behind a flag or as an optional argument rather than replacing the baseline, so the baseline stays available as both a teaching example and a sampling-diagnostic reference.
+
+## Session learnings (2026-06-01)
+
+- **Ruff N806 — uppercase variable names in function scope.** `Kp`, `F`, `A1`, `G_prev`, `P` all fail N806 even when they're standard mathematical notation. Rename to `kp`, `companion`, `a1`, `g_prev`, `p_chol`. This catches you on commit via the pre-commit hook; easier to rename upfront than fix after staging.
+- **IRF companion matrix: outside deterministic columns must be stripped.** When `deterministic="co"` or `"lo"`, `Gamma` in the fitted posterior has `K*k + 1` columns — the last column is the constant/trend, not a VAR lag. Passing the full matrix to the companion construction gives a wrong `A_1` and wrong IRFs. Always slice `gamma[:, :, :n_vars * k_ar_diff]` before building `F`.
+- **GIRF is the right default for feedback systems.** The brand marketing system (awareness ↔ consideration ↔ organic sales) has contemporaneous feedback loops that violate the Cholesky recursive ordering assumption. The two Cholesky orderings give materially different long-run responses; GIRF is order-invariant. Document this clearly for users — the choice of `method` matters a lot in practice.
+- **IRFs are fully deterministic** — no random innovations, unlike `sample_posterior_predictive`. The same idata gives the same IRF every time. No `random_seed` argument needed.
+- **VECM-to-VAR conversion formula (for reference):** `A_1 = I + alpha @ beta.T + Gamma_1`, `A_j = Gamma_j - Gamma_{j-1}` for `j = 2..k`, `A_{k+1} = -Gamma_k`. For `k=0`: `A_1 = I + alpha @ beta.T`, `p=1`.
 
 ## Session learnings (2026-05-29)
 
@@ -356,6 +381,13 @@ uv run pytest                 # tests
 # optional: execute notebooks if you've edited them
 uv run jupyter nbconvert --to notebook --execute --inplace notebooks/*.ipynb
 ```
+
+## Docs site (future)
+
+Notebooks committed with outputs stripped (nbstripout) keep diffs clean but means GitHub can't render them. Options when the package is closer to PyPI:
+
+- **nbviewer** — quick workaround now: paste any raw GitHub notebook URL into [nbviewer.org](https://nbviewer.org) to render it.
+- **Docs site** — Sphinx + nbsphinx or MkDocs + mkdocs-jupyter. Would execute notebooks and publish rendered HTML. Worth doing once the notebook catalogue is stable (post-`exog`).
 
 ## Domain-learning track
 
