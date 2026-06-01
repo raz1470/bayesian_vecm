@@ -56,7 +56,10 @@ were accepted at construction time to lock in the public API, but raise
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 import arviz as az
 import numpy as np
@@ -340,6 +343,198 @@ class BayesianVECM:
             summary_kwargs["var_names"] = var_names
 
         return az.summary(self.idata_, **summary_kwargs)
+
+    @property
+    def fittedvalues(self) -> xr.DataArray:
+        """Posterior in-sample fitted values of :math:`\\Delta y`.
+
+        Computes :math:`\\hat{\\Delta y}_t = \\alpha\\beta^\\top y_{t-1} +
+        \\Gamma\\Delta x_t` for every posterior draw.
+
+        Returns
+        -------
+        xarray.DataArray
+            Shape ``(chain, draw, time, variable)``.  ``time`` is zero-indexed
+            over the :math:`T_{\\text{eff}}` in-sample observations.  Use
+            ``.mean(("chain", "draw"))`` for the posterior-mean fitted values.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`fit` has not been called.
+        """
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+
+        from bayesian_vecm._output import compute_fittedvalues
+
+        return compute_fittedvalues(self.idata_, self.k_ar_diff, self.variable_names_)
+
+    @property
+    def resid(self) -> xr.DataArray:
+        """Posterior in-sample residuals :math:`\\Delta y - \\hat{\\Delta y}`.
+
+        Returns
+        -------
+        xarray.DataArray
+            Shape ``(chain, draw, time, variable)``.  Use
+            ``.mean(("chain", "draw"))`` for posterior-mean residuals.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`fit` has not been called.
+        """
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+
+        from bayesian_vecm._output import compute_resid
+
+        return compute_resid(self.idata_, self.k_ar_diff, self.variable_names_)
+
+    @property
+    def var_rep(self) -> xr.DataArray:
+        """Posterior levels VAR(:math:`p`) coefficient matrices.
+
+        Reconstructs :math:`A_1, \\dots, A_p` from the VECM posterior using
+        the standard VECM-to-VAR(p) conversion
+        (:math:`p = k_{\\text{ar\\_diff}} + 1`).
+
+        Returns
+        -------
+        xarray.DataArray
+            Shape ``(chain, draw, lag, response_variable, shock_variable)``.
+            ``lag`` runs from ``1`` to ``p``.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`fit` has not been called.
+        """
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+
+        from bayesian_vecm._output import compute_var_rep
+
+        return compute_var_rep(self.idata_, self.k_ar_diff, self.variable_names_)
+
+    def test_normality(self) -> pd.DataFrame:
+        """Jarque-Bera normality test on posterior-mean residuals.
+
+        Tests each endogenous variable independently.  H0: residuals are
+        normally distributed.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per variable, columns ``jb_stat`` and ``p_value``.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`fit` has not been called.
+        """
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+
+        from bayesian_vecm._diagnostics import normality_test
+
+        return normality_test(self.idata_, self.k_ar_diff, self.variable_names_)
+
+    def test_whiteness(self, *, lags: int = 10) -> pd.DataFrame:
+        """Ljung-Box whiteness test on posterior-mean residuals.
+
+        Tests each endogenous variable independently for autocorrelation up
+        to ``lags`` periods.  H0: no autocorrelation.
+
+        Parameters
+        ----------
+        lags
+            Lag order for the portmanteau Q-statistic.  Defaults to ``10``.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per variable, columns ``lb_stat``, ``p_value``, ``lags``.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`fit` has not been called.
+        ValueError
+            If ``lags < 1``.
+        """
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+
+        from bayesian_vecm._diagnostics import whiteness_test
+
+        return whiteness_test(
+            self.idata_, self.k_ar_diff, lags=lags, variable_names=self.variable_names_
+        )
+
+    def irf(
+        self,
+        steps: int,
+        *,
+        method: str = "girf",
+    ) -> xr.DataArray:
+        """Compute posterior Impulse Response Functions for *steps* horizons.
+
+        Returns a posterior distribution over IRF paths — the response of
+        each variable to a unit shock in each other variable, for every
+        posterior draw.
+
+        Two identification schemes are available:
+
+        * ``"girf"`` (default) — Generalised IRFs (Pesaran & Shin 1998).
+          Order-invariant; the right choice when contemporaneous feedback loops
+          exist among the endogenous variables (e.g. brand awareness |harr|
+          consideration |harr| organic sales).
+        * ``"cholesky"`` — Orthogonalised IRFs (Sims 1980).  Requires a
+          defensible recursive causal ordering among the variables.  Use only
+          when your system is genuinely triangular.
+
+        Parameters
+        ----------
+        steps
+            Number of periods ahead to compute IRFs.  Horizons
+            :math:`h = 0, 1, \\dots, \\text{steps}` are returned, giving
+            ``steps + 1`` entries along the ``horizon`` dimension.
+        method
+            Identification scheme — ``"girf"`` or ``"cholesky"``.
+
+        Returns
+        -------
+        xarray.DataArray
+            Shape ``(chain, draw, horizon, response_variable, shock_variable)``.
+            ``horizon`` runs from ``0`` (impact) to ``steps``.
+            Entry ``[..., h, i, j]`` is the response of variable :math:`i`
+            to a unit shock in variable :math:`j` at horizon :math:`h`.
+            ``response_variable`` and ``shock_variable`` coordinates are set
+            when ``self.variable_names_`` is available.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`fit` has not been called.
+        ValueError
+            If ``steps < 1`` or ``method`` is unrecognised.
+        """
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+        if steps < 1:
+            raise ValueError(f"steps must be at least 1; got steps={steps}")
+
+        from bayesian_vecm._irf import compute_irf
+
+        return compute_irf(
+            idata=self.idata_,
+            k_ar_diff=self.k_ar_diff,
+            steps=steps,
+            method=method,
+            variable_names=self.variable_names_,
+        )
 
     def sample_posterior_predictive(
         self,

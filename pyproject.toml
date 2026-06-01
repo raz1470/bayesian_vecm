@@ -41,6 +41,7 @@ dependencies = [
     "arviz>=1.1",
     "numpy>=1.26",
     "pymc>=6.0",
+    "scipy>=1.11",
 ]
 
 # Optional dependency groups. Users install these with `pip install bayesian_vecm[dev]`.
@@ -99,6 +100,7 @@ addopts = [
     "-ra",                      # show short summary for all non-passing tests
     "--strict-markers",         # error on unknown @pytest.mark.* markers
     "--strict-config",          # error on unknown config keys
+    "--assert=plain",           # skip AST assertion rewriting — avoids SIGINT during collection
     "--cov=bayesian_vecm",      # measure coverage of our package
     "--cov-report=term-missing",
 ]
@@ -121,4 +123,5 @@ dev = [
     "matplotlib>=3.10.9",
     "nbstripout>=0.9.1",
     "pre-commit>=4.6.0",
+    "pytest-cov>=7.1.0",
 ]

@@ -45,21 +45,62 @@ model.sample_posterior_predictive(steps=12)
 | License | MIT | Permissive, standard for OSS Python. |
 | CI | GitHub Actions, matrix on Py 3.11 + 3.12 | `.github/workflows/ci.yml` runs ruff + pytest on push to main and PRs. |
 
-## Status as of last session (2026-05-29)
+## Status as of last session (2026-06-01, output-methods)
 
-**Update 2026-05-29 — `feat/wider-graph` PR 1 (in progress on `feat/wider-graph`):**
+**Update 2026-06-01 — `feat/output-methods` in progress (not yet merged to `main`):**
 
-- **`coint_rank > 1` supported in the PyMC graph.** Removed the `coint_rank != 1` scope guard from `_pymc.py`. The β-pin construction already used `r` generically (`pt.eye(r)` stacked on a `(K-r, r)` free block), so no graph logic needed changing — only the guard and docstrings.
-- **`test_pymc.py` updated:** removed `test_coint_rank_other_than_1_raises`, added `_synthetic_trivariate_r2` DGP helper, `design_trivariate_r2` fixture, and `TestHigherRank` class (6 tests: model builds, named vars, beta shape `(3,2)`, top block is `I_2`, free row varies, alpha shape `(3,2)`, regression test for `r=1`).
-- **`test_model.py` updated:** removed stale `test_fit_with_coint_rank_above_one_raises_not_implemented`; added `cores=1` to all `pm.sample` calls in tests to work around the macOS multiprocessing spawn deadlock.
-- **`uv run pytest` hangs on macOS** — use `.venv/bin/pytest` directly instead. `uv run` appears to deadlock during pytest startup in this environment.
-- **Suite: 155 passed, 97% coverage.**
+- **Post-fit output methods shipped.** Three new properties and two diagnostic methods on `BayesianVECM`:
+  - `fittedvalues` — posterior fitted values of Δy, shape `(chain, draw, T_eff, K)`. `xr.DataArray`.
+  - `resid` — posterior residuals Δy − fitted, same shape.
+  - `var_rep` — levels VAR(p) coefficient matrices A_1..A_p, shape `(chain, draw, lag, response_variable, shock_variable)`.
+  - `test_normality()` — Jarque-Bera test per variable on posterior-mean residuals. Returns `pd.DataFrame`.
+  - `test_whiteness(lags=10)` — Ljung-Box portmanteau test per variable. Returns `pd.DataFrame`.
+- **New modules:** `src/bayesian_vecm/_output.py` and `src/bayesian_vecm/_diagnostics.py`.
+- **Key design decision:** `fittedvalues` and `resid` use the full fitted `beta` (including extra constant/trend row for inside deterministic terms). `var_rep` slices `beta[:K, :]` — the constant/trend row is a deterministic intercept in the VAR, not a lagged coefficient.
+- **`scipy` added as a runtime dep** (floor `>=1.11`) — used for `scipy.stats.jarque_bera` and `scipy.stats.chi2` in the diagnostics module.
+- **`--assert=plain` added to addopts** — avoids SIGINT during pytest's assertion rewriter phase on large test files.
+- **`PYTENSOR_FLAGS="cxx="` added to `~/.zshrc`** — disables PyTensor C compilation, avoids macOS SIGINT from security software intercepting clang subprocess spawns.
+- **Local test workflow** (see session learnings below): run sampling test files one at a time in a fresh terminal where `PYTENSOR_FLAGS="cxx="` is active.
+- **Suite: 105 passed, 2 skipped** (51 test_model + 20 test_irf + 34 test_output).
 
-**Not yet done (remaining in `feat/wider-graph`):**
+## Status as of last session (2026-06-01)
 
-- **Deterministic terms in the PyMC graph** — PR 2. Read shapes dynamically off the design matrices; outside terms widen Γ, inside terms widen β. Tests across all 5 codes × `r=1,2`.
-- **Notebook 06** — trivariate `r=2` example + deterministic term demo. Ships with PR 2.
-- **nbstripout pre-commit hook migration** — the git clean filter crashes when 5 notebooks are staged simultaneously (`rfc3987_syntax 1.1.0` rebuilds Lark parsers from scratch on every process startup). Fix: move nbstripout from git clean filter to a pre-commit hook (sequential, single process). Small chore PR after `feat/wider-graph` merges.
+**Update 2026-06-01 — `feat/irf` in progress (not yet merged to `main`):**
+
+- **IRF support shipped.** `src/bayesian_vecm/_irf.py` with `compute_irf(idata, k_ar_diff, steps, method, variable_names)`.
+- **Implementation:** VAR companion form — VECM is converted to levels VAR(p) with `p = k_ar_diff + 1`. Companion matrix `F` is iterated to produce `Phi_h = top-left K×K block of F^h` for `h = 0..steps`. Fully vectorised over (chain × draw); single Python loop over horizons.
+- **Two identification schemes:**
+  - `"girf"` (default) — Generalised IRFs (Pesaran & Shin 1998). `GIRF_h = Phi_h @ Sigma @ diag(Sigma)^{-1/2}`. Order-invariant; the right choice for systems with contemporaneous feedback (awareness ↔ consideration ↔ organic sales).
+  - `"cholesky"` — Orthogonalised IRFs (Sims 1980). `OIR_h = Phi_h @ P`. Available for recursive systems but not the default.
+- **Key design decision:** outside deterministic terms (`"co"`, `"lo"`) append an extra column to `Gamma` in the fitted posterior. That column is a constant/trend coefficient, not a VAR lag, and must not enter the companion matrix. `compute_irf` always slices `Gamma` to `K * k_ar_diff` columns before building `F`.
+- **`BayesianVECM.irf(steps, method="girf")`** — thin wrapper with pre-fit guard and steps validation. Returns `xr.DataArray (chain, draw, horizon, response_variable, shock_variable)`. Horizon coord runs 0..steps inclusive.
+- **`tests/test_irf.py`:** 19 tests — shape, dims, coords, finite values, h=0 mathematical identities for both methods, Cholesky upper-triangle zeros, own-shock positivity, determinism, long-run I(1) non-decay. All passed.
+- **Notebook 07** shipped: bivariate awareness/sales DGP, GIRF fan charts with 80%/95% HDI bands, I(1) non-decay table, GIRF vs Cholesky comparison under two orderings.
+- **Ruff N806 lesson:** uppercase variable names (`Kp`, `F`, `A1`, `G_prev`, `P`) fail the N806 rule in function scope — rename to lowercase (`kp`, `companion`, `a1`, `g_prev`, `p_chol`). Pre-commit hook caught these before push.
+- **Branch status:** `feat/irf` is ready to merge. Run `.venv/bin/jupyter nbconvert --to notebook --execute --inplace notebooks/07_irf_walkthrough.ipynb` before committing the notebook, then open a PR.
+- **Suite: 192 passed** (173 + 19 new IRF tests).
+
+**Motivation for GIRF as default (important for the brand marketing use case):**
+
+The target system is:
+- **Endogenous (cointegrated):** organic sales, brand awareness, consideration.
+- **Exogenous (future slice):** brand spend, interest rates / demand driver.
+
+Within the endogenous system the causal flow has feedback loops: awareness → consideration → sales, but also sales → awareness (word-of-mouth from buyers) and consideration → awareness (word-of-mouth from considerers). Any Cholesky ordering imposes a zero contemporaneous restriction that is wrong. GIRF is order-invariant and handles this correctly.
+
+## Status as of last session (2026-05-30)
+
+**Update 2026-05-30 — `feat/wider-graph` complete (merged to `main`):**
+
+- **Full v0 envelope now live.** The PyMC graph supports any `coint_rank >= 1` and all five deterministic codes (`"n"`, `"co"`, `"ci"`, `"lo"`, `"li"`).
+- **Implementation insight:** the graph reads shapes directly off the design matrices rather than branching on `deterministic`. `cointegration_design` already appended the right columns, so:
+  - Inside terms (`"ci"`, `"li"`): `y_lag1` gains a column → β widens from `(K, r)` to `(K+1, r)`, extra row is free.
+  - Outside terms (`"co"`, `"lo"`): `delta_x` gains a column → Γ widens from `(K, Kk)` to `(K, Kk+1)`.
+  - Γ condition changed from `k_ar_diff > 0` to `delta_x_cols > 0` (handles `k=0` + outside term).
+- **`test_pymc.py`:** removed `TestScopeGuards`; added `TestDeterministicTerms` (18 tests across all 5 codes × r=1,2).
+- **Notebook 06** shipped: trivariate `r=2` example (β-pin is `I_2`, free row recovery) + `"ci"` and `"co"` demos showing β and Γ shape changes.
+- **nbstripout pre-commit hook migration** done (separate chore PR): moved from git clean filter (parallel, crashes with 5 notebooks) to pre-commit hook (sequential). Workflow: stage notebook → pre-commit strips outputs → re-stage stripped file → commit.
+- **Suite: 173 passed.**
 
 ## Status as of last session (2026-05-28)
 
@@ -179,20 +220,50 @@ git switch main && git pull && git branch -d feat/<slice-name>
 
 ## Next slice
 
-**Expand the PyMC graph to the v0 envelope**
+**Exogenous regressors (`exog`) — contemporaneous brand spend effects**
 
-**Branch:** `feat/wider-graph`
+**Branch:** `feat/exog` (not yet created)
 
-**Goal.** Drop the two `NotImplementedError` scope guards in `_pymc.py` — support `coint_rank > 1` and the four non-`"n"` deterministic codes the design helper already produces matrices for.
+**Why now.** The brand marketing use case is the primary motivation for this package. The endogenous system (organic sales, brand awareness, consideration) is now fully estimable and has IRF output. The missing piece is brand spend entering as a contemporaneous exogenous driver. Once `exog` lands, the key marketing deliverable becomes a **counterfactual forecast diff** — run `sample_posterior_predictive` with two spend paths and take the difference — which is the Bayesian version of the methodology in Ryan's Medium article.
 
-**Substantive pieces:**
+**Goal.** See the "Exogenous regressors (`exog`) support" section below for the full spec. Short version:
+- `model.fit(endog, exog=brand_spend_df)` — contemporaneous effect in the short-run equation.
+- `model.fit(endog, exog_coint=brand_equity_df)` — effect inside the cointegrating relation.
+- `sample_posterior_predictive` and `irf` both need updating to accept future `exog` paths.
 
-- **`r > 1`:** free β block becomes `(K - r, r)`; `pt.eye(r)` handles the normalisation. α shape becomes `(K, r)`. Σ and Γ are unchanged by rank.
-- **Deterministic terms:** `cointegration_design` already appends the right columns — the graph just needs to read shapes off the design matrices rather than hardcoding `K`:
-  - Outside terms (`"co"`, `"lo"`): `delta_x` has an extra column → Γ is `(K, K*k + 1)`.
-  - Inside terms (`"ci"`, `"li"`): `y_lag1` has an extra column → β is `(K+1, r)`, extra row is free (not pinned).
-- **Tests:** graph-construction tests (check variable shapes without sampling) across all five codes × `r=1` and `r=2`, plus a short integration test for the `r>1` path.
-- **Notebook 06:** trivariate `r=2` example + a deterministic term demo.
+**Sequencing note.** The post-IRF output methods (fittedvalues, resid, var_rep, diagnostic tests) shipped on `feat/output-methods` — done. `exog` is next.
+
+## Exogenous regressors (`exog`) support
+
+**Motivation.** In brand marketing applications some effects are contemporaneous — brand spend at time $t$ affects the outcome at the same time $t$, not just through lagged dynamics. The standard VECM only has lagged regressors on the right-hand side, so these effects get absorbed into the residuals and are invisible to the model.
+
+**The extension.** Add an optional `exog` matrix of contemporaneous variables $X_t$ (shape `(T, m)`) to the short-run equation:
+
+$$
+\Delta y_t = \alpha\beta^\top y_{t-1} + \Gamma\,\Delta x_t + \mathbf{B}\,X_t + \varepsilon_t
+$$
+
+$\mathbf{B}$ is $(K, m)$ — one column per exogenous variable, one row per endogenous variable.
+
+**API design.** Match statsmodels — pass `exog` at `fit` time (not `__init__`), since it's data not a model structural choice. Also expose `exog_coint` for the case where the exogenous variable belongs *inside* the cointegrating relation (e.g. a slowly-moving brand equity index that determines the long-run equilibrium):
+
+```python
+model.fit(endog, exog=brand_spend_df)           # contemporaneous effect in short-run eq
+model.fit(endog, exog_coint=brand_equity_df)    # effect inside cointegrating relation
+```
+
+**Implementation.** `cointegration_design` gains optional `exog` and `exog_coint` arguments; validated and aligned to `T_eff` rows. The graph adds a `B` RV (shape `(K, m)`, prior `Normal(0, 1.0)`) and appends `B @ X_t.T` to the mean. `exog_coint` appends columns to `y_lag1` (same mechanism as inside deterministic terms). `sample_posterior_predictive` and `irf` both need updating to accept future `exog` paths.
+
+**Sequencing.** After IRF and output methods — the baseline needs to be solid before adding exogenous regressors, and IRF with exog requires passing future exog paths to the forecast recursion.
+
+## Post-IRF output methods (statsmodels parity)
+
+Small slice after `feat/irf` merges. These are all post-fit properties/methods that statsmodels exposes and that are low-effort additions:
+
+- **`fittedvalues` / `resid`** — in-sample fitted values and residuals. Properties that compute `alpha @ beta.T @ y_lag1 + Gamma @ delta_x` over posterior draws (or just the posterior mean for a point summary). Useful for diagnostic plots.
+- **`var_rep`** — levels VAR(p) coefficient matrices reconstructed from VECM parameters. Will be computed internally for IRF anyway; worth exposing so users can inspect the companion form directly.
+- **Diagnostic tests** — `test_normality` (Jarque-Bera on residuals) and `test_whiteness` (Portmanteau autocorrelation test). Classical post-estimation checks; Bayesian posterior predictive checks are richer but these are familiar to practitioners.
+- **Granger causality** — skip. In a Bayesian model you just inspect the posterior of the relevant Γ coefficients; a separate test method adds little.
 
 ## Future directions (parking lot)
 
@@ -205,7 +276,21 @@ Forward-looking items raised during planning on 2026-05-18. Not committed to and
 ### References to mine later
 
 - **`bvhar`** — Python package for Bayesian VAR / VHAR with shrinkage priors. Doesn't do VECM/cointegration, but a useful reference for Bayesian time-series patterns in PyMC-adjacent territory: prior specification, hyperparameter handling, posterior summaries, and what a "good" Bayesian time-series API looks like in 2026.
-- **VECM in brand marketing** — Ryan's Medium article: <https://medium.com/@raz1470/capturing-the-long-term-causal-effect-of-brand-marketing-bc577621a627>. The motivating use case for the whole package: brand investment has long-term effects that plain regression / MMM smears over short windows; VECM captures the cointegrating relationship between brand spend and the outcome variable. Worth linking from the README once the package is usable, and worth distilling into an "applied example" notebook later — separate from the methodology walkthroughs in `notebooks/`.
+- **VECM in brand marketing** — Ryan's Medium article: <https://medium.com/@raz1470/capturing-the-long-term-causal-effect-of-brand-marketing-bc577621a627>. The motivating use case for the whole package: brand investment has long-term effects that plain regression / MMM smears over short windows; VECM captures the cointegrating relationship between brand spend and the outcome variable. Worth linking from the README once the package is usable.
+
+### Brand marketing applied notebook
+
+After `exog` support ships, add a notebook that tells the full applied story — separate from the methodology walkthroughs, aimed at a practitioner who already knows marketing but is new to VECMs.
+
+**Planned as notebook 08** (after notebook 07 — IRFs). Outline:
+
+- **The problem.** Brand marketing has long-term effects that short-window regression and standard MMM miss. Show a synthetic DGP where brand spend and revenue are cointegrated — brand spend drifts up over years, revenue follows. A plain OLS or VAR-in-differences on this data gives wrong elasticities.
+- **Why VECM.** The cointegrating relation *is* the long-run brand equity equation. The error-correction term tells you how fast the system corrects when brand spend and revenue fall out of equilibrium — i.e. the speed at which brand investment translates to revenue.
+- **Contemporaneous effects via `exog`.** Some brand effects are immediate (a TV burst drives same-week sales). Show how `exog` captures this on top of the long-run cointegrating relationship.
+- **IRF as the key output.** The IRF tells the story practitioners need: "if we increase brand spend by 1 unit today, what happens to revenue over the next 52 weeks?" With posterior HDI bands. Compare to what a naive regression would say.
+- **Link to the Medium article** — frame this as the Bayesian version of the methodology described there.
+
+This notebook is the "why does this package exist" moment — the one to share when pitching the package to practitioners.
 
 ### Modelling extensions
 
@@ -218,6 +303,26 @@ In rough order of when to attempt them, once the baseline estimator lands.
 ### Sequencing thought
 
 Full v0 envelope (`feat/wider-graph`) first — `r > 1` and all deterministic codes. Then layer extensions: horseshoe → stochastic volatility → rank uncertainty. Each extension should ship behind a flag or as an optional argument rather than replacing the baseline, so the baseline stays available as both a teaching example and a sampling-diagnostic reference.
+
+## Session learnings (2026-06-01, output-methods session)
+
+- **SIGINT during PyTensor C compilation — partial fix.** Something on this Mac (likely XProtect, Gatekeeper, or an EDR agent) sends SIGINT when PyTensor spawns a C compiler subprocess. `export PYTENSOR_FLAGS="cxx="` in `~/.zshrc` disables C compilation (forces pure Python/NumPy backend) and fixes the issue when running a single test file. However, running all test files together still gets SIGINT — the second `pm.sample` call in a session triggers it regardless of `cxx=`. Root is likely PyMC 6 leaving a broken SIGINT handler after the first sampling run.
+- **Local test workflow — run sampling files separately.** CI (Linux) is unaffected. Locally, run with `PYTENSOR_FLAGS="cxx="` in environment (set in `~/.zshrc`) and split the suite:
+  ```bash
+  .venv/bin/pytest tests/test_data.py tests/test_design.py tests/test_package.py tests/test_pymc.py -q
+  .venv/bin/pytest tests/test_model.py -q
+  .venv/bin/pytest tests/test_irf.py -q
+  .venv/bin/pytest tests/test_output.py -q
+  ```
+- **`--assert=plain` in addopts.** Also added to avoid a separate SIGINT during pytest's assertion rewriter phase when collecting large test files without `PYTENSOR_FLAGS="cxx="`.
+
+## Session learnings (2026-06-01)
+
+- **Ruff N806 — uppercase variable names in function scope.** `Kp`, `F`, `A1`, `G_prev`, `P` all fail N806 even when they're standard mathematical notation. Rename to `kp`, `companion`, `a1`, `g_prev`, `p_chol`. This catches you on commit via the pre-commit hook; easier to rename upfront than fix after staging.
+- **IRF companion matrix: outside deterministic columns must be stripped.** When `deterministic="co"` or `"lo"`, `Gamma` in the fitted posterior has `K*k + 1` columns — the last column is the constant/trend, not a VAR lag. Passing the full matrix to the companion construction gives a wrong `A_1` and wrong IRFs. Always slice `gamma[:, :, :n_vars * k_ar_diff]` before building `F`.
+- **GIRF is the right default for feedback systems.** The brand marketing system (awareness ↔ consideration ↔ organic sales) has contemporaneous feedback loops that violate the Cholesky recursive ordering assumption. The two Cholesky orderings give materially different long-run responses; GIRF is order-invariant. Document this clearly for users — the choice of `method` matters a lot in practice.
+- **IRFs are fully deterministic** — no random innovations, unlike `sample_posterior_predictive`. The same idata gives the same IRF every time. No `random_seed` argument needed.
+- **VECM-to-VAR conversion formula (for reference):** `A_1 = I + alpha @ beta.T + Gamma_1`, `A_j = Gamma_j - Gamma_{j-1}` for `j = 2..k`, `A_{k+1} = -Gamma_k`. For `k=0`: `A_1 = I + alpha @ beta.T`, `p=1`.
 
 ## Session learnings (2026-05-29)
 
@@ -306,6 +411,13 @@ uv run pytest                 # tests
 # optional: execute notebooks if you've edited them
 uv run jupyter nbconvert --to notebook --execute --inplace notebooks/*.ipynb
 ```
+
+## Docs site (future)
+
+Notebooks committed with outputs stripped (nbstripout) keep diffs clean but means GitHub can't render them. Options when the package is closer to PyPI:
+
+- **nbviewer** — quick workaround now: paste any raw GitHub notebook URL into [nbviewer.org](https://nbviewer.org) to render it.
+- **Docs site** — Sphinx + nbsphinx or MkDocs + mkdocs-jupyter. Would execute notebooks and publish rendered HTML. Worth doing once the notebook catalogue is stable (post-`exog`).
 
 ## Domain-learning track
 

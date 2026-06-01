@@ -194,6 +194,7 @@ dependencies = [
     { name = "arviz" },
     { name = "numpy" },
     { name = "pymc" },
+    { name = "scipy" },
 ]
 
 [package.optional-dependencies]
@@ -210,6 +211,7 @@ dev = [
     { name = "matplotlib" },
     { name = "nbstripout" },
     { name = "pre-commit" },
+    { name = "pytest-cov" },
 ]
 
 [package.metadata]
@@ -220,6 +222,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "scipy", specifier = ">=1.11" },
 ]
 provides-extras = ["dev"]
 
@@ -230,6 +233,7 @@ dev = [
     { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "nbstripout", specifier = ">=0.9.1" },
     { name = "pre-commit", specifier = ">=4.6.0" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
 ]
 
 [[package]]
