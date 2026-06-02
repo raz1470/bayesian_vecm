@@ -45,34 +45,6 @@ model.sample_posterior_predictive(steps=12)
 | License | MIT | Permissive, standard for OSS Python. |
 | CI | GitHub Actions, matrix on Py 3.11 + 3.12 | `.github/workflows/ci.yml` runs ruff + pytest on push to main and PRs. |
 
-## Status as of last session (2026-06-02, output-methods notebook)
-
-**Update 2026-06-02 — notebook 08 debugged and pushed:**
-
-- **Notebook 08 is ready.** All arviz 1.x incompatibilities fixed; notebook executes cleanly cell-by-cell in VSCode. CI is the execution gate (local nbconvert fails due to the macOS SIGINT issue — see session learnings below).
-- **`statsmodels` added as a dev dep** (`uv add --dev statsmodels`) — required by `plot_acf` in notebook 08; not a transitive dep in this venv.
-- **Branch status:** `feat/output-methods` pushed. Open PR once CI is green.
-
-## Status as of last session (2026-06-01, output-methods)
-
-**Update 2026-06-01 — `feat/output-methods` in progress (not yet merged to `main`):**
-
-- **Post-fit output methods shipped.** Three new properties and two diagnostic methods on `BayesianVECM`:
-  - `fittedvalues` — posterior fitted values of Δy, shape `(chain, draw, T_eff, K)`. `xr.DataArray`.
-  - `resid` — posterior residuals Δy − fitted, same shape.
-  - `var_rep` — levels VAR(p) coefficient matrices A_1..A_p, shape `(chain, draw, lag, response_variable, shock_variable)`.
-  - `test_normality()` — Jarque-Bera test per variable on posterior-mean residuals. Returns `pd.DataFrame`.
-  - `test_whiteness(lags=10)` — Ljung-Box portmanteau test per variable. Returns `pd.DataFrame`.
-- **New modules:** `src/bayesian_vecm/_output.py` and `src/bayesian_vecm/_diagnostics.py`.
-- **Key design decision:** `fittedvalues` and `resid` use the full fitted `beta` (including extra constant/trend row for inside deterministic terms). `var_rep` slices `beta[:K, :]` — the constant/trend row is a deterministic intercept in the VAR, not a lagged coefficient.
-- **`scipy` added as a runtime dep** (floor `>=1.11`) — used for `scipy.stats.jarque_bera` and `scipy.stats.chi2` in the diagnostics module.
-- **`--assert=plain` added to addopts** — avoids SIGINT during pytest's assertion rewriter phase on large test files.
-- **`PYTENSOR_FLAGS="cxx="` added to `~/.zshrc`** — disables PyTensor C compilation, avoids macOS SIGINT from security software intercepting clang subprocess spawns.
-- **Local test workflow** (see session learnings below): run sampling test files one at a time in a fresh terminal where `PYTENSOR_FLAGS="cxx="` is active.
-- **Suite: 105 passed, 2 skipped** (51 test_model + 20 test_irf + 34 test_output).
-- **Notebook 08 written but not yet executed.** `notebooks/08_output_methods_walkthrough.ipynb` covers all five output methods with plots. Run `.venv/bin/jupyter nbconvert --to notebook --execute --inplace notebooks/08_output_methods_walkthrough.ipynb` to verify it executes cleanly before opening a PR. Note: uses `statsmodels.graphics.tsaplots.plot_acf` — confirm statsmodels is available transitively (it is a dep of PyMC but not declared explicitly; add `statsmodels` as a dev dep if nbconvert fails on that import).
-- **Branch status:** `feat/output-methods` is pushed. Open PR once notebook executes cleanly.
-
 ## Status as of last session (2026-06-01)
 
 **Update 2026-06-01 — `feat/irf` in progress (not yet merged to `main`):**
@@ -241,7 +213,7 @@ git switch main && git pull && git branch -d feat/<slice-name>
 - `model.fit(endog, exog_coint=brand_equity_df)` — effect inside the cointegrating relation.
 - `sample_posterior_predictive` and `irf` both need updating to accept future `exog` paths.
 
-**Sequencing note.** The post-IRF output methods (fittedvalues, resid, var_rep, diagnostic tests) shipped on `feat/output-methods` — done. `exog` is next.
+**Sequencing note.** The post-IRF output methods (fittedvalues, resid, var_rep, diagnostic tests) are small and can slot in before or after `exog` — they don't block anything.
 
 ## Exogenous regressors (`exog`) support
 
@@ -313,25 +285,6 @@ In rough order of when to attempt them, once the baseline estimator lands.
 ### Sequencing thought
 
 Full v0 envelope (`feat/wider-graph`) first — `r > 1` and all deterministic codes. Then layer extensions: horseshoe → stochastic volatility → rank uncertainty. Each extension should ship behind a flag or as an optional argument rather than replacing the baseline, so the baseline stays available as both a teaching example and a sampling-diagnostic reference.
-
-## Session learnings (2026-06-02, output-methods notebook)
-
-- **`az.style.use("arviz-darkgrid")` is gone in arviz 1.x.** The old darkgrid style was dropped. Available styles are now: `arviz-cetrino`, `arviz-tenui`, `arviz-tumma`, `arviz-variat`, `arviz-vibrant`. Simplest fix: remove the `az.style.use` call entirely (notebooks 04–07 don't use one). Check with `az.style.available()`.
-- **`az.hdi` API changed in arviz 1.x.** Old pattern: `az.hdi(da.stack(sample=("chain", "draw")), hdi_prob=0.80)` returning a Dataset with `"lower"`/`"higher"` keys. New pattern: `az.hdi(da, prob=0.80, dim=["chain", "draw"])` returning a DataArray with a `ci_bound` coord. Access bounds via `.sel(ci_bound="lower")` and `.sel(ci_bound="upper")` (note: `"higher"` → `"upper"`).
-- **`statsmodels` is not a transitive dep in this venv.** Even though PyMC pulls it in on many systems, it's not guaranteed. Any notebook using `statsmodels` (e.g. `plot_acf`) needs `uv add --dev statsmodels` explicitly.
-- **Local nbconvert still broken by macOS SIGINT.** `PYTENSOR_FLAGS="cxx="` and `.venv/bin/jupyter` both tried — the SIGINT still fires during kernel execution. CI (Linux) is unaffected. Treat CI as the execution gate for notebooks; verify correctness cell-by-cell in VSCode locally.
-
-## Session learnings (2026-06-01, output-methods session)
-
-- **SIGINT during PyTensor C compilation — partial fix.** Something on this Mac (likely XProtect, Gatekeeper, or an EDR agent) sends SIGINT when PyTensor spawns a C compiler subprocess. `export PYTENSOR_FLAGS="cxx="` in `~/.zshrc` disables C compilation (forces pure Python/NumPy backend) and fixes the issue when running a single test file. However, running all test files together still gets SIGINT — the second `pm.sample` call in a session triggers it regardless of `cxx=`. Root is likely PyMC 6 leaving a broken SIGINT handler after the first sampling run.
-- **Local test workflow — run sampling files separately.** CI (Linux) is unaffected. Locally, run with `PYTENSOR_FLAGS="cxx="` in environment (set in `~/.zshrc`) and split the suite:
-  ```bash
-  .venv/bin/pytest tests/test_data.py tests/test_design.py tests/test_package.py tests/test_pymc.py -q
-  .venv/bin/pytest tests/test_model.py -q
-  .venv/bin/pytest tests/test_irf.py -q
-  .venv/bin/pytest tests/test_output.py -q
-  ```
-- **`--assert=plain` in addopts.** Also added to avoid a separate SIGINT during pytest's assertion rewriter phase when collecting large test files without `PYTENSOR_FLAGS="cxx="`.
 
 ## Session learnings (2026-06-01)
 
