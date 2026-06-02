@@ -124,4 +124,5 @@ dev = [
     "nbstripout>=0.9.1",
     "pre-commit>=4.6.0",
     "pytest-cov>=7.1.0",
+    "statsmodels>=0.14.6",
 ]
