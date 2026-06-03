@@ -287,7 +287,7 @@ class TestFittedValuesExog:
 
     def test_fittedvalues_differ_with_exog(self, fitted_model_with_exog, fitted_model_no_exog):
         """fittedvalues from a model with exog should differ from one without."""
-        model_x, endog, _ = fitted_model_with_exog
+        model_x, _endog, _ = fitted_model_with_exog
         model_0, _ = fitted_model_no_exog
         # Both models fit the same endog; with exog the fit will differ.
         fv_x = model_x.fittedvalues.mean(("chain", "draw")).values
