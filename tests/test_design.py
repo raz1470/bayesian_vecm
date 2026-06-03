@@ -88,7 +88,7 @@ class TestHandBuiltExample:
         result = cointegration_design(TINY_Y, k_ar_diff=1)
         assert isinstance(result, CointegrationDesign)
         # Unpacking ordering: delta_y, delta_x, y_lag1, exog.
-        delta_y, delta_x, y_lag1, exog = result
+        delta_y, delta_x, y_lag1, _exog = result
         assert delta_y is result.delta_y
         assert delta_x is result.delta_x
         assert y_lag1 is result.y_lag1
