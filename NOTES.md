@@ -45,6 +45,32 @@ model.sample_posterior_predictive(steps=12)
 | License | MIT | Permissive, standard for OSS Python. |
 | CI | GitHub Actions, matrix on Py 3.11 + 3.12 | `.github/workflows/ci.yml` runs ruff + pytest on push to main and PRs. |
 
+## Status as of last session (2026-06-02, feat/exog)
+
+**Update 2026-06-02 — `feat/exog` in progress (not yet merged to `main`):**
+
+- **Exogenous regressor support shipped.** Five files touched: `_design.py`, `_pymc.py`, `_model.py`, `_forecast.py`, `_output.py`.
+- **`cointegration_design`** gains `exog` and `exog_coint` args. `exog` is aligned to `T_eff` rows and stored in `CointegrationDesign.exog`. `exog_coint` is appended to `y_lag1` (same mechanism as inside deterministic terms).
+- **PyMC graph:** `B ~ Normal(0, 1)` RV of shape `(K, m)` added when `design.exog` is not None. `exog @ B.T` added to the mean. `pm.Data("exog", ...)` stored so `_output.py` can read it back.
+- **`fit(endog, *, exog=None, exog_coint=None, ...)`** — aligned exog stashed in `idata.constant_data["exog"]` with dim `"time_eff"` (not `"time"` — avoids clash with the full-length `endog` array). `self.exog_` set for downstream use.
+- **`sample_posterior_predictive(steps, *, exog_future=None, ...)`** — raises `ValueError` if model was fitted with exog but `exog_future` not provided.
+- **`_forecast.py`:** `Gamma` now sliced to `K * k_ar_diff` dynamic columns before the forecast loop (fixes a pre-existing outside-deterministic bug). `B @ X_{T+h}` added at each step.
+- **`_output.py`:** `compute_fittedvalues` includes `exog @ B.T` when both `"exog"` and `"B"` are available.
+- **`tests/test_exog.py`:** 34 tests — 14 passed locally (design + graph); sampling tests deferred to CI (macOS SIGINT issue).
+- **Notebook 09** written: brand marketing applied story. DGP: organic sales (MMM baseline) and brand awareness are cointegrated; brand spend drives awareness only (`B[0,0]=0`, `B[1,0]=0.15`). Covers OLS vs VECM, parameter recovery, GIRF, counterfactual forecast diff. **Not yet executed** — run cell by cell in VS Code to verify, then execute via nbconvert before opening PR.
+- **Branch status:** `feat/exog` pushed. Open PR once CI is green and notebook executes.
+
+**Key design decisions locked in this slice:**
+- `exog` stored with dim `"time_eff"` in `constant_data` to avoid clash with `endog`'s `"time"` dim (different lengths: T vs T_eff).
+- `B` is a separate RV from `Gamma` — cleaner semantics, avoids the outside-deterministic column-stripping complication.
+- `exog_coint` absorbed into `y_lag1` at design time — same mechanism as `"ci"`/`"li"` deterministic terms.
+- `exog_future` is required when the model was fitted with `exog` — silent zeros would give misleading forecasts.
+
+**Brand marketing framing (important for notebook 09 and future applied work):**
+- Organic sales is the **MMM baseline output** — spend-decomposed. Brand spend has **no direct contemporaneous effect** on organic sales (`B[0,:] = 0`).
+- Brand spend drives **awareness** contemporaneously (`B[1,0]`). Awareness is cointegrated with organic sales. The EC mechanism propagates the awareness gain into organic sales over time — the long-run tail that standard MMMs miss.
+- The counterfactual forecast diff (uplift minus baseline) gives a Bayesian ROI estimate including that long-run tail.
+
 ## Status as of last session (2026-06-01)
 
 **Update 2026-06-01 — `feat/irf` in progress (not yet merged to `main`):**
@@ -285,6 +311,20 @@ In rough order of when to attempt them, once the baseline estimator lands.
 ### Sequencing thought
 
 Full v0 envelope (`feat/wider-graph`) first — `r > 1` and all deterministic codes. Then layer extensions: horseshoe → stochastic volatility → rank uncertainty. Each extension should ship behind a flag or as an optional argument rather than replacing the baseline, so the baseline stays available as both a teaching example and a sampling-diagnostic reference.
+
+## Session learnings (2026-06-02, feat/exog)
+
+- **`idata.constant_data` dim name clash.** `endog` is stored with dim `"time"` (T rows). Storing the aligned `exog` (T_eff rows) with the same dim name raises `AlignmentError: conflicting dimension sizes`. Fix: use `"time_eff"` for any T_eff-length arrays added to `constant_data` after sampling.
+- **`_forecast.py` had a latent outside-deterministic bug.** When `deterministic="co"/"lo"`, `Gamma` in the posterior has `K*k + 1` columns (extra outside-term column). The forecast loop was using the full width. Fixed in this slice: slice `gamma[:, :, :n_vars * k_ar_diff]` before the loop — same fix already in `_irf.py`.
+- **Module-scoped fixtures with two `pm.sample` calls hit the double-sample SIGINT.** `fitted_model_with_exog` and `fitted_model_no_exog` both call `pm.sample`. Running them in the same pytest session triggers SIGINT. No local fix; rely on CI for the sampling tests.
+- **Brand marketing DGP framing.** Organic sales is the MMM baseline (spend-decomposed), so brand spend must have zero direct effect on it (`B[0,:] = 0`). Spend drives awareness only; awareness is cointegrated with organic sales. The EC mechanism carries the awareness gain into organic sales over time — this is the long-run tail the MMM misses.
+
+## Session learnings (2026-06-02, output-methods notebook)
+
+- **`az.style.use("arviz-darkgrid")` is gone in arviz 1.x.** Available styles: `arviz-cetrino`, `arviz-tenui`, `arviz-tumma`, `arviz-variat`, `arviz-vibrant`. Simplest fix: remove the call (notebooks 04–07 don't use one).
+- **`az.hdi` API changed in arviz 1.x.** Old: `az.hdi(da.stack(sample=("chain", "draw")), hdi_prob=0.80)`. New: `az.hdi(da, prob=0.80, dim=["chain", "draw"])` returning a DataArray with `ci_bound` coord. Access bounds via `.sel(ci_bound="lower")` / `.sel(ci_bound="upper")` (note: `"higher"` → `"upper"`).
+- **`statsmodels` is not a transitive dep.** Any notebook using `plot_acf` needs `uv add --dev statsmodels`.
+- **Local nbconvert still broken by macOS SIGINT.** CI (Linux) is unaffected — treat CI as the execution gate for notebooks.
 
 ## Session learnings (2026-06-01)
 

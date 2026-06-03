@@ -49,6 +49,7 @@ def forecast_posterior(
     k_ar_diff: int,
     steps: int,
     variable_names: list[str] | None = None,
+    exog_future: NDArray[np.floating] | None = None,
     rng: np.random.Generator | None = None,
 ) -> xr.DataTree:
     """Roll the VECM recursion forward *steps* periods for every posterior draw.
@@ -58,7 +59,8 @@ def forecast_posterior(
     idata
         Fitted posterior from ``BayesianVECM.fit``. Must contain a
         ``posterior`` group with variables ``alpha``, ``beta``, ``Sigma``,
-        and — when ``k_ar_diff > 0`` — ``Gamma``.
+        and — when ``k_ar_diff > 0`` — ``Gamma``, and — when fitted with
+        exog — ``B``.
     endog
         Training data, shape ``(T, K)``. The last ``k_ar_diff + 1`` rows
         seed the recursion window.
@@ -70,6 +72,10 @@ def forecast_posterior(
     variable_names
         Optional variable labels. When provided, added as the ``variable``
         coordinate on both output arrays.
+    exog_future
+        Future exogenous regressors, shape ``(steps, m)``, or ``None`` when
+        the model was fitted without exog.  When provided, ``B @ X_{T+h}``
+        is added to the mean at each forecast step.
     rng
         NumPy random generator. Pass a seeded generator for reproducibility;
         defaults to a fresh ``np.random.default_rng()`` if ``None``.
@@ -113,14 +119,22 @@ def forecast_posterior(
 
     has_gamma = k_ar_diff > 0
     if has_gamma:
-        gamma_draws: NDArray[np.floating] = posterior["Gamma"].values  # (C, D, K, Kk)
+        gamma_draws: NDArray[np.floating] = posterior["Gamma"].values  # (C, D, K, Kk+?)
+
+    has_exog = exog_future is not None and "B" in posterior
+    if has_exog:
+        b_draws: NDArray[np.floating] = posterior["B"].values  # (C, D, K, m)
 
     # --- Reshape to (D, ...) for fully-vectorised per-step ops -------------
     alpha = alpha_draws.reshape(n_total, n_vars, r)  # (D, K, r)
     beta = beta_draws.reshape(n_total, n_vars, r)  # (D, K, r)
     sigma = sigma_draws.reshape(n_total, n_vars, n_vars)  # (D, K, K)
     if has_gamma:
-        gamma = gamma_draws.reshape(n_total, n_vars, n_vars * k_ar_diff)  # (D, K, Kk)
+        # Slice to K*k_ar_diff dynamic columns — strips any outside
+        # deterministic column appended by cointegration_design.
+        gamma = gamma_draws.reshape(n_total, n_vars, -1)[:, :, : n_vars * k_ar_diff]  # (D, K, K*k)
+    if has_exog:
+        b_mat = b_draws.reshape(n_total, n_vars, -1)  # (D, K, m)
 
     # Pre-compute the Cholesky factor of Sigma once — reused at every step.
     # numpy.linalg.cholesky broadcasts over leading batch dims in NumPy >= 2.0;
@@ -162,9 +176,15 @@ def forecast_posterior(
         # Reversed so row 0 = dy_{T+h-1} (lag 1), matching lag-major column order.
         if has_gamma:
             diffs = np.diff(y_window, axis=1)[:, ::-1, :]  # (D, k, K)
-            delta_x = diffs.reshape(n_total, -1)  # (D, K*k), lag-major
+            delta_x_h = diffs.reshape(n_total, -1)  # (D, K*k), lag-major
             # delta_x @ Gamma':  Gamma shape (D, K, Kk) -> Gamma' shape (D, Kk, K)
-            mu = mu + np.einsum("di,dji->dj", delta_x, gamma)  # (D, K)
+            mu = mu + np.einsum("di,dji->dj", delta_x_h, gamma)  # (D, K)
+
+        # Contemporaneous exog effect: B X_{T+h}
+        # exog_future[h] shape (m,); b_mat shape (D, K, m)
+        if has_exog:
+            x_h = exog_future[h]  # (m,)
+            mu = mu + np.einsum("dkm,m->dk", b_mat, x_h)  # (D, K)
 
         # Innovation: eps ~ MvNormal(0, Sigma) via pre-computed Cholesky
         z = rng.standard_normal((n_total, n_vars))  # (D, K)
