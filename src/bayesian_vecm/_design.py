@@ -48,7 +48,7 @@ from bayesian_vecm._data import difference, lag_matrix, validate_endog
 class CointegrationDesign(NamedTuple):
     """Aligned design matrices for a VECM regression.
 
-    All three arrays have the same number of rows, ``T_eff = T - k_ar_diff - 1``;
+    All arrays have the same number of rows, ``T_eff = T - k_ar_diff - 1``;
     row :math:`r` of each refers to the same underlying time index.
 
     Attributes
@@ -63,19 +63,29 @@ class CointegrationDesign(NamedTuple):
     y_lag1
         Level lag :math:`y_{t-1}`, shape ``(T_eff, K)``. This is the term the
         cointegration relation :math:`\\beta' y_{t-1}` is built from.
+    exog
+        Contemporaneous exogenous regressors aligned to ``T_eff`` rows, shape
+        ``(T_eff, m)``, or ``None`` when no exogenous variables were supplied.
+        These enter the short-run equation as :math:`B X_t` where :math:`B` is
+        ``(K, m)``. Note that ``exog_coint`` is **not** stored here — it is
+        absorbed into ``y_lag1`` (extra appended columns) before the
+        ``CointegrationDesign`` is constructed.
     """
 
     delta_y: NDArray[np.float64]
     delta_x: NDArray[np.float64]
     y_lag1: NDArray[np.float64]
+    exog: NDArray[np.float64] | None = None
 
 
 def cointegration_design(
     data: Any,
     k_ar_diff: int,
     deterministic: str = "n",
+    exog: Any = None,
+    exog_coint: Any = None,
 ) -> CointegrationDesign:
-    """Build the aligned ``(delta_y, delta_x, y_lag1)`` triple for a VECM.
+    """Build aligned design matrices for a VECM.
 
     Parameters
     ----------
@@ -100,20 +110,31 @@ def cointegration_design(
         that keeps the column strictly positive). Compound cases such as
         ``"colo"`` and ``"cili"`` (Johansen cases 4 and 5) are a planned
         follow-up and are rejected in v0.
+    exog
+        Optional contemporaneous exogenous regressors, shape ``(T, m)``.
+        Accepts anything with a ``.to_numpy()`` method or a plain NumPy array.
+        These enter the short-run equation as :math:`B X_t`; the aligned
+        ``(T_eff, m)`` slice is stored in :attr:`CointegrationDesign.exog`.
+    exog_coint
+        Optional exogenous variables that belong *inside* the cointegrating
+        relation, shape ``(T, m_c)``. Their aligned ``(T_eff, m_c)`` slice is
+        appended as extra columns of ``y_lag1`` — exactly the same mechanism
+        used by inside deterministic terms (``"ci"``, ``"li"``). The extra
+        rows of ``beta`` are then estimated from the data.
 
     Returns
     -------
     CointegrationDesign
-        ``(delta_y, delta_x, y_lag1)`` with a common ``T_eff = T - k_ar_diff - 1``
-        rows. The shapes of ``delta_x`` and ``y_lag1`` reflect any
-        deterministic columns appended at the end.
+        Named tuple with fields ``delta_y``, ``delta_x``, ``y_lag1``,
+        ``exog``.  All have ``T_eff = T - k_ar_diff - 1`` rows.
 
     Raises
     ------
     ValueError
         If ``k_ar_diff`` is negative, if ``k_ar_diff >= T - 1`` (no usable
-        rows), if ``deterministic`` is not in :data:`VALID_DETERMINISTIC`, or
-        if ``data`` fails any of ``validate_endog``'s checks.
+        rows), if ``deterministic`` is not in :data:`VALID_DETERMINISTIC`, if
+        ``data`` fails any of ``validate_endog``'s checks, or if ``exog`` /
+        ``exog_coint`` have the wrong number of rows or are not 2-D.
     """
     if k_ar_diff < 0:
         raise ValueError(f"k_ar_diff must be non-negative; got k_ar_diff={k_ar_diff}")
@@ -181,7 +202,53 @@ def cointegration_design(
         y_lag1 = np.column_stack([y_lag1, column])
     # deterministic == "n" → no-op; handled by the membership check above.
 
-    return CointegrationDesign(delta_y=delta_y, delta_x=delta_x, y_lag1=y_lag1)
+    # --- Exogenous regressors ------------------------------------------------
+    # Both exog and exog_coint must have the same T rows as endog. They are
+    # sliced to T_eff rows using the same index as delta_y (rows k_ar_diff+1 ..
+    # T-1, 0-based in original endog indexing, which equals rows k_ar_diff .. T-2
+    # in the first-difference array — but we slice from the original arr directly:
+    # usable t starts at k_ar_diff+1, so exog[k_ar_diff+1:] gives T_eff rows).
+    exog_aligned: NDArray[np.float64] | None = None
+    if exog is not None:
+        exog_arr = _validate_exog(exog, name="exog", n_obs=n_obs)
+        exog_aligned = np.ascontiguousarray(
+            exog_arr[k_ar_diff + 1 :].astype(np.float64)
+        )  # (T_eff, m)
+
+    if exog_coint is not None:
+        exog_coint_arr = _validate_exog(exog_coint, name="exog_coint", n_obs=n_obs)
+        exog_coint_aligned = np.ascontiguousarray(
+            exog_coint_arr[k_ar_diff + 1 :].astype(np.float64)
+        )  # (T_eff, m_c)
+        # Append to y_lag1 exactly like inside deterministic terms.
+        y_lag1 = np.column_stack([y_lag1, exog_coint_aligned])
+
+    return CointegrationDesign(delta_y=delta_y, delta_x=delta_x, y_lag1=y_lag1, exog=exog_aligned)
+
+
+def _validate_exog(arr: Any, *, name: str, n_obs: int) -> NDArray[np.float64]:
+    """Validate an exogenous array and return it as a 2-D float64 NumPy array.
+
+    Parameters
+    ----------
+    arr
+        Raw input — accepts anything with ``.to_numpy()`` or a plain array.
+    name
+        Argument name used in error messages (``"exog"`` or ``"exog_coint"``).
+    n_obs
+        Expected number of rows — must match the endogenous series length ``T``.
+    """
+    if hasattr(arr, "to_numpy"):
+        arr = arr.to_numpy()
+    arr = np.asarray(arr, dtype=np.float64)
+    if arr.ndim != 2:
+        raise ValueError(f"{name} must be a 2-D array of shape (T, m); got shape {arr.shape}")
+    if arr.shape[0] != n_obs:
+        raise ValueError(
+            f"{name} must have the same number of rows as endog (T={n_obs}); "
+            f"got {name}.shape[0]={arr.shape[0]}"
+        )
+    return arr
 
 
 def _deterministic_column(code: str, n_eff: int, dtype: np.dtype) -> NDArray[np.float64]:

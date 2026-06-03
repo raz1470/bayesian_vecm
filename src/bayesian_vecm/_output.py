@@ -103,6 +103,13 @@ def compute_fittedvalues(
         # gamma_contrib[d, t, k] = sum_i delta_x[t,i] * gamma[d,k,i]
         mu = mu + np.einsum("ti,dki->dtk", delta_x, gamma)  # (D, T_eff, K)
 
+    if "exog" in const_data and "B" in posterior:
+        exog_vals: NDArray[np.floating] = const_data["exog"].values  # (T_eff, m)
+        b_draws: NDArray[np.floating] = posterior["B"].values  # (C, D, K, m)
+        b_mat = b_draws.reshape(n_total, n_vars, -1)  # (D, K, m)
+        # exog_contrib[d, t, k] = sum_i exog[t,i] * B[d,k,i]
+        mu = mu + np.einsum("ti,dki->dtk", exog_vals, b_mat)  # (D, T_eff, K)
+
     mu_out = mu.reshape(n_chains, n_draws, t_eff, n_vars)
 
     chain_c = posterior.coords["chain"].values

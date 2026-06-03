@@ -99,7 +99,9 @@ from bayesian_vecm._design import CointegrationDesign
 #: Prior-dict keys recognised in v0. Sigma is handled specially — see
 #: :func:`_build_sigma` — because its parameterisation doesn't fit the
 #: ``{"dist": ..., **kwargs}`` pattern used for the other three.
-_VALID_PRIOR_KEYS: frozenset[str] = frozenset({"alpha", "beta", "Gamma", "Sigma"})
+#: ``B`` is the exogenous-regressor coefficient matrix; it is only added to
+#: the graph when ``design.exog`` is not ``None``.
+_VALID_PRIOR_KEYS: frozenset[str] = frozenset({"alpha", "beta", "Gamma", "Sigma", "B"})
 
 #: Recognised override keys for the Sigma prior in v0.
 _VALID_SIGMA_KEYS: frozenset[str] = frozenset({"eta", "sd_sigma"})
@@ -160,6 +162,7 @@ def build_pymc_model(
     delta_y = design.delta_y
     delta_x = design.delta_x
     y_lag1 = design.y_lag1
+    exog = design.exog  # (T_eff, m) or None
 
     n_eff, n_vars = delta_y.shape
     r = coint_rank  # short alias used heavily below
@@ -192,6 +195,8 @@ def build_pymc_model(
         pm.Data("y_lag1", y_lag1)
         if delta_x_cols > 0:
             pm.Data("delta_x", delta_x)
+        if exog is not None:
+            pm.Data("exog", exog)
 
         # --- alpha: (K, r) loadings on the cointegration relation ------------
         # alpha is always (K, r) regardless of deterministic code — the
@@ -236,12 +241,28 @@ def build_pymc_model(
         chol = _build_sigma(n_vars=n_vars, user_spec=user_priors.get("Sigma"))
         pm.Deterministic("Sigma", chol @ chol.T)
 
+        # --- B: (K, m) contemporaneous exogenous coefficients ----------------
+        # Only added when exog is present. The prior is Normal(0, 1.0) —
+        # same scale as alpha; exog columns are typically standardised before
+        # fitting so a unit-scale prior is weakly informative.
+        if exog is not None:
+            n_exog = exog.shape[1]
+            b_mat = _resolve_dist(
+                name="B",
+                user_spec=user_priors.get("B"),
+                default_spec={"dist": "Normal", "mu": 0.0, "sigma": 1.0},
+                shape=(n_vars, n_exog),
+            )
+
         # --- Mean ------------------------------------------------------------
-        # mu_t = alpha beta' y_{t-1} + Gamma Delta_x_t, in matrix form:
+        # mu_t = alpha beta' y_{t-1} + Gamma Delta_x_t [+ B X_t], matrix form:
         #   (T_eff, K) = (T_eff, y_lag1_cols)(y_lag1_cols, r)(r, K)
         #              + (T_eff, delta_x_cols)(delta_x_cols, K)
+        #              [+ (T_eff, m)(m, K)]
         ec_term = pm.math.dot(pm.math.dot(y_lag1, beta), alpha.T)
         mu = ec_term + pm.math.dot(delta_x, gamma.T) if delta_x_cols > 0 else ec_term
+        if exog is not None:
+            mu = mu + pm.math.dot(exog, b_mat.T)
 
         # --- Likelihood: row-wise MvNormal with shared Sigma ----------------
         # Using chol directly (rather than cov=Sigma) avoids redundant

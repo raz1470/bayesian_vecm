@@ -201,6 +201,8 @@ class BayesianVECM:
         self,
         endog: Any,
         *,
+        exog: Any = None,
+        exog_coint: Any = None,
         draws: int = 1000,
         tune: int = 1000,
         chains: int = 4,
@@ -211,12 +213,6 @@ class BayesianVECM:
     ) -> BayesianVECM:
         """Fit the model to ``endog`` by running PyMC sampling.
 
-        v0 scope: only ``coint_rank=1`` and ``deterministic="n"`` are
-        actually estimated. Other configurations were accepted at
-        construction time to lock in the public API, but trigger a
-        :class:`NotImplementedError` here. The PyMC graph for the wider
-        envelope arrives in a follow-up slice.
-
         Parameters
         ----------
         endog
@@ -225,6 +221,17 @@ class BayesianVECM:
             objects with a ``.to_numpy()`` method, such as a
             ``pandas.DataFrame``. Column labels (if present) are captured
             into ``self.variable_names_``.
+        exog
+            Optional contemporaneous exogenous regressors, shape ``(T, m)``.
+            These enter the short-run equation as :math:`B X_t` where
+            :math:`B` is a ``(K, m)`` coefficient matrix with a
+            ``Normal(0, 1.0)`` prior. Pass ``None`` (default) to omit.
+        exog_coint
+            Optional exogenous variables inside the cointegrating relation,
+            shape ``(T, m_c)``. Their columns are appended to :math:`y_{t-1}`
+            before building the cointegration term — the same mechanism used
+            by ``deterministic="ci"`` / ``"li"``. Pass ``None`` (default) to
+            omit.
         draws, tune, chains, target_accept, random_seed, progressbar
             Forwarded to :func:`pm.sample`. The defaults aim at "reasonable
             for a small VECM": four chains of 1000 draws after 1000 tuning
@@ -240,11 +247,9 @@ class BayesianVECM:
 
         Raises
         ------
-        NotImplementedError
-            If ``coint_rank != 1`` or ``deterministic != "n"`` — the PyMC
-            graph for those configurations is not yet implemented.
         ValueError
-            If ``endog`` fails validation, or if ``priors`` is malformed.
+            If ``endog`` fails validation, if ``exog`` / ``exog_coint`` have
+            the wrong shape, or if ``priors`` is malformed.
         """
         # Capture column labels before validate_endog drops the DataFrame wrapper.
         variable_names: list[str] | None = None
@@ -257,6 +262,8 @@ class BayesianVECM:
             endog_arr,
             k_ar_diff=self.k_ar_diff,
             deterministic=self.deterministic,
+            exog=exog,
+            exog_coint=exog_coint,
         )
 
         model = build_pymc_model(
@@ -286,10 +293,34 @@ class BayesianVECM:
             endog_da_kwargs["coords"] = {"variable": variable_names}
         idata.constant_data["endog"] = xr.DataArray(endog_arr, **endog_da_kwargs)
 
+        # Stash exog arrays in constant_data for fittedvalues / resid reuse.
+        if design.exog is not None:
+            idata.constant_data["exog"] = xr.DataArray(
+                design.exog, dims=("time_eff", "exog_variable")
+            )
+        if exog_coint is not None:
+            # Store the raw (T, m_c) array — aligned slice is embedded in y_lag1.
+            exog_coint_arr = np.asarray(
+                exog_coint.to_numpy() if hasattr(exog_coint, "to_numpy") else exog_coint,
+                dtype=np.float64,
+            )
+            idata.constant_data["exog_coint"] = xr.DataArray(
+                exog_coint_arr, dims=("time", "exog_coint_variable")
+            )
+
         # Fit-time state — sklearn-style trailing-underscore convention.
         self.endog_ = endog_arr
         self.idata_ = idata
         self.variable_names_ = variable_names
+        self.exog_ = design.exog  # (T_eff, m) or None
+        self.exog_coint_ = (
+            None
+            if exog_coint is None
+            else np.asarray(
+                exog_coint.to_numpy() if hasattr(exog_coint, "to_numpy") else exog_coint,
+                dtype=np.float64,
+            )
+        )
         return self
 
     @property
@@ -340,6 +371,9 @@ class BayesianVECM:
             if self.k_ar_diff > 0:
                 # Insert before Sigma so the printout reads alpha, beta, Gamma, Sigma.
                 var_names.insert(2, "Gamma")
+            if getattr(self, "exog_", None) is not None:
+                # Append B after Gamma (or after beta if no Gamma) but before Sigma.
+                var_names.insert(-1, "B")
             summary_kwargs["var_names"] = var_names
 
         return az.summary(self.idata_, **summary_kwargs)
@@ -540,6 +574,7 @@ class BayesianVECM:
         self,
         steps: int,
         *,
+        exog_future: Any = None,
         random_seed: int | None = None,
     ) -> xr.DataTree:
         """Forecast ``steps`` periods ahead from the fitted posterior.
@@ -550,22 +585,23 @@ class BayesianVECM:
 
             \\Delta y_{T+h} = \\alpha \\beta' y_{T+h-1}
                              + \\sum_{i=1}^{k} \\Gamma_i \\, \\Delta y_{T+h-i}
+                             + B X_{T+h}
                              + \\varepsilon_{T+h},
                              \\quad \\varepsilon_{T+h} \\sim \\mathcal{N}(0, \\Sigma)
 
             y_{T+h} = y_{T+h-1} + \\Delta y_{T+h}
 
-        for :math:`h = 1, \\dots, \\text{steps}`. The last
-        :math:`k_{\\text{ar\\_diff}} + 1` rows of ``self.endog_`` seed the
-        window. Posterior uncertainty in :math:`\\alpha, \\beta, \\Gamma,
-        \\Sigma` is propagated through the recursion: a separate innovation is
-        drawn at each step for each posterior draw, so forecast uncertainty
-        widens correctly with the horizon.
+        for :math:`h = 1, \\dots, \\text{steps}`.
 
         Parameters
         ----------
         steps
             Number of periods to forecast. Must be at least ``1``.
+        exog_future
+            Future values of the exogenous regressors, shape ``(steps, m)``.
+            Required when the model was fitted with ``exog``; ignored
+            otherwise. Must have exactly ``steps`` rows and the same number
+            of columns as the ``exog`` passed to :meth:`fit`.
         random_seed
             Seed for the NumPy random generator used to draw innovations.
             Pass an integer for reproducible forecasts; ``None`` (the
@@ -577,8 +613,7 @@ class BayesianVECM:
             A DataTree whose ``posterior_predictive`` child node
             contains:
 
-            * ``y`` — forecast levels, shape
-              ``(chain, draw, steps, K)``.
+            * ``y`` — forecast levels, shape ``(chain, draw, steps, K)``.
             * ``delta_y`` — forecast first differences, same shape.
 
             Both arrays carry a ``forecast_step`` coordinate running from
@@ -590,12 +625,42 @@ class BayesianVECM:
         RuntimeError
             If :meth:`fit` has not been called.
         ValueError
-            If ``steps`` is less than ``1``.
+            If ``steps`` is less than ``1``, or if the model was fitted with
+            ``exog`` but ``exog_future`` is not provided (or has the wrong
+            shape).
         """
         if not hasattr(self, "idata_"):
             raise RuntimeError(_NOT_FITTED_MSG)
         if steps < 1:
             raise ValueError(f"steps must be at least 1; got steps={steps}")
+
+        # Validate exog_future when the model was fitted with exog.
+        exog_future_arr = None
+        if getattr(self, "exog_", None) is not None:
+            if exog_future is None:
+                raise ValueError(
+                    "This model was fitted with exog; exog_future must be provided "
+                    "for forecasting. Pass an array of shape (steps, m)."
+                )
+            exog_future_arr = np.asarray(
+                exog_future.to_numpy() if hasattr(exog_future, "to_numpy") else exog_future,
+                dtype=np.float64,
+            )
+            if exog_future_arr.ndim != 2:
+                raise ValueError(
+                    f"exog_future must be 2-D (steps, m); got shape {exog_future_arr.shape}"
+                )
+            if exog_future_arr.shape[0] != steps:
+                raise ValueError(
+                    f"exog_future must have {steps} rows (one per forecast step); "
+                    f"got {exog_future_arr.shape[0]}"
+                )
+            m_fit = self.exog_.shape[1]  # type: ignore[union-attr]
+            if exog_future_arr.shape[1] != m_fit:
+                raise ValueError(
+                    f"exog_future has {exog_future_arr.shape[1]} columns but the model "
+                    f"was fitted with {m_fit} exog column(s)"
+                )
 
         from bayesian_vecm._forecast import forecast_posterior
 
@@ -606,5 +671,6 @@ class BayesianVECM:
             k_ar_diff=self.k_ar_diff,
             steps=steps,
             variable_names=self.variable_names_,
+            exog_future=exog_future_arr,
             rng=rng,
         )

@@ -87,8 +87,8 @@ class TestHandBuiltExample:
     def test_returns_a_cointegration_design_named_tuple(self) -> None:
         result = cointegration_design(TINY_Y, k_ar_diff=1)
         assert isinstance(result, CointegrationDesign)
-        # Unpacking ordering: delta_y, delta_x, y_lag1.
-        delta_y, delta_x, y_lag1 = result
+        # Unpacking ordering: delta_y, delta_x, y_lag1, exog.
+        delta_y, delta_x, y_lag1, _exog = result
         assert delta_y is result.delta_y
         assert delta_x is result.delta_x
         assert y_lag1 is result.y_lag1
