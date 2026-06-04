@@ -464,3 +464,171 @@ class TestPriorsValidation:
                 deterministic="n",
                 priors="not a dict",  # type: ignore[arg-type]
             )
+
+
+# ---------------------------------------------------------------------------
+# Regularised horseshoe prior on Gamma
+# ---------------------------------------------------------------------------
+
+
+class TestHorseshoePrior:
+    """Graph-construction tests for priors={"Gamma": {"dist": "Horseshoe"}}.
+
+    No sampler is run — pm.draw is used to inspect shapes and finiteness.
+    """
+
+    def test_horseshoe_builds(self, design_k1):
+        """Basic smoke test: model builds without error."""
+        model = build_pymc_model(
+            design_k1,
+            k_ar_diff=1,
+            coint_rank=1,
+            deterministic="n",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        assert isinstance(model, pm.Model)
+
+    def test_horseshoe_auxiliary_vars_present(self, design_k1):
+        """Gamma_tau, Gamma_lambda, Gamma_c2 must be in the model."""
+        model = build_pymc_model(
+            design_k1,
+            k_ar_diff=1,
+            coint_rank=1,
+            deterministic="n",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        names = set(model.named_vars)
+        assert "Gamma_tau" in names
+        assert "Gamma_lambda" in names
+        assert "Gamma_c2" in names
+        assert "Gamma" in names
+
+    def test_horseshoe_gamma_shape(self, design_k1):
+        """Gamma shape must be (K, K*k_ar_diff) = (2, 2) for the bivariate k=1 design."""
+        model = build_pymc_model(
+            design_k1,
+            k_ar_diff=1,
+            coint_rank=1,
+            deterministic="n",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        with model:
+            value = pm.draw(model.named_vars["Gamma"], draws=1, random_seed=0)
+        assert value.shape == (2, 2)
+
+    def test_horseshoe_lambda_shape_matches_gamma(self, design_k1):
+        """Gamma_lambda must have the same shape as Gamma."""
+        model = build_pymc_model(
+            design_k1,
+            k_ar_diff=1,
+            coint_rank=1,
+            deterministic="n",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        with model:
+            gamma_val = pm.draw(model.named_vars["Gamma"], draws=1, random_seed=0)
+            lam_val = pm.draw(model.named_vars["Gamma_lambda"], draws=1, random_seed=0)
+        assert lam_val.shape == gamma_val.shape
+
+    def test_horseshoe_tau_is_scalar(self, design_k1):
+        """Gamma_tau is a scalar (global shrinkage — one value for all entries)."""
+        model = build_pymc_model(
+            design_k1,
+            k_ar_diff=1,
+            coint_rank=1,
+            deterministic="n",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        with model:
+            tau_val = pm.draw(model.named_vars["Gamma_tau"], draws=1, random_seed=0)
+        assert tau_val.shape == ()
+
+    def test_horseshoe_draws_are_finite(self, design_k1):
+        """Prior draws from Gamma under horseshoe must all be finite."""
+        model = build_pymc_model(
+            design_k1,
+            k_ar_diff=1,
+            coint_rank=1,
+            deterministic="n",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        with model:
+            values = pm.draw(model.named_vars["Gamma"], draws=50, random_seed=0)
+        assert np.all(np.isfinite(values))
+
+    def test_horseshoe_tau_scale_override(self, design_k1):
+        """Custom tau_scale is accepted and model builds without error."""
+        model = build_pymc_model(
+            design_k1,
+            k_ar_diff=1,
+            coint_rank=1,
+            deterministic="n",
+            priors={"Gamma": {"dist": "Horseshoe", "tau_scale": 0.1}},
+        )
+        assert isinstance(model, pm.Model)
+
+    def test_horseshoe_slab_params_override(self, design_k1):
+        """Custom slab_scale and slab_df are accepted."""
+        model = build_pymc_model(
+            design_k1,
+            k_ar_diff=1,
+            coint_rank=1,
+            deterministic="n",
+            priors={"Gamma": {"dist": "Horseshoe", "slab_scale": 3.0, "slab_df": 6.0}},
+        )
+        assert isinstance(model, pm.Model)
+
+    def test_horseshoe_wider_gamma_outside_term(self):
+        """Horseshoe applies to widened Gamma when deterministic='co'."""
+        data = _synthetic_cointegrated()
+        design = cointegration_design(data, k_ar_diff=1, deterministic="co")
+        model = build_pymc_model(
+            design,
+            k_ar_diff=1,
+            coint_rank=1,
+            deterministic="co",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        with model:
+            value = pm.draw(model.named_vars["Gamma"], draws=1, random_seed=0)
+        # K=2, delta_x_cols = K*k + 1 = 3
+        assert value.shape == (2, 3)
+
+    def test_horseshoe_k0_silently_no_gamma(self):
+        """With k=0 and no outside term there is no Gamma block; horseshoe spec ignored."""
+        data = _synthetic_cointegrated()
+        design = cointegration_design(data, k_ar_diff=0)
+        model = build_pymc_model(
+            design,
+            k_ar_diff=0,
+            coint_rank=1,
+            deterministic="n",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        names = set(model.named_vars)
+        assert "Gamma" not in names
+        assert "Gamma_tau" not in names
+
+    def test_horseshoe_unknown_kwarg_raises(self, design_k1):
+        with pytest.raises(ValueError, match="unknown horseshoe prior key"):
+            build_pymc_model(
+                design_k1,
+                k_ar_diff=1,
+                coint_rank=1,
+                deterministic="n",
+                priors={"Gamma": {"dist": "Horseshoe", "bad_key": 1.0}},
+            )
+
+    def test_horseshoe_other_params_unchanged(self, design_k1):
+        """When horseshoe is active, alpha and beta are still in the model."""
+        model = build_pymc_model(
+            design_k1,
+            k_ar_diff=1,
+            coint_rank=1,
+            deterministic="n",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        names = set(model.named_vars)
+        assert "alpha" in names
+        assert "beta" in names
+        assert "Sigma" in names
