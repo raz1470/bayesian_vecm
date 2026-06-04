@@ -45,6 +45,183 @@ model.sample_posterior_predictive(steps=12)
 | License | MIT | Permissive, standard for OSS Python. |
 | CI | GitHub Actions, matrix on Py 3.11 + 3.12 | `.github/workflows/ci.yml` runs ruff + pytest on push to main and PRs. |
 
+## Practitioner guide notebook plan
+
+**File:** `notebooks/guides/01_brand_vecm_walkthrough.ipynb`
+**Audience:** Marketing analysts / brand managers with no VECM background.
+**Purpose:** End-to-end walkthrough from raw data to business outputs. One swap cell at the top for real data; everything else flows from it.
+
+### Reference paper
+Cain (2022) "Modelling short and long-term marketing effects in the consumer purchase journey", IJRM 39, 96–116.
+Key alignment: endogenous system = base sales + awareness + consideration + ops metric; paid media as exogenous; Johansen cointegration; GIRF for IRFs.
+
+### Variable structure
+
+**Endogenous (potentially cointegrated — all log-transformed):**
+- `organic_sales` — MMM baseline output (spend-decomposed), or total organic revenue
+- `brand_awareness` — unaided brand awareness survey score
+- `brand_consideration` — brand consideration survey score
+- `csat_score` — average CSAT score (ops metric; included if I(1), else moves to exog)
+
+**Exogenous:**
+- `brand_spend` — total brand investment (TV, digital brand, OOH etc.)
+- `interest_rate` — Bank of England base rate or equivalent
+- `consumer_confidence` — GfK or equivalent consumer confidence index
+
+**Model config:**
+```python
+BayesianVECM(
+    k_ar_diff=2,                              # generous; horseshoe shrinks spurious lags
+    coint_rank=...,                           # from select_coint_rank
+    deterministic="ci",                       # trend inside cointegration space
+    priors={"Gamma": {"dist": "Horseshoe"}},  # shrink over-specified lags
+)
+model.fit(endog, exog=exog, cores=1)
+model.irf(steps=52, method="girf")           # GIRF — order-invariant, standard in literature
+```
+
+**Why GIRF not Cholesky:** The awareness → consideration → csat → organic_sales causal chain is theoretically sound, but these variables have feedback loops (CSAT drives word-of-mouth which drives awareness). GIRF handles this without imposing a strict ordering. Cholesky is noted in §10 as an alternative for users who want to impose the recursive structure.
+
+**Why log-transform:** Gives elasticity interpretation on parameters and natural diminishing returns on the brand response curve. All endogenous and continuous exogenous variables should be logged before fitting.
+
+**Why `deterministic="ci"`:** Brand and ops metrics typically have long-run trends (Monzo growing, CSAT improving). Restricting the trend to the cointegration space is theoretically correct and matches Cain's treatment.
+
+### Notebook sections
+
+**§1 — The problem** (~3 cells)
+- Plain-English motivation: why does brand investment have effects that last years, and why does standard MMM miss them?
+- One synthetic chart: flat MMM response vs persistent VECM response to a brand spend shock
+- No code, just markdown + one illustrative plot
+
+**§2 — Your data** (~2 cells)
+- THE SWAP CELL: load a DataFrame with `date` index and the 7 columns above
+- Synthetic Monzo-style DGP provided as the default so notebook runs out of the box
+- DGP: common I(1) trends for organic_sales, awareness, consideration, csat; brand_spend as exog driver; interest_rate and consumer_confidence as macro exog
+- Plot all variables
+
+**§3 — Do your variables have long-run trends?** (~4 cells)
+- Plain-English framing: "Is this variable on a persistent upward/downward journey, or does it bounce around a stable level?"
+- Intuition: a variable with a unit root has no 'home' it returns to; a stationary variable always mean-reverts
+- ADF test for each variable with plain-English verdict: "organic_sales: persistent trend ✓" / "interest_rate: mean-reverting — will treat as exogenous"
+- Decision rule table: I(1) variables → endogenous VECM; I(0) variables → exog
+- Note on CSAT: if it tests as I(0), move to exog and re-run
+
+**§4 — How many long-run relationships?** (~3 cells)
+- Plain-English framing: "How many equilibrium forces are holding your system together?"
+- Intuition: one cointegrating relationship means there's one long-run equilibrium (e.g. sales and brand awareness move together in the long run). Two means two separate equilibria.
+- `select_coint_rank` output with annotation of each row
+- Decision: use recommended rank, or override with domain knowledge
+
+**§5 — Fit the model** (~3 cells)
+- `BayesianVECM` construction with horseshoe prior
+- `model.fit()` — show sampling progress
+- `model.summary(var_names=["alpha", "beta"])` with plain-English annotation of each parameter
+
+**§6 — What are α and β telling you?** (~4 cells)
+- β (cointegrating vector): "This is the long-run equilibrium equation for your brand system. β[0]=1 means organic sales is the normalising variable; the other β entries tell you the long-run relationship between sales and each brand metric."
+- α (error-correction loadings): "This is how fast each variable returns to equilibrium after a shock. A large negative α for organic_sales means sales adjusts quickly when the system goes out of balance — good for a healthy brand."
+- Plain-English table: one row per variable, α value, and what it means
+- Annotated plot of the cointegrating relation over time ("the gap that the error-correction closes")
+
+**§7 — The key output: IRF** (~4 cells)
+- Plain-English framing: "If brand spend increases by 10% today, what happens to organic sales over the next 52 weeks?"
+- GIRF fan chart for brand_spend shock → organic_sales response with 80%/95% HDI
+- Comparison chart: VECM long-run tail vs what a standard MMM would say (flat after ~4 weeks)
+- Note: GIRF is order-invariant — no assumption about causal chain required
+
+**§8 — Valuing ops: the CSAT story** (~3 cells)
+- Plain-English framing: "If we improve CSAT by 1 point, what is the long-run impact on organic sales?"
+- GIRF fan chart for csat_score shock → organic_sales response
+- Revenue translation: multiply HDI bands by average revenue per customer
+- Business takeaway: "ops improvements have a measurable long-run brand equity effect"
+
+**§9 — Counterfactual ROI** (~4 cells)
+- Plain-English framing: "What is the difference in organic sales between a high brand spend scenario and a low brand spend scenario?"
+- Two spend paths: base (current) and uplift (+20% brand spend)
+- `sample_posterior_predictive` for both; difference with HDI
+- Bayesian ROI: (revenue uplift HDI) / (incremental spend) → "Our best estimate is £X return per £1 spent, with 80% credible interval £Y–£Z"
+
+**§9a — Brand response curve** (~3 cells)
+- Plain-English framing: "How does long-run organic sales respond as we increase brand spend from £0 to £10m?"
+- Loop `sample_posterior_predictive` across 15 spend levels (£0–£10m annualised)
+- Plot: X = annual brand spend, Y = cumulative 52-week organic sales uplift vs £0 baseline
+- Posterior median + 80% credible band — shows where the curve flattens and where uncertainty widens
+- Business takeaway: marginal return and optimal spend region with honest uncertainty
+
+**§10 — Practical tips** (~1 cell, pure markdown)
+- When to use horseshoe (set k_ar_diff=2 or 3 on real data; let horseshoe shrink)
+- What convergence warnings mean (divergences → increase target_accept; rhat > 1.01 → more draws)
+- How to think about coint_rank (domain knowledge can override the test; r=1 is the most common in marketing)
+- CSAT as I(0): if ADF says stationary, move to exog — still useful, just a short-run driver
+- Cholesky alternative: if you are confident in awareness → consideration → csat → organic_sales ordering, use `method="cholesky"` with variables in that order in the endog DataFrame
+- Log-transformation reminder: always log-transform before fitting; back-transform for business outputs
+
+### DGP design for synthetic data
+
+K=4 endogenous, 3 exog, n_obs=300 weekly observations (~6 years).
+
+Common stochastic trends: 2 (so coint_rank=2):
+- Trend 1: brand equity trend (organic_sales and awareness share it)
+- Trend 2: ops/product trend (consideration and csat share it, driven by product quality improving over time)
+
+Exog effects:
+- brand_spend → +awareness (B[awareness, brand_spend] > 0), +consideration (smaller)
+- interest_rate → -consideration (higher rates reduce financial product consideration)
+- consumer_confidence → +awareness, +consideration
+
+Log-transform all endogenous variables before fitting.
+
+### Key decisions locked in for this notebook
+
+| Decision | Choice | Reason |
+|---|---|---|
+| IRF method | GIRF | Order-invariant; handles feedback loops; standard in literature |
+| Deterministic | `"ci"` | Trends restricted to cointegration space; correct for trending brand data |
+| Prior on Γ | Horseshoe | Real marketing data has unknown lag structure; set k generously |
+| CSAT treatment | Endogenous if I(1), exog if I(0) | Test first; show both paths |
+| Log transform | Yes, before fitting | Elasticity interpretation; natural diminishing returns on response curve |
+| Variable names | Real marketing names throughout | Audience is practitioners, not econometricians |
+
+### Folder structure change (same session or next)
+
+Move existing notebooks 01–10 to `notebooks/build/`.
+Create `notebooks/guides/` for practitioner-facing content.
+Update `.github/workflows/ci.yml` notebook execution path accordingly.
+
+## Status as of last session (2026-06-04, feat/horseshoe)
+
+**Update 2026-06-04 — `feat/horseshoe` complete, PR open.**
+
+- **Regularised horseshoe prior on Γ shipped.** Opt-in via `priors={"Gamma": {"dist": "Horseshoe"}}`. Optional kwargs: `tau_scale` (default 1.0), `slab_scale` (default 2.0), `slab_df` (default 4.0). Auxiliary RVs added to graph: `Gamma_tau`, `Gamma_lambda`, `Gamma_c2`. Default Normal(0, 0.5) prior unchanged — horseshoe is purely opt-in.
+- **`select_coint_rank` shipped.** Wraps statsmodels Johansen trace test. Returns `CointRankResult` with `.rank`, `.test_stats`, `.crit_vals`, and a printable summary table. Exported from `bayesian_vecm.__init__`. Recommended workflow: `select_coint_rank` → set `coint_rank` → fit with generous `k_ar_diff` + horseshoe.
+- **Notebook 10** (`10_horseshoe_prior_walkthrough.ipynb`): common-trend DGP (guaranteed rank=1), fit at k=3 (over-specified), side-by-side Normal vs horseshoe comparison — bar chart, density plots, τ posterior, SD ratio table.
+- **Test count: 313 passed, 2 skipped** (macOS SIGINT expected skips). Coverage 96%.
+
+**Key decisions / learnings this session:**
+
+- **statsmodels `select_coint_rank` API:** positional arg order is `(endog, det_order, k_ar_diff)`, not keyword `k_ar_diffs`. Result attributes are `.test_stats` and `.crit_vals` (not `.trace_stat`).
+- **EC-based DGPs fail Johansen rank detection.** Strong EC loadings (α = −0.4, 0.2) make series appear stationary (rank = K = 2 for K=2). Use common-trend DGP (`y = a * trend + noise`) for rank-detection tests and notebooks — guarantees rank = K − n_trends.
+- **Horseshoe divergences with FAST_SAMPLING.** 57 divergences with 200 tune steps / 2 chains is expected — the funnel geometry needs more tuning. With full sampling (FAST_SAMPLING=False) divergences should be near zero. Documented in notebook note cell.
+- **Pre-commit ruff E402.** `pytest.importorskip(...)` placed before a `from bayesian_vecm import ...` triggers E402 in the pre-commit ruff version. Fix: move `importorskip` call after all imports (safe since `bayesian_vecm` doesn't import statsmodels at module level).
+- **Notebook JSON editing from Cowork.** Notebooks must be edited via Python `json` manipulation (not the `Edit` tool, which rejects `.ipynb` files). Use `ruff format` + `ruff check --fix` on notebooks before committing — ruff catches F401 (unused imports) and F541 (f-strings without placeholders) inside notebook cells.
+
+## Next slice
+
+**Real-data validation on Monzo data**
+
+Branch: `feat/monzo-validation` (create from `main` after `feat/horseshoe` merges)
+
+**Goal.** Fit the package on real Monzo brand/revenue data. This is the first real-world test — everything so far has been synthetic DGPs. Key questions:
+- Does `select_coint_rank` give a sensible answer on real data?
+- Does the horseshoe converge cleanly with a generous `k_ar_diff`?
+- Do the GIRF fan charts tell a coherent brand-spend story?
+- Are there any practical API gaps that only appear with real data?
+
+**After validation:**
+- Pre-PyPI housekeeping: README update (horseshoe + rank selection not yet mentioned), version bump to 0.1.0, confirm `uv build` produces a clean wheel.
+- Medium article: package on PyPI + Monzo validation story + GIRF output = the hook.
+- Docs site (MkDocs + mkdocs-jupyter): still deferred until notebook catalogue is stable post-validation.
+
 ## Status as of last session (2026-06-03, feat/horseshoe planning)
 
 **Update 2026-06-03 — `feat/exog` merged (pending CI green); `feat/horseshoe` is next.**
