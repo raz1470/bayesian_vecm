@@ -12,6 +12,7 @@ The model supports:
 * Known cointegration rank :math:`r \\geq 1`.
 * All five deterministic codes: ``"n"``, ``"co"``, ``"ci"``, ``"lo"``, ``"li"``.
 * Weakly-informative defaults for :math:`\\alpha, \\beta, \\Gamma, \\Sigma`.
+* Regularised horseshoe prior on :math:`\\Gamma` (opt-in).
 
 The graph reads shapes directly off the design matrices produced by
 :func:`bayesian_vecm._design.cointegration_design`, so deterministic columns
@@ -77,7 +78,8 @@ All are weakly informative; any of the four can be overridden via the
   more permissive than :math:`\\alpha`'s. Not present when ``K == r``
   (fully cointegrated system — no free rows).
 * :math:`\\Gamma`: ``Normal(0, 0.5)``, shape :math:`(K, Kk)`. Short-run
-  dynamics are typically small and centred at zero.
+  dynamics are typically small and centred at zero. Alternatively, a
+  regularised horseshoe prior can be requested — see below.
 * :math:`\\Sigma`: ``LKJCholeskyCov(eta=2.0, sd_dist=HalfNormal(1.0))``. The
   standard PyMC idiom; ``eta=2.0`` mildly favours weaker correlations.
 
@@ -85,6 +87,47 @@ The :math:`\\Sigma` prior is special-cased — the LKJCholeskyCov factory
 doesn't fit the simple ``{"dist": ..., **kwargs}`` pattern — and v0 only
 accepts ``eta`` and ``sd_sigma`` overrides for it. A richer covariance-prior
 API is a follow-up.
+
+Regularised horseshoe prior on :math:`\\Gamma`
+-----------------------------------------------
+With real marketing data the true lag order is unknown.  Setting ``k_ar_diff``
+generously over-parameterises :math:`\\Gamma`, leaving many near-zero entries
+that inflate posterior uncertainty.  A regularised horseshoe (RHS) prior
+(Piironen & Vehtari 2017) shrinks irrelevant entries toward zero while
+preserving genuine short-run dynamics — more principled than hard lag
+selection via information criteria.
+
+Opt in by passing ``priors={"Gamma": {"dist": "Horseshoe"}}`` to
+``BayesianVECM``.  Optional kwargs (all with sensible defaults):
+
+* ``tau_scale`` (float, default ``1.0``) — scale of the half-Cauchy global
+  shrinkage prior :math:`\\tau \\sim \\text{HalfCauchy}(\\tau_{\\text{scale}})`.
+* ``slab_scale`` (float, default ``2.0``) — scale of the Student-t slab that
+  caps large coefficients.
+* ``slab_df`` (float, default ``4.0``) — degrees of freedom of the slab.
+
+The hierarchy is:
+
+.. math::
+
+    \\Gamma_{ij} \\mid \\tau, \\lambda_{ij}, c^2
+        &\\sim \\mathcal{N}\\!\\left(0,\\;
+            \\tau^2 \\tilde{\\lambda}_{ij}^2\\right) \\\\
+    \\tilde{\\lambda}_{ij}^2
+        &= \\frac{c^2 \\lambda_{ij}^2}{c^2 + \\tau^2 \\lambda_{ij}^2} \\\\
+    \\lambda_{ij}
+        &\\sim \\text{HalfCauchy}(1) \\\\
+    \\tau
+        &\\sim \\text{HalfCauchy}(\\tau_{\\text{scale}}) \\\\
+    c^2
+        &\\sim \\text{InvGamma}\\!\\left(
+            \\tfrac{s}{2},\\; \\tfrac{s}{2} c_{\\text{scale}}^2\\right),
+            \\quad s = \\text{slab\\_df}
+
+The slab variance :math:`c^2` acts as a finite upper bound on the effective
+prior scale, preventing the heavy tails of the pure horseshoe from causing
+sampling pathologies.  Auxiliary RVs added to the graph: ``Gamma_tau``,
+``Gamma_lambda``, ``Gamma_c2``.
 """
 
 from __future__ import annotations
@@ -105,6 +148,14 @@ _VALID_PRIOR_KEYS: frozenset[str] = frozenset({"alpha", "beta", "Gamma", "Sigma"
 
 #: Recognised override keys for the Sigma prior in v0.
 _VALID_SIGMA_KEYS: frozenset[str] = frozenset({"eta", "sd_sigma"})
+
+#: ``dist`` sentinel that triggers the regularised horseshoe path for Gamma.
+#: All other ``dist`` values are passed to :func:`_resolve_dist` which looks
+#: them up on the ``pm`` namespace.
+_HORSESHOE_DIST_NAME: str = "Horseshoe"
+
+#: Recognised kwargs inside a ``{"dist": "Horseshoe", ...}`` spec.
+_VALID_HORSESHOE_KEYS: frozenset[str] = frozenset({"dist", "tau_scale", "slab_scale", "slab_df"})
 
 
 def build_pymc_model(
@@ -229,13 +280,24 @@ def build_pymc_model(
         # gains an extra column for the constant/trend outside the cointegrating
         # relation.  When delta_x_cols == 0 (k=0, no outside term) there are no
         # short-run regressors and Gamma is omitted entirely.
+        #
+        # Two prior paths:
+        #   (a) {"dist": "Horseshoe", ...} → regularised horseshoe hierarchy.
+        #   (b) anything else              → standard _resolve_dist path.
         if delta_x_cols > 0:
-            gamma = _resolve_dist(
-                name="Gamma",
-                user_spec=user_priors.get("Gamma"),
-                default_spec={"dist": "Normal", "mu": 0.0, "sigma": 0.5},
-                shape=(n_vars, delta_x_cols),
-            )
+            user_gamma_spec = user_priors.get("Gamma")
+            if _is_horseshoe_spec(user_gamma_spec):
+                gamma = _build_horseshoe_gamma(
+                    shape=(n_vars, delta_x_cols),
+                    **_horseshoe_kwargs(user_gamma_spec),
+                )
+            else:
+                gamma = _resolve_dist(
+                    name="Gamma",
+                    user_spec=user_gamma_spec,
+                    default_spec={"dist": "Normal", "mu": 0.0, "sigma": 0.5},
+                    shape=(n_vars, delta_x_cols),
+                )
 
         # --- Sigma: K x K covariance via LKJCholeskyCov ----------------------
         chol = _build_sigma(n_vars=n_vars, user_spec=user_priors.get("Sigma"))
@@ -339,6 +401,97 @@ def _resolve_dist(
         )
 
     return dist_cls(name, shape=shape, **spec)
+
+
+def _is_horseshoe_spec(user_spec: dict[str, Any] | None) -> bool:
+    """Return True if *user_spec* requests the horseshoe prior for Gamma."""
+    if user_spec is None:
+        return False
+    if not isinstance(user_spec, dict):
+        return False
+    return user_spec.get("dist") == _HORSESHOE_DIST_NAME
+
+
+def _horseshoe_kwargs(user_spec: dict[str, Any]) -> dict[str, float]:
+    """Validate and extract keyword arguments from a horseshoe prior spec.
+
+    Recognised keys beyond ``"dist"``: ``tau_scale``, ``slab_scale``,
+    ``slab_df``.  Unknown keys raise :exc:`ValueError`.
+    """
+    unknown = set(user_spec) - _VALID_HORSESHOE_KEYS
+    if unknown:
+        valid = sorted(_VALID_HORSESHOE_KEYS - {"dist"})
+        raise ValueError(
+            f"unknown horseshoe prior key(s) {sorted(unknown)}; valid kwargs are {valid}."
+        )
+    return {
+        k: float(user_spec[k]) for k in ("tau_scale", "slab_scale", "slab_df") if k in user_spec
+    }
+
+
+def _build_horseshoe_gamma(
+    *,
+    shape: tuple[int, int],
+    tau_scale: float = 1.0,
+    slab_scale: float = 2.0,
+    slab_df: float = 4.0,
+) -> Any:
+    """Build a regularised horseshoe prior for the Gamma block.
+
+    Implements the Piironen & Vehtari (2017) regularised horseshoe:
+
+    .. math::
+
+        \\Gamma_{ij} \\sim \\mathcal{N}(0,\\; \\tau^2 \\tilde{\\lambda}_{ij}^2)
+
+    where
+
+    .. math::
+
+        \\tilde{\\lambda}_{ij}^2
+            = \\frac{c^2 \\lambda_{ij}^2}{c^2 + \\tau^2 \\lambda_{ij}^2}
+
+    The slab variance :math:`c^2 \\sim \\text{InvGamma}(s/2,\\, s/2 \\cdot
+    c_{\\text{scale}}^2)` regularises large coefficients, avoiding the
+    sampling pathologies of a pure horseshoe.
+
+    Parameters
+    ----------
+    shape
+        ``(K, delta_x_cols)`` — the shape of the Gamma block.
+    tau_scale
+        Scale of the global HalfCauchy shrinkage prior.
+    slab_scale
+        Scale of the Student-t slab (``c_scale`` in the notation above).
+    slab_df
+        Degrees of freedom of the slab (``s`` above).
+
+    Returns
+    -------
+    Any
+        The ``pm.Normal("Gamma", ...)`` random variable with the RHS
+        hierarchical sigma.  Auxiliary RVs ``Gamma_tau``, ``Gamma_lambda``,
+        and ``Gamma_c2`` are also added to the active model context.
+    """
+    # Global shrinkage: one scalar shared across all Gamma entries.
+    tau = pm.HalfCauchy("Gamma_tau", beta=tau_scale)
+
+    # Local shrinkage: one per Gamma entry.
+    lam = pm.HalfCauchy("Gamma_lambda", beta=1.0, shape=shape)
+
+    # Slab variance: regularises large local scales to prevent divergences.
+    c2 = pm.InverseGamma(
+        "Gamma_c2",
+        alpha=slab_df / 2.0,
+        beta=slab_df / 2.0 * slab_scale**2,
+    )
+
+    # Regularised local scale: cap the effective scale at sqrt(c2).
+    # lam_tilde -> lam when tau*lam << sqrt(c2)  (weak global shrinkage)
+    # lam_tilde -> sqrt(c2)/tau when tau*lam >> sqrt(c2)  (caps large entries)
+    lam_tilde = lam * pt.sqrt(c2) / pt.sqrt(c2 + tau**2 * lam**2)
+
+    return pm.Normal("Gamma", mu=0.0, sigma=tau * lam_tilde, shape=shape)
 
 
 def _build_sigma(*, n_vars: int, user_spec: dict[str, Any] | None) -> Any:
