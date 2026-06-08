@@ -247,3 +247,24 @@ def test_girf_long_run_response_is_nonzero(fitted_model: BayesianVECM) -> None:
     last_horizon_mean_abs = np.mean(np.abs(girf.values[:, :, -1, :, :]))
     # Threshold is deliberately loose — just checking it's not numerical zero.
     assert last_horizon_mean_abs > 1e-4
+
+
+def test_irf_deterministic_ci_does_not_raise() -> None:
+    """irf() must not raise ValueError when fitted with deterministic='ci'.
+
+    Regression test: beta in the posterior has shape (K+1, r) for inside
+    deterministic terms; the IRF code must slice to (K, r) before reshaping.
+    """
+    model = BayesianVECM(k_ar_diff=1, coint_rank=1, deterministic="ci")
+    model.fit(
+        _tiny_cointegrated_series(),
+        draws=20,
+        tune=20,
+        chains=1,
+        cores=1,
+        progressbar=False,
+        random_seed=0,
+        compute_convergence_checks=False,
+    )
+    result = model.irf(steps=5, method="girf")
+    assert result.sizes["horizon"] == 6  # 0..5 inclusive

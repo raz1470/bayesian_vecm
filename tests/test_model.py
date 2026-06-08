@@ -430,3 +430,29 @@ def test_sample_posterior_predictive_variable_names_in_coords() -> None:
     pp = model.sample_posterior_predictive(steps=3, random_seed=0)
     variable_coord = pp.posterior_predictive.coords["variable"].values.tolist()
     assert variable_coord == ["gdp", "cpi"]
+
+
+def test_sample_posterior_predictive_deterministic_ci_does_not_raise() -> None:
+    """sample_posterior_predictive must not raise ValueError when fitted with deterministic='ci'.
+
+    Regression test: beta in the posterior has shape (C, D, K+1, r) for inside
+    deterministic terms ('ci', 'li') because cointegration_design appends a
+    trend row to y_lag1.  forecast_posterior must slice beta to (C, D, K, r)
+    before reshaping to (n_total, K, r), otherwise the reshape raises a
+    ValueError.
+    """
+    model = BayesianVECM(k_ar_diff=1, coint_rank=1, deterministic="ci")
+    model.fit(
+        _tiny_cointegrated_series(),
+        draws=20,
+        tune=20,
+        chains=1,
+        cores=1,
+        progressbar=False,
+        random_seed=0,
+        compute_convergence_checks=False,
+    )
+    pp = model.sample_posterior_predictive(steps=5, random_seed=0)
+    y = pp.posterior_predictive["y"]
+    # Shape: (chain=1, draw=20, steps=5, K=2)
+    assert y.shape == (1, 20, 5, 2)

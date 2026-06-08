@@ -127,7 +127,7 @@ def forecast_posterior(
 
     # --- Reshape to (D, ...) for fully-vectorised per-step ops -------------
     alpha = alpha_draws.reshape(n_total, n_vars, r)  # (D, K, r)
-    beta = beta_draws.reshape(n_total, n_vars, r)  # (D, K, r)
+    beta = beta_draws[:, :, :n_vars, :].reshape(n_total, n_vars, r)  # (D, K, r)
     sigma = sigma_draws.reshape(n_total, n_vars, n_vars)  # (D, K, K)
     if has_gamma:
         # Slice to K*k_ar_diff dynamic columns — strips any outside

@@ -11,7 +11,7 @@ build-backend = "hatchling.build"
 # ---------------------------------------------------------------------------
 [project]
 name = "bayesian_vecm"
-version = "0.0.1"
+version = "0.1.0"
 description = "Bayesian Vector Error Correction Models in Python"
 readme = "README.md"
 requires-python = ">=3.12"
