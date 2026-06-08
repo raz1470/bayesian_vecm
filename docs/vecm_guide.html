@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A Guide to Vector Error Correction Models</title>
+<style>
+  :root {
+    --bg: #fafaf8;
+    --surface: #ffffff;
+    --border: #e5e3de;
+    --text: #1a1917;
+    --muted: #6b6860;
+    --accent: #2563eb;
+    --accent-light: #eff6ff;
+    --warn: #92400e;
+    --warn-bg: #fffbeb;
+    --code-bg: #f3f2ef;
+    --green: #166534;
+    --green-bg: #f0fdf4;
+    --radius: 8px;
+    --max-w: 860px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 16px;
+  }
+
+  /* ── Layout ── */
+  header {
+    background: var(--text);
+    color: #fff;
+    padding: 3.5rem 2rem 3rem;
+    text-align: center;
+  }
+  header h1 { font-size: 2.2rem; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 0.5rem; }
+  header p { color: #cbd5e1; font-size: 1.05rem; max-width: 560px; margin: 0 auto; }
+
+  nav {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    overflow-x: auto;
+  }
+  nav ul {
+    display: flex;
+    list-style: none;
+    max-width: var(--max-w);
+    margin: 0 auto;
+    padding: 0 1rem;
+    gap: 0;
+  }
+  nav ul li a {
+    display: block;
+    padding: 0.75rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--muted);
+    text-decoration: none;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  nav ul li a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  main { max-width: var(--max-w); margin: 0 auto; padding: 3rem 1.5rem 6rem; }
+
+  section {
+    margin-bottom: 4rem;
+    padding-top: 1rem;
+  }
+  section h2 {
+    font-size: 1.55rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+  }
+  section h2 .num {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--accent-light);
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+  }
+  section h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 1.5rem 0 0.5rem;
+    color: var(--text);
+  }
+  p { margin-bottom: 1rem; color: #2d2c2a; }
+  p:last-child { margin-bottom: 0; }
+
+  /* ── Callouts ── */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-light);
+    padding: 0.85rem 1.1rem;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    margin: 1.25rem 0;
+    font-size: 0.95rem;
+  }
+  .callout.warn {
+    border-color: #f59e0b;
+    background: var(--warn-bg);
+  }
+  .callout.green {
+    border-color: #22c55e;
+    background: var(--green-bg);
+  }
+  .callout strong { display: block; margin-bottom: 0.2rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); }
+  .callout.warn strong { color: var(--warn); }
+  .callout.green strong { color: var(--green); }
+
+  /* ── Diagrams ── */
+  .diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+    overflow-x: auto;
+    text-align: center;
+  }
+  .diagram figcaption {
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin-top: 0.75rem;
+    font-style: italic;
+  }
+
+  /* ── Equation display ── */
+  .eq {
+    background: var(--code-bg);
+    border-radius: var(--radius);
+    padding: 1rem 1.5rem;
+    margin: 1.25rem 0;
+    font-family: "Georgia", "Times New Roman", serif;
+    font-size: 1.1rem;
+    text-align: center;
+    overflow-x: auto;
+  }
+  .eq .term { display: inline-block; text-align: center; margin: 0 0.3rem; vertical-align: middle; }
+  .eq .term .symbol { font-size: 1.2rem; font-weight: 600; }
+  .eq .term .label { display: block; font-size: 0.7rem; color: var(--muted); font-family: sans-serif; margin-top: 0.15rem; }
+  .eq .plus { font-size: 1.3rem; vertical-align: middle; margin: 0 0.2rem; color: var(--muted); }
+
+  /* ── Under the hood ── */
+  details {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin: 1.5rem 0;
+    overflow: hidden;
+  }
+  details summary {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--code-bg);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    user-select: none;
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before {
+    content: "▶";
+    font-size: 0.65rem;
+    transition: transform 0.2s;
+  }
+  details[open] summary::before { transform: rotate(90deg); }
+  details summary:hover { color: var(--text); }
+  .hood-body {
+    padding: 1.1rem 1.2rem;
+    font-size: 0.92rem;
+    border-top: 1px solid var(--border);
+  }
+  .hood-body p { color: var(--muted); margin-bottom: 0.75rem; }
+  .hood-body code {
+    background: var(--code-bg);
+    padding: 0.15rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.88em;
+    font-family: "SF Mono", "Fira Mono", monospace;
+  }
+  .math {
+    font-family: "Georgia", serif;
+    font-size: 1rem;
+    background: var(--code-bg);
+    padding: 0.6rem 1rem;
+    border-radius: 4px;
+    margin: 0.6rem 0;
+    overflow-x: auto;
+  }
+
+  /* ── Param table ── */
+  .param-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.25rem 0;
+    font-size: 0.9rem;
+  }
+  .param-table th {
+    background: var(--code-bg);
+    padding: 0.5rem 0.8rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .param-table td {
+    padding: 0.65rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .param-table td:first-child {
+    font-family: "Georgia", serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+    width: 60px;
+  }
+  .param-table tr:last-child td { border-bottom: none; }
+
+  footer {
+    text-align: center;
+    padding: 2rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>A Guide to Vector Error Correction Models</h1>
+  <p>Intuition, diagrams, and mathematics — from cointegration basics to Bayesian GIRFs</p>
+</header>
+
+<nav>
+  <ul>
+    <li><a href="#s1">1. The Problem</a></li>
+    <li><a href="#s2">2. Cointegration</a></li>
+    <li><a href="#s3">3. The VECM Equation</a></li>
+    <li><a href="#s4">4. Beta</a></li>
+    <li><a href="#s5">5. Alpha</a></li>
+    <li><a href="#s6">6. Gamma</a></li>
+    <li><a href="#s7">7. Rank Selection</a></li>
+    <li><a href="#s8">8. GIRFs</a></li>
+    <li><a href="#s9">9. Bayesian VECM</a></li>
+    <li><a href="#s10">10. Brand Marketing</a></li>
+  </ul>
+</nav>
+
+<main>
+
+<!-- ══════════════════════════════════════════════════════════════ §1 -->
+<section id="s1">
+  <h2><span class="num">§1</span> The Problem with Trending Data</h2>
+
+  <p>Most data analysts reach for linear regression as a first tool. But regression assumes that your variables fluctuate around a stable mean. Many real-world series — brand awareness, consumer confidence, revenue — don't do that. They <em>drift</em>. They have a unit root: a persistent upward or downward trend with no natural home to return to.</p>
+
+  <p>When you regress one drifting series on another, you get a <strong>spurious regression</strong>. The R² looks great. The t-statistics look significant. But the relationship is a statistical artefact — both series happened to drift in the same direction over your sample period. The model will give you completely different answers on the next dataset.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:680px">
+      <defs>
+        <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#6b6860"/>
+        </marker>
+      </defs>
+      <!-- Axes left panel -->
+      <text x="160" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1917">Two random walks — no real relationship</text>
+      <line x1="30" y1="200" x2="30" y2="30" stroke="#ccc" stroke-width="1.2"/>
+      <line x1="30" y1="200" x2="300" y2="200" stroke="#ccc" stroke-width="1.2"/>
+      <!-- Random walk 1 (drifts up) -->
+      <polyline points="30,180 55,165 80,155 105,140 130,128 155,118 180,108 205,98 230,105 255,92 280,80 295,72"
+        fill="none" stroke="#2563eb" stroke-width="2.2"/>
+      <!-- Random walk 2 (also drifts up, different path) -->
+      <polyline points="30,185 55,178 80,168 105,162 130,148 155,143 180,130 205,122 230,115 255,110 280,98 295,90"
+        fill="none" stroke="#dc2626" stroke-width="2.2"/>
+      <!-- Labels -->
+      <text x="298" y="68" font-size="11" fill="#2563eb" font-weight="600">Series A</text>
+      <text x="298" y="88" font-size="11" fill="#dc2626" font-weight="600">Series B</text>
+      <text x="160" y="220" text-anchor="middle" font-size="10" fill="#6b6860">Time</text>
+
+      <!-- Axes right panel -->
+      <text x="540" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1917">OLS residuals — not stationary</text>
+      <line x1="410" y1="200" x2="410" y2="30" stroke="#ccc" stroke-width="1.2"/>
+      <line x1="410" y1="200" x2="685" y2="200" stroke="#ccc" stroke-width="1.2"/>
+      <line x1="410" y1="120" x2="685" y2="120" stroke="#e5e3de" stroke-width="1" stroke-dasharray="4,3"/>
+      <!-- Residuals — wandering, not mean-reverting -->
+      <polyline points="410,120 435,112 460,100 485,92 510,100 535,112 560,128 585,140 610,155 635,162 660,150 680,138"
+        fill="none" stroke="#f59e0b" stroke-width="2.2"/>
+      <text x="540" y="220" text-anchor="middle" font-size="10" fill="#6b6860">Time</text>
+      <text x="406" y="123" text-anchor="end" font-size="9" fill="#6b6860">0</text>
+    </svg>
+    <figcaption>Two unrelated random walks drift together by chance. OLS finds a "significant" relationship — but the residuals wander indefinitely rather than reverting to zero. This is spurious regression.</figcaption>
+  </div>
+
+  <p>The fix is <em>not</em> to difference the data and run VAR on Δy — you lose all information about the long-run level relationship. The fix is a <strong>Vector Error Correction Model</strong>, which simultaneously models the short-run dynamics <em>and</em> the long-run equilibrium.</p>
+
+  <div class="callout warn">
+    <strong>The classic diagnostic</strong>
+    Run OLS on two I(1) series. If the residuals look like a random walk (ADF fails to reject), the regression is spurious — stop and reach for VECM.
+  </div>
+
+  <details>
+    <summary>Under the hood — unit roots and integration order</summary>
+    <div class="hood-body">
+      <p>A series y<sub>t</sub> has a <strong>unit root</strong> if it can be written as y<sub>t</sub> = y<sub>t-1</sub> + ε<sub>t</sub>. Repeated substitution shows the variance grows without bound: Var(y<sub>t</sub>) = t·σ². The series is called <em>integrated of order 1</em>, written I(1).</p>
+      <p>The standard test is the <strong>Augmented Dickey-Fuller (ADF)</strong> test, which tests H<sub>0</sub>: unit root present. Failure to reject → the series is I(1) and you should not run OLS on it in levels.</p>
+      <div class="math">Δy<sub>t</sub> = ρ·y<sub>t-1</sub> + Σ φ<sub>i</sub>·Δy<sub>t-i</sub> + ε<sub>t</sub> &nbsp; &nbsp; H<sub>0</sub>: ρ = 0</div>
+      <p>A VAR in differences (ΔVAR) is correctly specified but throws away the long-run information encoded in the <em>level</em> relationship between variables. Engle and Granger (1987) proved that if two I(1) series are cointegrated, they must have an error-correction representation — VECM is that representation.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ §2 -->
+<section id="s2">
+  <h2><span class="num">§2</span> Cointegration: the Long-Run Tether</h2>
+
+  <p>Two I(1) series are <strong>cointegrated</strong> if a linear combination of them is stationary — if there exists a vector β such that β'yₜ ~ I(0). Intuitively, the series share a common stochastic trend. They can drift apart temporarily, but a force pulls them back together.</p>
+
+  <p>Think of a dog on a long lead walking with its owner. Both the dog and the owner follow roughly random paths — neither is predictable moment-to-moment. But the <em>distance between them</em> is bounded: when the lead goes taut, the dog gets pulled back. The lead is the cointegrating relationship.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:680px">
+      <!-- Left: cointegrated series -->
+      <text x="160" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1917">Cointegrated series — drift together</text>
+      <line x1="30" y1="210" x2="30" y2="25" stroke="#ccc" stroke-width="1.2"/>
+      <line x1="30" y1="210" x2="305" y2="210" stroke="#ccc" stroke-width="1.2"/>
+      <!-- Shared trend (dashed) -->
+      <line x1="30" y1="190" x2="295" y2="75" stroke="#e5e3de" stroke-width="1.5" stroke-dasharray="5,4"/>
+      <!-- Series 1 above trend -->
+      <polyline points="30,185 55,170 80,158 105,148 130,132 155,125 180,112 205,100 230,108 255,95 280,82 295,70"
+        fill="none" stroke="#2563eb" stroke-width="2.2"/>
+      <!-- Series 2 below trend -->
+      <polyline points="30,192 55,180 80,172 105,160 130,150 155,142 180,128 205,118 230,126 255,112 280,100 295,90"
+        fill="none" stroke="#dc2626" stroke-width="2.2"/>
+      <text x="298" y="67" font-size="11" fill="#2563eb" font-weight="600">y₁</text>
+      <text x="298" y="90" font-size="11" fill="#dc2626" font-weight="600">y₂</text>
+      <text x="240" y="62" font-size="10" fill="#9ca3af" font-style="italic">common trend</text>
+
+      <!-- Right: the cointegrating residual -->
+      <text x="530" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1917">Cointegrating residual — stationary</text>
+      <line x1="390" y1="210" x2="390" y2="25" stroke="#ccc" stroke-width="1.2"/>
+      <line x1="390" y1="210" x2="680" y2="210" stroke="#ccc" stroke-width="1.2"/>
+      <line x1="390" y1="130" x2="680" y2="130" stroke="#e5e3de" stroke-width="1.2" stroke-dasharray="4,3"/>
+      <!-- Stationary residual bouncing around zero -->
+      <polyline points="390,130 415,118 440,138 465,122 490,142 515,118 540,148 565,122 590,138 615,118 640,132 660,120 678,135"
+        fill="none" stroke="#16a34a" stroke-width="2.2"/>
+      <text x="386" y="133" text-anchor="end" font-size="9" fill="#6b6860">0</text>
+      <text x="530" y="228" text-anchor="middle" font-size="10" fill="#6b6860">β'yₜ = y₁ₜ - β·y₂ₜ</text>
+    </svg>
+    <figcaption>Left: two I(1) series drift upward together, sharing a common stochastic trend. Right: their cointegrating residual β'yₜ is stationary — it fluctuates around a fixed mean. This bounded gap is what the error-correction mechanism closes.</figcaption>
+  </div>
+
+  <p>The cointegrating relationship is the <strong>long-run equilibrium equation</strong>. When the system drifts away from it — when the gap opens up — the VECM's error-correction term kicks in and pulls the variables back toward balance.</p>
+
+  <div class="callout green">
+    <strong>Marketing interpretation</strong>
+    Brand spend and organic sales are cointegrated: they share a common trend (the growth of the business). The cointegrating residual measures how far sales have deviated from the level implied by brand investment. The error-correction term captures the long-run reversion — the tail that standard MMMs miss entirely.
+  </div>
+
+  <details>
+    <summary>Under the hood — the Granger representation theorem</summary>
+    <div class="hood-body">
+      <p>Engle and Granger (1987) proved: if y<sub>t</sub> ~ I(1) and there exists β such that β'y<sub>t</sub> ~ I(0), then y<sub>t</sub> has an error-correction representation:</p>
+      <div class="math">Δy<sub>t</sub> = α·β'y<sub>t-1</sub> + lagged differences + ε<sub>t</sub></div>
+      <p>This is a two-way result. Cointegration implies error correction, and error correction implies cointegration. You cannot have one without the other. This is why differencing and running a VAR loses information — you're throwing away the α·β'y<sub>t-1</sub> term that encodes the long-run pull.</p>
+      <p>The number of linearly independent cointegrating vectors is the <strong>cointegration rank</strong> r, where 0 ≤ r ≤ K. If r = 0, no long-run relationships exist. If r = K, all series are stationary (shouldn't be using VECM). Typically 1 ≤ r ≤ K-1.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ §3 -->
+<section id="s3">
+  <h2><span class="num">§3</span> The VECM Equation Unpacked</h2>
+
+  <p>The full VECM for K variables at time t is:</p>
+
+  <div class="eq">
+    <span class="term"><span class="symbol">Δ<b>y</b><sub>t</sub></span><span class="label">Change in system</span></span>
+    <span class="plus">=</span>
+    <span class="term"><span class="symbol"><b>α</b> <b>β</b>′ <b>y</b><sub>t-1</sub></span><span class="label">Error correction</span></span>
+    <span class="plus">+</span>
+    <span class="term"><span class="symbol">Σ <b>Γ</b><sub>i</sub> Δ<b>y</b><sub>t-i</sub></span><span class="label">Short-run dynamics</span></span>
+    <span class="plus">+</span>
+    <span class="term"><span class="symbol"><b>B X</b><sub>t</sub></span><span class="label">Exogenous inputs</span></span>
+    <span class="plus">+</span>
+    <span class="term"><span class="symbol"><b>ε</b><sub>t</sub></span><span class="label">Innovation</span></span>
+  </div>
+
+  <table class="param-table">
+    <thead><tr><th>Term</th><th>Name</th><th>Shape</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Δ<b>y</b><sub>t</sub></td>
+        <td>First difference of endogenous variables</td>
+        <td>K×1</td>
+        <td>The thing we're modelling — the change in each variable this period</td>
+      </tr>
+      <tr>
+        <td><b>α</b></td>
+        <td>Adjustment (loading) matrix</td>
+        <td>K×r</td>
+        <td>How fast each variable corrects toward equilibrium. The "speed of adjustment"</td>
+      </tr>
+      <tr>
+        <td><b>β</b></td>
+        <td>Cointegrating vectors</td>
+        <td>K×r</td>
+        <td>The long-run equilibrium relationships — the "lead" between the dog and owner</td>
+      </tr>
+      <tr>
+        <td><b>β′y</b><sub>t-1</sub></td>
+        <td>Error-correction term</td>
+        <td>r×1</td>
+        <td>How far the system was from equilibrium last period. When large, correction is strong</td>
+      </tr>
+      <tr>
+        <td><b>Γ</b><sub>i</sub></td>
+        <td>Short-run lag matrices</td>
+        <td>K×K each</td>
+        <td>Transient effects — how last period's changes ripple through the system this period</td>
+      </tr>
+      <tr>
+        <td><b>B</b></td>
+        <td>Exogenous coefficient matrix</td>
+        <td>K×m</td>
+        <td>Contemporaneous effects of exogenous inputs (e.g. brand spend, interest rates)</td>
+      </tr>
+      <tr>
+        <td><b>ε</b><sub>t</sub></td>
+        <td>Innovation vector</td>
+        <td>K×1</td>
+        <td>Unpredictable shocks. Covariance matrix Σ captures cross-variable contemporaneous correlation</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="diagram">
+    <svg viewBox="0 0 700 180" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:660px">
+      <defs>
+        <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#6b6860"/>
+        </marker>
+      </defs>
+      <!-- Three boxes -->
+      <!-- Box 1: LHS -->
+      <rect x="10" y="65" width="110" height="50" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+      <text x="65" y="87" text-anchor="middle" font-size="13" font-weight="700" fill="#2563eb">Δyₜ</text>
+      <text x="65" y="103" text-anchor="middle" font-size="10" fill="#6b6860">How much y changes</text>
+
+      <text x="125" y="93" text-anchor="middle" font-size="16" fill="#6b6860">=</text>
+
+      <!-- Box 2: EC term -->
+      <rect x="140" y="55" width="150" height="70" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="215" y="80" text-anchor="middle" font-size="13" font-weight="700" fill="#92400e">αβ′yₜ₋₁</text>
+      <text x="215" y="97" text-anchor="middle" font-size="10" fill="#78350f">Error correction:</text>
+      <text x="215" y="110" text-anchor="middle" font-size="10" fill="#78350f">long-run pull</text>
+
+      <text x="300" y="93" text-anchor="middle" font-size="16" fill="#6b6860">+</text>
+
+      <!-- Box 3: Short run -->
+      <rect x="315" y="55" width="150" height="70" rx="6" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="390" y="80" text-anchor="middle" font-size="13" font-weight="700" fill="#166534">ΓᵢΔyₜ₋ᵢ</text>
+      <text x="390" y="97" text-anchor="middle" font-size="10" fill="#166534">Short-run dynamics:</text>
+      <text x="390" y="110" text-anchor="middle" font-size="10" fill="#166534">transient ripples</text>
+
+      <text x="475" y="93" text-anchor="middle" font-size="16" fill="#6b6860">+</text>
+
+      <!-- Box 4: Exog + noise -->
+      <rect x="490" y="55" width="130" height="70" rx="6" fill="#fdf4ff" stroke="#a855f7" stroke-width="1.5"/>
+      <text x="555" y="80" text-anchor="middle" font-size="13" font-weight="700" fill="#7e22ce">BXₜ + εₜ</text>
+      <text x="555" y="97" text-anchor="middle" font-size="10" fill="#7e22ce">Exog inputs +</text>
+      <text x="555" y="110" text-anchor="middle" font-size="10" fill="#7e22ce">random shocks</text>
+
+      <!-- Horizon labels -->
+      <text x="215" y="145" text-anchor="middle" font-size="9" fill="#9ca3af">← persistent, long-run →</text>
+      <text x="390" y="145" text-anchor="middle" font-size="9" fill="#9ca3af">← transient, fades →</text>
+    </svg>
+    <figcaption>The VECM splits each period's change into three components: a long-run pull back toward equilibrium (yellow), transient short-run ripples from recent changes (green), and contemporaneous exogenous effects plus random noise (purple).</figcaption>
+  </div>
+
+  <details>
+    <summary>Under the hood — the Granger-Johansen parametrisation</summary>
+    <div class="hood-body">
+      <p>The key identity is that the K×K matrix Π = αβ′ has rank r. This means Π is not full-rank — it cannot be inverted — which is what allows the system to have I(1) components despite having an error-correction mechanism.</p>
+      <div class="math">Π = αβ′ &nbsp;&nbsp; rank(Π) = r &nbsp;&nbsp; α, β ∈ ℝ<sup>K×r</sup></div>
+      <p>The decomposition Π = αβ′ is not unique: for any invertible r×r matrix H, we can write Π = (αH⁻¹)(Hβ′). This is the <strong>identification problem</strong> — we must impose r² normalisation restrictions on β to pin down a unique solution. The Johansen normalisation pins the top r×r block of β to I<sub>r</sub>.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ §4 -->
+<section id="s4">
+  <h2><span class="num">§4</span> β — The Long-Run Equilibrium</h2>
+
+  <p>β is the matrix of <strong>cointegrating vectors</strong>. Each column of β defines one long-run equilibrium relationship among the K variables. With r=1 and K=3, β is a 3×1 vector like [1, -0.8, -0.2]′ — meaning organic_sales - 0.8·awareness - 0.2·consideration = 0 in the long run.</p>
+
+  <p>You can read β as the <em>long-run equilibrium equation</em>. If you know awareness and consideration, β tells you where organic sales should be. When actual sales deviate from this level, the error-correction mechanism in α kicks in to close the gap.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:640px">
+      <!-- Equilibrium plane illustration -->
+      <text x="340" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1917">β defines the long-run equilibrium surface</text>
+
+      <!-- Axes -->
+      <line x1="80" y1="170" x2="80" y2="40" stroke="#ccc" stroke-width="1.2"/>
+      <line x1="80" y1="170" x2="400" y2="170" stroke="#ccc" stroke-width="1.2"/>
+      <text x="75" y="38" font-size="10" fill="#6b6860" text-anchor="end">sales</text>
+      <text x="405" y="174" font-size="10" fill="#6b6860">awareness</text>
+
+      <!-- Equilibrium line (β'y = 0) -->
+      <line x1="80" y1="165" x2="390" y2="55" stroke="#2563eb" stroke-width="2" stroke-dasharray="6,4"/>
+      <text x="300" y="48" font-size="10" fill="#2563eb" font-weight="600">β′y = 0 (equilibrium)</text>
+
+      <!-- Points above and below the line -->
+      <circle cx="160" cy="100" r="5" fill="#dc2626"/>
+      <circle cx="230" cy="120" r="5" fill="#16a34a"/>
+      <circle cx="310" cy="90" r="5" fill="#dc2626"/>
+      <circle cx="180" cy="145" r="5" fill="#16a34a"/>
+      <circle cx="270" cy="148" r="5" fill="#dc2626"/>
+
+      <!-- Arrows toward equilibrium line -->
+      <line x1="160" y1="100" x2="148" y2="115" stroke="#dc2626" stroke-width="1.5" marker-end="url(#arrowhead)" stroke-dasharray="3,2"/>
+      <line x1="230" y1="120" x2="220" y2="112" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrowhead)" stroke-dasharray="3,2"/>
+      <line x1="310" y1="90" x2="295" y2="102" stroke="#dc2626" stroke-width="1.5" marker-end="url(#arrowhead)" stroke-dasharray="3,2"/>
+      <line x1="180" y1="145" x2="188" y2="134" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrowhead)" stroke-dasharray="3,2"/>
+      <line x1="270" y1="148" x2="261" y2="135" stroke="#dc2626" stroke-width="1.5" marker-end="url(#arrowhead)" stroke-dasharray="3,2"/>
+
+      <!-- Legend -->
+      <circle cx="450" cy="80" r="5" fill="#dc2626"/>
+      <text x="462" y="84" font-size="10" fill="#1a1917">Above equilibrium (β′y &gt; 0)</text>
+      <circle cx="450" cy="100" r="5" fill="#16a34a"/>
+      <text x="462" y="104" font-size="10" fill="#1a1917">Below equilibrium (β′y &lt; 0)</text>
+      <text x="450" y="130" font-size="10" fill="#6b6860">Arrows show direction of</text>
+      <text x="450" y="143" font-size="10" fill="#6b6860">error-correction pull</text>
+    </svg>
+    <figcaption>β defines a line (or hyperplane in higher dimensions) representing the long-run equilibrium. Observations scatter around it. The error-correction mechanism pulls them back.</figcaption>
+  </div>
+
+  <h3>Identification: pinning down a unique β</h3>
+  <p>β is not unique out of the box. If β is a cointegrating vector, so is 2β, -β, or any rotation of β. We must impose <strong>normalisation restrictions</strong> to pick a unique solution. The standard approach (Johansen normalisation) pins the top r×r block of β to an identity matrix:</p>
+
+  <div class="eq" style="font-size:0.95rem">
+    β = [ I<sub>r</sub> ; β<sub>free</sub> ]′ &nbsp;&nbsp; — the first variable in each relation is the "numeraire"
+  </div>
+
+  <p>In practice this means: if r=1 and organic_sales is listed first, the cointegrating vector reads "organic_sales = β₂·awareness + β₃·consideration + …" — organic sales is the normalising variable, and the other β entries are its long-run elasticities with respect to the brand metrics.</p>
+
+  <details>
+    <summary>Under the hood — why β is not identified without restrictions</summary>
+    <div class="hood-body">
+      <p>The identification problem comes from the rotation invariance of Π = αβ′. For any invertible r×r matrix H:</p>
+      <div class="math">Π = αβ′ = (αH⁻¹)(Hβ′)</div>
+      <p>So (α*, β*) = (αH⁻¹, βH′) gives the same Π as (α, β). There are r² free parameters in H, so we need r² normalisation restrictions. The Johansen normalisation imposes β[1:r, :] = I<sub>r</sub>, which is r² constraints (r entries per row × r rows, each set to a known value).</p>
+      <p>In the Bayesian model, β<sub>free</sub> ~ Normal(0, 5) as a prior on the lower (K-r)×r block, with the top I<sub>r</sub> block fixed as a constant (not a random variable). This prevents the sampler from exploring the rotation-equivalent solutions that would create multimodality in the posterior.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ §5 -->
+<section id="s5">
+  <h2><span class="num">§5</span> α — Speed of Adjustment</h2>
+
+  <p>α is the <strong>adjustment matrix</strong>. Each row of α corresponds to one variable; each column corresponds to one cointegrating relationship. The entry α<sub>ij</sub> tells you: when cointegrating relationship j deviates from zero by one unit, how much does variable i change in the next period to correct it?</p>
+
+  <p>The sign and magnitude of α are economically interpretable:</p>
+
+  <ul style="margin: 0.75rem 0 1rem 1.5rem;">
+    <li style="margin-bottom:0.4rem"><strong>Negative α<sub>i</sub></strong> — variable i is a <em>follower</em>. When the system goes out of equilibrium, it adjusts back. Large negative α means fast adjustment.</li>
+    <li style="margin-bottom:0.4rem"><strong>Near-zero α<sub>i</sub></strong> — variable i is a <em>driver</em>. It doesn't respond to disequilibrium; instead it pushes other variables around.</li>
+    <li><strong>Positive α<sub>i</sub></strong> — variable i <em>amplifies</em> deviations rather than correcting them (unusual; may indicate misspecification).</li>
+  </ul>
+
+  <div class="diagram">
+    <svg viewBox="0 0 700 230" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:660px">
+      <defs>
+        <marker id="a2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#2563eb"/>
+        </marker>
+        <marker id="a3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#dc2626"/>
+        </marker>
+      </defs>
+
+      <!-- Fast adjustment -->
+      <text x="175" y="20" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1917">Fast adjustment (|α| large)</text>
+      <line x1="30" y1="190" x2="30" y2="30" stroke="#ccc" stroke-width="1.2"/>
+      <line x1="30" y1="120" x2="320" y2="120" stroke="#e5e3de" stroke-width="1.2" stroke-dasharray="5,4"/>
+      <text x="25" y="123" font-size="9" fill="#6b6860" text-anchor="end">eq'm</text>
+      <!-- Shock and fast return -->
+      <polyline points="30,120 80,120 80,60 110,78 135,93 160,105 185,112 210,116 240,118 270,119 300,120"
+        fill="none" stroke="#2563eb" stroke-width="2.5"/>
+      <text x="82" y="55" font-size="9" fill="#6b6860">shock</text>
+      <line x1="80" y1="60" x2="80" y2="118" stroke="#2563eb" stroke-width="1" stroke-dasharray="3,2"/>
+
+      <!-- Slow adjustment -->
+      <text x="530" y="20" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1917">Slow adjustment (|α| small)</text>
+      <line x1="390" y1="190" x2="390" y2="30" stroke="#ccc" stroke-width="1.2"/>
+      <line x1="390" y1="120" x2="680" y2="120" stroke="#e5e3de" stroke-width="1.2" stroke-dasharray="5,4"/>
+      <text x="385" y="123" font-size="9" fill="#6b6860" text-anchor="end">eq'm</text>
+      <!-- Shock and slow return -->
+      <polyline points="390,120 440,120 440,60 470,66 500,72 530,80 560,88 590,96 620,104 650,110 678,116"
+        fill="none" stroke="#dc2626" stroke-width="2.5"/>
+      <text x="442" y="55" font-size="9" fill="#6b6860">shock</text>
+      <line x1="440" y1="60" x2="440" y2="118" stroke="#dc2626" stroke-width="1" stroke-dasharray="3,2"/>
+
+      <!-- Half-life annotations -->
+      <text x="175" y="210" text-anchor="middle" font-size="10" fill="#2563eb">Half-life ≈ 3–4 periods</text>
+      <text x="530" y="210" text-anchor="middle" font-size="10" fill="#dc2626">Half-life ≈ 15+ periods</text>
+    </svg>
+    <figcaption>Two variables hit by the same shock. Fast α (blue) returns to equilibrium within a few periods. Slow α (red) drifts for many periods before reverting. The half-life of the shock is approximately log(0.5) / log(1 + α).</figcaption>
+  </div>
+
+  <div class="callout">
+    <strong>Brand marketing interpretation</strong>
+    If organic_sales has α = -0.3, it corrects 30% of any deviation from the brand equity equilibrium each period. After 2 periods, two thirds of the deviation is closed. A large negative α on sales is a healthy sign — the brand system is self-correcting.
+  </div>
+
+  <details>
+    <summary>Under the hood — weak exogeneity and block α</summary>
+    <div class="hood-body">
+      <p>A variable is <strong>weakly exogenous</strong> with respect to the cointegrating parameters if its row in α is zero — it doesn't respond to disequilibrium, it only drives other variables. In brand marketing, brand spend is typically weakly exogenous (it's set by the business, not adjusted in response to brand equity gaps), so it enters as an exogenous regressor rather than an endogenous VECM variable.</p>
+      <p>Formal test: Likelihood ratio test of H<sub>0</sub>: α<sub>i</sub> = 0. In the Bayesian setting, the posterior of α<sub>i</sub> concentrated near zero achieves the same effect without a hard exclusion restriction.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ §6 -->
+<section id="s6">
+  <h2><span class="num">§6</span> Γ — Short-Run Dynamics</h2>
+
+  <p>The Γ matrices capture <strong>transient effects</strong> — how changes in the system last period ripple through to this period, <em>above and beyond</em> the long-run error-correction pull. If organic sales jumped last week, Γ tells you how much of that jump is still felt this week.</p>
+
+  <p>Unlike β (which is permanent) and α (which governs the persistence of deviations), Γ effects decay. A system with only error correction and no short-run dynamics (Γ = 0) has a very clean impulse response: the shock hits, and the adjustment is monotone. Real marketing data usually has richer short-run structure.</p>
+
+  <h3>How many lags? The horseshoe answer</h3>
+  <p>With K=4 variables and k lags, the Γ block has K²k = 16k parameters. Setting k too low misses real dynamics; setting it too high over-fits. The Bayesian solution is to set k generously (k=2 or 3) and put a <strong>horseshoe prior</strong> on Γ — this shrinks irrelevant entries toward zero automatically, without making a hard include/exclude decision.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:640px">
+      <text x="340" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1917">Horseshoe prior: sparse shrinkage without hard exclusion</text>
+
+      <!-- Normal prior density -->
+      <text x="165" y="45" text-anchor="middle" font-size="10" font-weight="600" fill="#6b6860">Normal(0, 0.5) prior</text>
+      <path d="M 30,165 Q 80,165 105,100 Q 165,10 225,100 Q 250,165 300,165"
+        fill="none" stroke="#94a3b8" stroke-width="2"/>
+      <line x1="165" y1="165" x2="165" y2="35" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="165" y="180" text-anchor="middle" font-size="10" fill="#6b6860">0</text>
+      <text x="30" y="175" font-size="9" fill="#9ca3af">← shrinks everything equally</text>
+
+      <!-- Horseshoe prior density -->
+      <text x="520" y="45" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Horseshoe prior</text>
+      <!-- Heavy spike at zero -->
+      <path d="M 390,165 Q 430,165 445,130 Q 460,60 480,10 Q 500,60 515,130 Q 530,165 570,165"
+        fill="none" stroke="#2563eb" stroke-width="2.5"/>
+      <!-- Heavy tails -->
+      <path d="M 390,165 Q 400,160 420,155 Q 440,148 450,130"
+        fill="none" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.6"/>
+      <path d="M 570,165 Q 560,160 540,155 Q 520,148 510,130"
+        fill="none" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.6"/>
+      <line x1="480" y1="165" x2="480" y2="25" stroke="#2563eb" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="480" y="180" text-anchor="middle" font-size="10" fill="#6b6860">0</text>
+      <text x="390" y="175" font-size="9" fill="#2563eb">← spike: shrinks small effects to ~0</text>
+      <text x="390" y="188" font-size="9" fill="#2563eb">   tails: preserves large effects</text>
+    </svg>
+    <figcaption>A Normal prior shrinks all Γ entries equally. The horseshoe prior has a sharp spike at zero (aggressively shrinks irrelevant lags) and heavy tails (preserves genuinely large effects). It adapts to the data's own sparsity structure.</figcaption>
+  </div>
+
+  <details>
+    <summary>Under the hood — the regularised horseshoe (Piironen & Vehtari 2017)</summary>
+    <div class="hood-body">
+      <p>The regularised horseshoe places a local-global scale mixture on each Γ entry:</p>
+      <div class="math">
+        Γ<sub>ij</sub> ~ Normal(0, τ·λ̃<sub>ij</sub>) &nbsp;&nbsp;
+        λ̃<sub>ij</sub> = c·λ<sub>ij</sub> / sqrt(c² + τ²·λ²<sub>ij</sub>)
+      </div>
+      <div class="math">
+        λ<sub>ij</sub> ~ Half-Cauchy(1) &nbsp;&nbsp; (local scale — per-entry)
+        <br/>
+        τ ~ Half-Cauchy(τ₀) &nbsp;&nbsp; (global scale — overall sparsity)
+        <br/>
+        c² ~ Inv-Gamma(ν/2, ν·s²/2) &nbsp;&nbsp; (slab width — caps large effects)
+      </div>
+      <p>The <strong>global scale τ</strong> controls overall sparsity — small τ pushes everything toward zero. The <strong>local scale λ<sub>ij</sub></strong> allows individual entries to escape shrinkage via the heavy Cauchy tails. The slab width c caps the local scales so the prior is proper and sampling is stable. Together they achieve near-zero shrinkage on true zeros and near-unshrunken estimates on true signals.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ §7 -->
+<section id="s7">
+  <h2><span class="num">§7</span> Rank Selection — How Many Equilibria?</h2>
+
+  <p>Before fitting the model, you need to decide on the <strong>cointegration rank r</strong> — how many long-run equilibrium relationships exist in your system. This is a structural decision: r=1 means one equilibrium force holds the system together, r=2 means two independent equilibria.</p>
+
+  <p>The standard tool is the <strong>Johansen trace test</strong>. It tests a sequence of null hypotheses from r=0 upward, stopping when the test first fails to reject.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 680 195" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:640px">
+      <text x="340" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1917">Johansen trace test — sequential hypothesis testing</text>
+
+      <!-- Table header -->
+      <rect x="30" y="30" width="620" height="28" rx="4" fill="#f3f2ef"/>
+      <text x="90" y="48" text-anchor="middle" font-size="10" font-weight="700" fill="#6b6860">H₀</text>
+      <text x="230" y="48" text-anchor="middle" font-size="10" font-weight="700" fill="#6b6860">Trace Statistic</text>
+      <text x="380" y="48" text-anchor="middle" font-size="10" font-weight="700" fill="#6b6860">5% Critical Value</text>
+      <text x="520" y="48" text-anchor="middle" font-size="10" font-weight="700" fill="#6b6860">Decision</text>
+
+      <!-- Row 1: reject -->
+      <rect x="30" y="58" width="620" height="32" fill="#fef2f2"/>
+      <text x="90" y="78" text-anchor="middle" font-size="11" fill="#1a1917">r ≤ 0</text>
+      <text x="230" y="78" text-anchor="middle" font-size="11" fill="#1a1917">68.4</text>
+      <text x="380" y="78" text-anchor="middle" font-size="11" fill="#1a1917">47.2</text>
+      <text x="520" y="78" text-anchor="middle" font-size="11" font-weight="600" fill="#dc2626">Reject — at least 1 relation</text>
+
+      <!-- Row 2: reject -->
+      <rect x="30" y="90" width="620" height="32" fill="#fef2f2"/>
+      <text x="90" y="110" text-anchor="middle" font-size="11" fill="#1a1917">r ≤ 1</text>
+      <text x="230" y="110" text-anchor="middle" font-size="11" fill="#1a1917">31.8</text>
+      <text x="380" y="110" text-anchor="middle" font-size="11" fill="#1a1917">29.7</text>
+      <text x="520" y="110" text-anchor="middle" font-size="11" font-weight="600" fill="#dc2626">Reject — at least 2 relations</text>
+
+      <!-- Row 3: fail to reject -->
+      <rect x="30" y="122" width="620" height="32" fill="#f0fdf4"/>
+      <text x="90" y="142" text-anchor="middle" font-size="11" fill="#1a1917">r ≤ 2</text>
+      <text x="230" y="142" text-anchor="middle" font-size="11" fill="#1a1917">11.2</text>
+      <text x="380" y="142" text-anchor="middle" font-size="11" fill="#1a1917">15.4</text>
+      <text x="520" y="142" text-anchor="middle" font-size="11" font-weight="600" fill="#16a34a">Fail to reject → r = 2</text>
+
+      <text x="340" y="180" text-anchor="middle" font-size="10" fill="#6b6860" font-style="italic">Select r = 2: two cointegrating relationships detected</text>
+    </svg>
+    <figcaption>The trace test works sequentially. Reject r≤0 (at least one relation), reject r≤1 (at least two), fail to reject r≤2 → select r=2. The test statistic is compared against the 5% critical value from the Johansen (1991) distribution.</figcaption>
+  </div>
+
+  <p>The test gives a data-driven starting point, but domain knowledge can override it. If theory strongly suggests one equilibrium (e.g. brand spend and organic sales share a common growth trend), r=1 is defensible even if the test is borderline.</p>
+
+  <div class="callout">
+    <strong>In code</strong>
+    <code>from bayesian_vecm import select_coint_rank</code><br/>
+    <code>result = select_coint_rank(endog, det_order=1, k_ar_diff=2)</code><br/>
+    <code>print(result)  # table of test stats, crit vals, recommended r</code>
+  </div>
+
+  <details>
+    <summary>Under the hood — the trace statistic</summary>
+    <div class="hood-body">
+      <p>The Johansen trace statistic for H<sub>0</sub>: rank ≤ r is:</p>
+      <div class="math">LR(r) = -T · Σ<sub>i=r+1</sub><sup>K</sup> log(1 - λ̂<sub>i</sub>)</div>
+      <p>where λ̂<sub>r+1</sub>, …, λ̂<sub>K</sub> are the K-r smallest squared canonical correlations between Δy<sub>t</sub> and y<sub>t-1</sub> after partialling out lagged differences. Under H<sub>0</sub>, this statistic follows a non-standard distribution (a functional of Brownian motion) tabulated by Johansen (1991) and Osterwald-Lenum (1992). Critical values depend on K-r and the deterministic specification.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ §8 -->
+<section id="s8">
+  <h2><span class="num">§8</span> Generalised Impulse Response Functions</h2>
+
+  <p>An <strong>impulse response function (IRF)</strong> answers the question: "if one variable is shocked by one unit today, what happens to all variables over the next N periods?" This is the key output for brand marketing — it quantifies the long-run tail of a brand spend shock on organic sales.</p>
+
+  <p>The standard IRF (Cholesky) requires you to specify a causal ordering: which variables affect which contemporaneously. For a brand system (awareness ↔ consideration ↔ sales, with feedback loops in all directions), any fixed ordering is wrong. <strong>Generalised IRFs (GIRF)</strong> solve this — they are order-invariant, computing the average effect across all possible orderings.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 700 230" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:660px">
+      <text x="350" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1917">GIRF: brand spend shock → organic sales response</text>
+
+      <!-- Axes -->
+      <line x1="50" y1="190" x2="50" y2="35" stroke="#ccc" stroke-width="1.2"/>
+      <line x1="50" y1="190" x2="650" y2="190" stroke="#ccc" stroke-width="1.2"/>
+      <line x1="50" y1="190" x2="50" y2="35" stroke="#ccc" stroke-width="1.2"/>
+      <text x="45" y="38" font-size="10" fill="#6b6860" text-anchor="end">response</text>
+      <text x="650" y="200" font-size="10" fill="#6b6860" text-anchor="end">weeks</text>
+      <line x1="50" y1="190" x2="50" y2="190" stroke="#ccc"/>
+
+      <!-- Week labels -->
+      <text x="50" y="205" text-anchor="middle" font-size="9" fill="#9ca3af">0</text>
+      <text x="170" y="205" text-anchor="middle" font-size="9" fill="#9ca3af">4</text>
+      <text x="290" y="205" text-anchor="middle" font-size="9" fill="#9ca3af">8</text>
+      <text x="410" y="205" text-anchor="middle" font-size="9" fill="#9ca3af">12</text>
+      <text x="530" y="205" text-anchor="middle" font-size="9" fill="#9ca3af">26</text>
+      <text x="630" y="205" text-anchor="middle" font-size="9" fill="#9ca3af">52</text>
+
+      <!-- 95% HDI band -->
+      <path d="M 50,75 C 80,68 120,62 170,65 S 290,75 410,88 S 530,112 630,120 L 630,158 C 530,148 410,132 290,118 S 120,102 50,108 Z"
+        fill="#dbeafe" opacity="0.7"/>
+      <!-- 80% HDI band -->
+      <path d="M 50,82 C 80,76 120,70 170,72 S 290,80 410,92 S 530,115 630,124 L 630,150 C 530,142 410,126 290,112 S 120,96 50,102 Z"
+        fill="#93c5fd" opacity="0.6"/>
+      <!-- Mean response -->
+      <path d="M 50,90 C 80,82 120,76 170,78 S 290,86 410,100 S 530,124 630,134"
+        fill="none" stroke="#2563eb" stroke-width="2.5"/>
+
+      <!-- MMM comparison (fades quickly) -->
+      <path d="M 50,90 L 80,105 L 110,120 L 140,135 L 170,145 L 200,152 L 230,157 L 260,160 L 300,162 L 350,163 L 400,163 L 650,163"
+        fill="none" stroke="#94a3b8" stroke-width="1.8" stroke-dasharray="6,4"/>
+
+      <!-- Annotations -->
+      <text x="655" y="132" font-size="10" fill="#2563eb" font-weight="600">VECM</text>
+      <text x="655" y="162" font-size="10" fill="#94a3b8">MMM</text>
+      <text x="350" y="60" font-size="9" fill="#3b82f6" font-style="italic">95% HDI</text>
+      <text x="350" y="74" font-size="9" fill="#2563eb" font-style="italic">80% HDI</text>
+
+      <!-- Zero line -->
+      <line x1="50" y1="163" x2="645" y2="163" stroke="#e5e3de" stroke-width="1" stroke-dasharray="3,3"/>
+
+      <!-- Long-run tail annotation -->
+      <line x1="530" y1="125" x2="530" y2="163" stroke="#2563eb" stroke-width="1" stroke-dasharray="3,2"/>
+      <text x="540" y="148" font-size="9" fill="#2563eb">long-run tail</text>
+      <text x="540" y="159" font-size="9" fill="#2563eb">(MMM misses this)</text>
+    </svg>
+    <figcaption>GIRF fan chart: a brand spend shock at week 0 lifts organic sales persistently. The VECM captures the long-run tail — the effect that compounds through the cointegrating relationship. A standard MMM adstock decays to zero within a few weeks.</figcaption>
+  </div>
+
+  <p>The I(1) nature of the system means the GIRF does <em>not</em> decay to zero. A permanent shock to brand spend shifts the long-run equilibrium, and organic sales converge to a new, higher level. This is the economically meaningful output — it quantifies the brand equity that accumulates from sustained investment.</p>
+
+  <details>
+    <summary>Under the hood — GIRF derivation (Pesaran & Shin 1998)</summary>
+    <div class="hood-body">
+      <p>First, convert the VECM to its levels VAR(p) representation with p = k+1:</p>
+      <div class="math">A₁ = I + αβ′ + Γ₁ &nbsp;&nbsp; A<sub>j</sub> = Γ<sub>j</sub> - Γ<sub>j-1</sub> (j=2..k) &nbsp;&nbsp; A<sub>k+1</sub> = -Γ<sub>k</sub></div>
+      <p>Then iterate the companion matrix F (the K(k+1) × K(k+1) stacked-variable matrix) to get the impulse response matrices:</p>
+      <div class="math">Φ<sub>h</sub> = top-left K×K block of F<sup>h</sup></div>
+      <p>The Cholesky IRF uses a lower-triangular factorisation P of Σ = PP′ and computes OIR<sub>h</sub> = Φ<sub>h</sub>P. The GIRF averages over all possible orderings, giving:</p>
+      <div class="math">GIRF<sub>h</sub>(i, j) = Φ<sub>h</sub> Σ e<sub>j</sub> / sqrt(Σ<sub>jj</sub>)</div>
+      <p>This is equivalent to conditioning on a one-standard-deviation shock to variable j, averaging over the contemporaneous correlation structure. It is fully order-invariant and equals the Cholesky IRF only when Σ is diagonal.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ §9 -->
+<section id="s9">
+  <h2><span class="num">§9</span> The Bayesian Treatment</h2>
+
+  <p>The classical (frequentist) VECM produces point estimates of α, β, Γ with asymptotic standard errors. The Bayesian VECM produces full <strong>posterior distributions</strong> — you get not just "α = -0.3" but a probability distribution over all plausible values of α given the data.</p>
+
+  <p>This matters for three reasons in practice:</p>
+
+  <ul style="margin: 0.75rem 0 1rem 1.5rem;">
+    <li style="margin-bottom:0.5rem"><strong>Honest uncertainty in IRFs.</strong> Every posterior draw of (α, β, Γ, Σ) produces one IRF curve. The fan chart in §8 is the distribution over all those curves — credible intervals, not confidence intervals.</li>
+    <li style="margin-bottom:0.5rem"><strong>Small samples.</strong> Marketing data is often 3–5 years of monthly observations (36–60 rows). Classical inference breaks down; Bayesian priors regularise the model and prevent over-fitting.</li>
+    <li><strong>Principled sparsity.</strong> The horseshoe prior on Γ is inexpressible in classical VECM. It's a natural Bayesian construct.</li>
+  </ul>
+
+  <div class="diagram">
+    <svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:660px">
+      <text x="350" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1917">From parameters to posterior predictive</text>
+
+      <!-- Box 1: Priors -->
+      <rect x="20" y="40" width="130" height="110" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="85" y="62" text-anchor="middle" font-size="11" font-weight="700" fill="#92400e">Priors</text>
+      <text x="85" y="80" text-anchor="middle" font-size="9" fill="#78350f">alpha ~ N(0,1)</text>
+      <text x="85" y="94" text-anchor="middle" font-size="9" fill="#78350f">beta_free ~ N(0,5)</text>
+      <text x="85" y="108" text-anchor="middle" font-size="9" fill="#78350f">Gamma ~ Horseshoe</text>
+      <text x="85" y="122" text-anchor="middle" font-size="9" fill="#78350f">Sigma ~ LKJ</text>
+      <text x="85" y="138" text-anchor="middle" font-size="9" fill="#78350f">B ~ N(0,1)</text>
+
+      <!-- Arrow -->
+      <line x1="152" y1="95" x2="178" y2="95" stroke="#6b6860" stroke-width="1.5" marker-end="url(#a2)"/>
+      <text x="165" y="88" text-anchor="middle" font-size="9" fill="#6b6860">data</text>
+
+      <!-- Box 2: Posterior -->
+      <rect x="180" y="40" width="150" height="110" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+      <text x="255" y="62" text-anchor="middle" font-size="11" font-weight="700" fill="#1d4ed8">Posterior</text>
+      <text x="255" y="80" text-anchor="middle" font-size="9" fill="#1e40af">p(alpha | data)</text>
+      <text x="255" y="96" text-anchor="middle" font-size="9" fill="#1e40af">p(beta | data)</text>
+      <text x="255" y="112" text-anchor="middle" font-size="9" fill="#1e40af">p(Gamma | data)</text>
+      <text x="255" y="128" text-anchor="middle" font-size="9" fill="#1e40af">p(Sigma | data)</text>
+      <text x="255" y="144" text-anchor="middle" font-size="9" fill="#1e40af">(4 chains x 1000 draws)</text>
+
+      <!-- Arrow -->
+      <line x1="332" y1="95" x2="358" y2="95" stroke="#6b6860" stroke-width="1.5" marker-end="url(#a2)"/>
+
+      <!-- Box 3: IRF draws -->
+      <rect x="360" y="40" width="150" height="110" rx="6" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="435" y="62" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">IRF draws</text>
+      <text x="435" y="82" text-anchor="middle" font-size="9" fill="#166534">One IRF curve per</text>
+      <text x="435" y="96" text-anchor="middle" font-size="9" fill="#166534">posterior draw</text>
+      <text x="435" y="114" text-anchor="middle" font-size="9" fill="#166534">→ fan chart with</text>
+      <text x="435" y="128" text-anchor="middle" font-size="9" fill="#166534">80%/95% credible</text>
+      <text x="435" y="142" text-anchor="middle" font-size="9" fill="#166534">intervals</text>
+
+      <!-- Arrow -->
+      <line x1="512" y1="95" x2="538" y2="95" stroke="#6b6860" stroke-width="1.5" marker-end="url(#a2)"/>
+
+      <!-- Box 4: Business output -->
+      <rect x="540" y="40" width="140" height="110" rx="6" fill="#fdf4ff" stroke="#a855f7" stroke-width="1.5"/>
+      <text x="610" y="62" text-anchor="middle" font-size="11" font-weight="700" fill="#7e22ce">ROI estimate</text>
+      <text x="610" y="80" text-anchor="middle" font-size="9" fill="#7e22ce">"£X return per £1</text>
+      <text x="610" y="94" text-anchor="middle" font-size="9" fill="#7e22ce">spent, 80% CI:</text>
+      <text x="610" y="108" text-anchor="middle" font-size="9" fill="#7e22ce">£Y to £Z"</text>
+      <text x="610" y="126" text-anchor="middle" font-size="9" fill="#7e22ce">Honest uncertainty,</text>
+      <text x="610" y="140" text-anchor="middle" font-size="9" fill="#7e22ce">not a point estimate</text>
+    </svg>
+    <figcaption>The Bayesian pipeline: specify priors → update with data via MCMC → get posterior distributions over all parameters → propagate uncertainty through to IRFs and ROI estimates. Every business output comes with honest credible intervals.</figcaption>
+  </div>
+
+  <details>
+    <summary>Under the hood — MCMC, HMC, and convergence diagnostics</summary>
+    <div class="hood-body">
+      <p>The posterior is computed via <strong>Hamiltonian Monte Carlo (HMC)</strong> with the No-U-Turn Sampler (NUTS), implemented in PyMC. HMC uses gradient information to propose efficient moves through parameter space, making it far more effective than random-walk Metropolis for high-dimensional, correlated posteriors.</p>
+      <p>Key convergence diagnostics:</p>
+      <p><strong>R̂ (Gelman-Rubin)</strong>: ratio of between-chain to within-chain variance. R̂ &lt; 1.01 indicates convergence. Values &gt; 1.05 mean chains haven't mixed — increase draws or tune.</p>
+      <p><strong>ESS (Effective Sample Size)</strong>: how many independent draws your correlated chain is worth. ESS &lt; 400 means poor coverage of the posterior; increase draws.</p>
+      <p><strong>Divergences</strong>: HMC proposals rejected due to energy conservation violations. A few is expected; many divergences indicate the posterior has difficult geometry (often the horseshoe funnel). Fix: increase <code>target_accept</code> toward 0.95.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ §10 -->
+<section id="s10">
+  <h2><span class="num">§10</span> Brand Marketing Application</h2>
+
+  <p>The full motivation for this package is the brand marketing measurement problem. Standard Marketing Mix Models (MMMs) attribute revenue to media channels using short-window adstock transformations. Brand investment — TV, OOH, digital brand — has effects that last <em>years</em>, not weeks. Standard MMM misses the long-run tail entirely.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 700 240" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:660px">
+      <text x="350" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1917">The brand marketing causal chain</text>
+
+      <!-- Exog input -->
+      <rect x="20" y="90" width="110" height="50" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="75" y="111" text-anchor="middle" font-size="11" font-weight="700" fill="#92400e">Brand Spend</text>
+      <text x="75" y="127" text-anchor="middle" font-size="9" fill="#78350f">Exogenous driver</text>
+
+      <!-- Arrow -->
+      <line x1="132" y1="115" x2="158" y2="115" stroke="#6b6860" stroke-width="1.8" marker-end="url(#a2)"/>
+      <text x="145" y="108" text-anchor="middle" font-size="8" fill="#6b6860">B matrix</text>
+      <text x="145" y="118" text-anchor="middle" font-size="8" fill="#6b6860">(same period)</text>
+
+      <!-- Awareness box -->
+      <rect x="160" y="70" width="120" height="50" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+      <text x="220" y="91" text-anchor="middle" font-size="11" font-weight="700" fill="#1d4ed8">Brand</text>
+      <text x="220" y="105" text-anchor="middle" font-size="11" font-weight="700" fill="#1d4ed8">Awareness</text>
+      <text x="220" y="117" text-anchor="middle" font-size="8" fill="#3b82f6">I(1) — trending</text>
+
+      <!-- Arrow down to consideration -->
+      <line x1="220" y1="120" x2="220" y2="142" stroke="#6b6860" stroke-width="1.5" marker-end="url(#a2)"/>
+
+      <!-- Consideration box -->
+      <rect x="160" y="144" width="120" height="50" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+      <text x="220" y="165" text-anchor="middle" font-size="11" font-weight="700" fill="#1d4ed8">Brand</text>
+      <text x="220" y="179" text-anchor="middle" font-size="11" font-weight="700" fill="#1d4ed8">Consideration</text>
+      <text x="220" y="191" text-anchor="middle" font-size="8" fill="#3b82f6">I(1) — trending</text>
+
+      <!-- Cointegration bracket -->
+      <line x1="285" y1="75" x2="310" y2="75" stroke="#94a3b8" stroke-width="1.2"/>
+      <line x1="310" y1="75" x2="310" y2="190" stroke="#94a3b8" stroke-width="1.2"/>
+      <line x1="285" y1="190" x2="310" y2="190" stroke="#94a3b8" stroke-width="1.2"/>
+      <text x="315" y="130" font-size="9" fill="#94a3b8" transform="rotate(90,315,130)">cointegrated</text>
+
+      <!-- Arrow to organic sales -->
+      <line x1="330" y1="115" x2="385" y2="115" stroke="#6b6860" stroke-width="1.8" marker-end="url(#a2)"/>
+      <text x="357" y="107" text-anchor="middle" font-size="8" fill="#6b6860">alpha x beta</text>
+      <text x="357" y="118" text-anchor="middle" font-size="8" fill="#6b6860">(error correction)</text>
+
+      <!-- Organic sales box -->
+      <rect x="387" y="88" width="130" height="54" rx="6" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="452" y="109" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">Organic Sales</text>
+      <text x="452" y="124" text-anchor="middle" font-size="9" fill="#16a34a">MMM baseline output</text>
+      <text x="452" y="136" text-anchor="middle" font-size="8" fill="#16a34a">I(1) — trending</text>
+
+      <!-- Arrow to ROI -->
+      <line x1="519" y1="115" x2="568" y2="115" stroke="#6b6860" stroke-width="1.8" marker-end="url(#a2)"/>
+
+      <!-- ROI box -->
+      <rect x="570" y="88" width="115" height="54" rx="6" fill="#fdf4ff" stroke="#a855f7" stroke-width="1.5"/>
+      <text x="627" y="109" text-anchor="middle" font-size="11" font-weight="700" fill="#7e22ce">Long-run ROI</text>
+      <text x="627" y="125" text-anchor="middle" font-size="9" fill="#9333ea">GIRF x avg. revenue</text>
+      <text x="627" y="138" text-anchor="middle" font-size="8" fill="#9333ea">with credible band</text>
+
+      <!-- Feedback arrows (awareness feedback loop) -->
+      <path d="M 452,88 Q 452,55 360,50 Q 285,45 220,68"
+        fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+      <text x="340" y="44" text-anchor="middle" font-size="8" fill="#9ca3af" font-style="italic">word-of-mouth feedback</text>
+    </svg>
+    <figcaption>The brand marketing system: spend drives awareness via the B matrix (contemporaneous). Awareness and consideration are cointegrated with organic sales. The error-correction mechanism (αβ′) carries awareness gains into organic sales over time — this is the long-run tail. A feedback loop (word-of-mouth) connects organic sales back to awareness, which is why GIRF not Cholesky is required.</figcaption>
+  </div>
+
+  <h3>Why VECM beats MMM for brand measurement</h3>
+  <p>An MMM with adstock decay models brand effects as a geometric series that fades within 4–8 weeks. A VECM with cointegration captures the fact that a sustained brand investment <em>shifts the long-run equilibrium</em> — the business settles at a permanently higher level of organic sales. The GIRF shows this: the response curve doesn't decay to zero. The total long-run area under the GIRF curve is the true economic value of the brand investment.</p>
+
+  <div class="callout green">
+    <strong>Putting it all together</strong>
+    Select rank with <code>select_coint_rank</code> → fit <code>BayesianVECM</code> with horseshoe prior → compute <code>model.irf(method="girf")</code> → run counterfactual with <code>model.sample_posterior_predictive</code> → divide revenue uplift by incremental spend → Bayesian ROI with honest credible band.
+  </div>
+</section>
+
+</main>
+
+<footer>
+  Built with <a href="https://github.com/raz1470/bayesian_vecm" style="color:var(--accent)">bayesian_vecm</a> ·
+  Based on Johansen (1991), Pesaran &amp; Shin (1998), Piironen &amp; Vehtari (2017), and Cain (2022)
+</footer>
+
+</body>
+</html>
