@@ -143,8 +143,11 @@ def compute_irf(
     kp = n_vars * var_order
 
     # Reshape to (n_total, ...) for vectorised ops.
+    # beta may have shape (C, D, K+1, r) when deterministic="ci"/"li" appends
+    # a trend row inside the cointegration space.  Only the first n_vars rows
+    # correspond to the endogenous variables; slice before reshaping.
     alpha = alpha_draws.reshape(n_total, n_vars, r)  # (D, K, r)
-    beta = beta_draws.reshape(n_total, n_vars, r)  # (D, K, r)
+    beta = beta_draws[:, :, :n_vars, :].reshape(n_total, n_vars, r)  # (D, K, r)
     sigma = sigma_draws.reshape(n_total, n_vars, n_vars)  # (D, K, K)
 
     has_gamma = k_ar_diff > 0

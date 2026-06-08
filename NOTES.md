@@ -182,11 +182,107 @@ Log-transform all endogenous variables before fitting.
 | Log transform | Yes, before fitting | Elasticity interpretation; natural diminishing returns on response curve |
 | Variable names | Real marketing names throughout | Audience is practitioners, not econometricians |
 
+### Real Monzo data — variables and sources
+
+**Data availability note:** Ryan has 5 years of monthly brand and consideration data (60 observations). Monthly frequency, so use `k_ar_diff=1` or `k_ar_diff=2` — no need for higher lags on monthly data. 60 obs is tight but workable with horseshoe shrinkage; Bayesian approach handles this far better than OLS CVAR would.
+
+#### Free macro data — easy to download as CSV
+
+| Variable | Source | URL | Notes |
+|---|---|---|---|
+| Bank of England base rate | Bank of England | bankofengland.co.uk/boeapps/database | Search "Bank Rate". Monthly, goes back decades. |
+| GfK Consumer Confidence | ONS | ons.gov.uk | Search "consumer confidence". Published monthly by GfK for ONS. |
+| CPI / inflation | ONS | ons.gov.uk | Cost-of-living pressure affects propensity to switch to fee-free accounts. Alternative/complement to consumer confidence. |
+| Unemployment rate | ONS | ons.gov.uk | Affects Monzo's core demographic (younger workers) disproportionately. |
+
+All of the above are also on FRED (fred.stlouisfed.org) which has a clean API for automated pulls.
+
+#### Marketing / brand data
+
+| Variable | Source | Notes |
+|---|---|---|
+| Brand spend | Internal (Monzo) | Total monthly brand investment — TV, digital brand, OOH, etc. Primary exog driver. |
+| Google Trends — "Monzo" | trends.google.com | Free, monthly. Organic brand search interest. Proxy for earned awareness. Could be exog or endogenous (test stationarity). |
+| Press / media mentions | Meltwater / Brandwatch | Volume of Monzo press coverage monthly. Cain's equivalent of positive social mentions. If trending → endogenous candidate. |
+| Feature launch dummies | Internal (Monzo) | Binary variables for major product launches: Monzo Plus, Monzo Premium, pots, salary sorter, etc. Equivalent to Cain's PR event dummies. Ryan knows these dates. |
+
+#### Ops / product data
+
+| Variable | Source | Notes |
+|---|---|---|
+| CSAT score | Internal (Monzo) | Average monthly CSAT. Test for stationarity: if I(1)/trending → endogenous; if I(0)/mean-reverting → exog. |
+| App store rating | data.ai or scraped | Average monthly rating on iOS/Android. Monzo's equivalent of Cain's "product ratings". Strong theoretical link to CSAT and consideration. |
+| NPS score | Internal (Monzo) | If available monthly. Very similar role to CSAT — use whichever is more complete. |
+
+#### What Cain used (for reference)
+
+Long-term CVAR endogenous: base sales, unaided brand awareness, brand consideration, positive social mentions (treated as exogenous for stability).
+
+Long-term CVAR exogenous (stationary, entered short-run equations only): PR events around new product launches, retailer circulars, product ratings, total offline media experience, in-store special display experience.
+
+#### Recommended starting point for first real-data run
+
+Keep it simple — add variables iteratively once the core cointegrating structure is confirmed.
+
+**Phase 1 (minimal viable model):**
+- Endogenous: `organic_sales`, `brand_awareness`, `brand_consideration`, `csat_score`
+- Exog: `brand_spend`, `interest_rate`, `consumer_confidence`
+- Run `select_coint_rank`, check stationarity of CSAT, fit with `k_ar_diff=1`
+
+**Phase 2 (enrich if Phase 1 converges cleanly):**
+- Add Google Trends or press mentions as exog (or endogenous if trending)
+- Add feature launch dummies as stationary exog
+- Try `k_ar_diff=2` with horseshoe
+
+**Phase 3 (refinement):**
+- Add CPI or unemployment if consumer confidence alone is insufficient
+- Test app store rating as alternative/supplement to CSAT
+
 ### Folder structure change (same session or next)
 
 Move existing notebooks 01–10 to `notebooks/build/`.
 Create `notebooks/guides/` for practitioner-facing content.
 Update `.github/workflows/ci.yml` notebook execution path accordingly.
+
+## Status as of last session (2026-06-05, chore/practitioner-guide-plan)
+
+**Update 2026-06-05 — pre-PyPI housekeeping + practitioner guide notebook. PR open on `chore/practitioner-guide-plan`.**
+
+- **Version bumped 0.0.1 → 0.1.0** in `pyproject.toml` and `src/bayesian_vecm/__init__.py`. `uv build` confirmed clean wheel + sdist.
+- **README rewritten.** Covers: what the package does, `select_coint_rank` workflow, `BayesianVECM` quick start, horseshoe priors, variable naming / log-transform guide, development setup. First mention of the brand marketing motivation.
+- **Notebooks reorganised.** `notebooks/01–10_*.ipynb` moved to `notebooks/build/`. New `notebooks/guides/` folder created for practitioner-facing content. CI updated to execute both folders.
+- **`notebooks/guides/01_brand_vecm_walkthrough.ipynb` built.** End-to-end practitioner guide (§1–§10 + §9a): synthetic Monzo-style DGP, ADF tests, rank selection, horseshoe fit, α/β interpretation, GIRF fan charts, CSAT valuation, counterfactual ROI, brand response curve. Written for marketing analysts with no VECM background.
+- **Two package bugs found and fixed during notebook testing:**
+  - `_irf.py`: `beta_draws` has shape `(C, D, K+1, r)` when `deterministic="ci"/"li"` (extra trend row); code was trying to reshape as `(n_total, K, r)` → `ValueError`. Fix: slice `beta_draws[:, :, :n_vars, :]` before reshape. Regression test added to `tests/test_irf.py`.
+  - `_forecast.py`: same bug in `forecast_posterior`. Fix: same slice. Regression test still to add.
+
+**Key decisions / learnings this session:**
+
+- **Use the common-trend DGP for practitioner notebooks, not a pure VECM simulation.** A VECM simulation (ΔVECM + EC correction) is I(1) with a unit root. The random walk component accumulates stddev ≈ σ × √T. With σ=0.08 and T=260, that's ±1.3 log-units of noise, easily overwhelming a small drift. The series can trend strongly downward despite a positive drift parameter. Common-trend DGP (`y = base + L @ trend + small_noise`) guarantees upward trends because the trend dominates by design. Rank=2 is also guaranteed regardless of seed. Use this pattern for any notebook where visual upward trends are needed.
+- **Common-trend DGP with EC correction on top.** The hybrid approach (`dy_t = L @ d_trend[t] + alpha @ (beta.T @ y[t-1]) + gamma @ dy_lag1 + B @ exog + noise`) gives the best of both worlds: guaranteed upward trends from the common-trend innovations, plus identifiable α/β/Γ from the EC correction dynamics. Loading matrix L defines the cointegrating structure; `beta_true` entries should be consistent with `L[i,0]/L[j,0]` ratios so the EC terms stay near zero as the series grow.
+- **DGP initial values must satisfy the cointegrating relations.** `y[0]` must satisfy `beta_true.T @ y[0] ≈ 0` to avoid a large initial EC shock. With the common-trend DGP, set `y[0]` from the loading ratios: if `beta = [1, -1.11, 0, 0]` then `organic_sales[0] = awareness[0] × 1.11`.
+- **Exog variables must be centred (mean≈0) for the B matrix to work correctly.** The B coefficients are designed for deviations from mean. Adding a non-zero mean to exog (e.g. consumer_confidence = −10 + AR1) creates a large systematic B × mean contribution per step that swamps the trend. Keep all exog AR(1) centred at zero; express counterfactual uplifts as additive log-unit increases above the mean rather than multiplicative %.
+- **Non-diagonal sigma_chol improves multi-hop IRF stories.** With diagonal innovations, h=0 GIRF for cross-variable shocks is exactly 0. Off-diagonal entries give contemporaneous covariance (e.g. csat ↔ consideration), making the CSAT → organic_sales IRF chain cleaner and more stable with fewer draws.
+- **FAST_SAMPLING (200 draws / 300 tune / 2 chains) is inadequate for K=4 + horseshoe.** 57–74 divergences, r-hat > 1.01, near-zero α posteriors. Always use `FAST_SAMPLING = False` (1000/1000/4) when validating notebook outputs. FAST_SAMPLING is for CI only.
+- **Two package bugs found and fixed during notebook testing:**
+  - `_irf.py` + `_forecast.py`: `beta_draws` has shape `(C, D, K+1, r)` when `deterministic="ci"/"li"` adds a trend row inside the cointegrating space. Both `compute_irf` and `forecast_posterior` were reshaping it as `(n_total, K, r)` → `ValueError`. Fix: slice `beta_draws[:, :, :n_vars, :]` before reshape. Regression test added to `test_irf.py`; still to add for `_forecast.py`.
+- **Module reload required after source edits in Jupyter.** Patching `_irf.py` or `_forecast.py` requires a full kernel restart. Re-running cells reuses the cached module.
+- **MMM comparison chart: anchor to week-4 cumulative response.** Using the h=0 GIRF as the initial MMM impulse fails when cross-variable h=0 GIRF is near zero. Anchoring both curves to the same week-4 cumulative response makes the shape comparison robust.
+- **Notebook folder structure:** `notebooks/build/` = implementation walkthroughs (01–10), `notebooks/guides/` = practitioner-facing notebooks. CI executes both.
+
+## Next slice
+
+**Finish and merge `chore/practitioner-guide-plan`**
+
+- **NEXT STEP: full sample run.** Set `FAST_SAMPLING = False` in `notebooks/guides/01_brand_vecm_walkthrough.ipynb` and run end-to-end. Verify: upward-trending series, rank=2 detected, positive GIRF, positive counterfactual ROI, sensible α/β tables, no divergences.
+- Add regression test for `_forecast.py` beta-slice fix (same pattern as `test_irf.py` test added this session)
+- Commit final notebook outputs (strip before commit via nbstripout), push, open PR, wait for CI green, merge
+
+**Then: real-data validation on Monzo data**
+
+Branch: `feat/monzo-validation` (create from `main` after practitioner guide merges)
+
+See "Next slice" section below for full spec.
 
 ## Status as of last session (2026-06-04, feat/horseshoe)
 

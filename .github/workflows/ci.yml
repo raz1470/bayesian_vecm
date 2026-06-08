@@ -86,11 +86,20 @@ jobs:
       - name: Register Jupyter kernel
         run: uv run python -m ipykernel install --sys-prefix
 
-      - name: Execute notebooks
+      - name: Execute notebooks (build)
         run: |
           uv run jupyter nbconvert \
             --to notebook \
             --execute \
             --inplace \
             --ExecutePreprocessor.timeout=300 \
-            notebooks/*.ipynb
+            notebooks/build/*.ipynb
+
+      - name: Execute notebooks (guides)
+        run: |
+          uv run jupyter nbconvert \
+            --to notebook \
+            --execute \
+            --inplace \
+            --ExecutePreprocessor.timeout=300 \
+            notebooks/guides/*.ipynb
