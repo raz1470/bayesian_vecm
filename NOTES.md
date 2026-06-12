@@ -244,6 +244,47 @@ Move existing notebooks 01–10 to `notebooks/build/`.
 Create `notebooks/guides/` for practitioner-facing content.
 Update `.github/workflows/ci.yml` notebook execution path accordingly.
 
+## Status as of last session (2026-06-12, planning)
+
+**Update 2026-06-12 — PRs merged, GitHub Pages live, plan to PyPI finalised.**
+
+- **All three PRs merged:** `chore/practitioner-guide-plan` (PR #19), `docs/vecm-guide` (PR #20), `chore/readme-links` (pending push — README changes uncommitted on current branch).
+- **GitHub Pages enabled:** guide live at `https://raz1470.github.io/bayesian_vecm/vecm_guide.html`.
+- **Architecture decision — UCM stays a separate package.** A Bayesian UCM with adstock and diminishing returns is effectively the Bayesian MMM (package #2 in the stack). Building it inside `bayesian_vecm` would duplicate future work. The interface between UCM and VECM is just a time series array (`organic_sales` column in the DataFrame) — no coupling required. For the Monzo validation, use `statsmodels.tsa.statespace.UnobservedComponents` as a classical preprocessing step to extract the baseline trend; document it as a v0 placeholder for package 2.
+- **API docs decision:** docstrings are solid (NumPy-style with LaTeX maths) on all public methods except `BayesianVECM.__init__`. Rendered MkDocs site is post-PyPI polish, not a blocker. Add `__init__` docstring before PyPI; MkDocs (mkdocs-material + mkdocstrings + mkdocs-jupyter) is a post-PyPI task.
+
+## Next slice
+
+**Ship `bayesian_vecm` v0.1.0 to PyPI**
+
+1. **Merge `chore/readme-links`** — push branch, open PR, merge.
+2. **Add `BayesianVECM.__init__` docstring** — only missing docstring on a public surface. Small chore, closes the gap before PyPI.
+3. **`feat/monzo-validation`** — create from `main`. Use `statsmodels.tsa.statespace.UnobservedComponents` to extract organic baseline trend from total revenue/signups as preprocessing (classical Kalman filter, no adstock — documented as v0 placeholder). Then run Phase 1 VECM: `organic_sales`, `brand_awareness`, `brand_consideration`, `csat_score` endogenous; `brand_spend`, `interest_rate`, `consumer_confidence` exog. `k_ar_diff=1`, `select_coint_rank`, horseshoe on Γ. Key questions: does the rank test give a sensible answer? Does horseshoe converge cleanly? Do the GIRFs tell a coherent brand-spend story?
+4. **PyPI release** — `uv build` + `twine upload`. Version is already 0.1.0.
+5. **Medium article** — Monzo validation story + GIRF output = the hook.
+
+**Post-PyPI (in order):**
+- MkDocs site (mkdocs-material + mkdocstrings + mkdocs-jupyter) — renders API docs and notebooks as a proper docs site on GitHub Pages alongside the existing VECM guide.
+- Start `bayesian_ucm` / `bayesian_mmm` (package #2) — Bayesian UCM with adstock and diminishing returns in PyMC, following statsmodels UCM API + pymc_marketing patterns. Replaces the statsmodels preprocessing step in the Monzo notebook.
+
+## Status as of last session (2026-06-08, docs/vecm-guide + chore/readme-links)
+
+**Update 2026-06-08 — VECM explainer guide + README links. Two PRs open.**
+
+- **`docs/vecm_guide.html` built** (`docs/vecm-guide` branch). Standalone HTML guide with embedded SVG diagrams, collapsible "Under the hood" maths panels, and 10 sections covering: spurious regression, cointegration, the VECM equation, β, α, Γ/horseshoe, rank selection, GIRFs, Bayesian treatment, and brand marketing application.
+- **GitHub Pages:** enable at Settings → Pages → Branch: `main` → Folder: `/docs`. Guide will be live at `https://raz1470.github.io/bayesian_vecm/vecm_guide.html`.
+- **README updated** (`chore/readme-links` branch): added Resources table with links to the HTML guide (GitHub Pages) and practitioner notebook (nbviewer).
+- **Regression test for `_forecast.py` beta-slice fix added** (`chore/practitioner-guide-plan` branch, now pushed). Mirrors the `test_irf_deterministic_ci_does_not_raise` pattern.
+- **`notebooks/build/` gitignore fix**: changed `build/` to `/build/` in `.gitignore` so `notebooks/build/` is tracked by git.
+- **`chore/practitioner-guide-plan` PR**: all lint/format issues resolved. Still needs full notebook run (`FAST_SAMPLING = False`) before merging.
+
+**Merge order:**
+1. `chore/practitioner-guide-plan` (after full notebook run passes)
+2. `docs/vecm-guide`
+3. `chore/readme-links`
+
+**After all three merge:** enable GitHub Pages (Settings → Pages → main → /docs).
+
 ## Status as of last session (2026-06-05, chore/practitioner-guide-plan)
 
 **Update 2026-06-05 — pre-PyPI housekeeping + practitioner guide notebook. PR open on `chore/practitioner-guide-plan`.**
