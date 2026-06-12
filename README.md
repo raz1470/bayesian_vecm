@@ -8,6 +8,15 @@ The primary motivation is **brand marketing**: brand spend and revenue are often
 
 ---
 
+## Resources
+
+| | |
+|---|---|
+| 📖 [VECM Guide](https://raz1470.github.io/bayesian_vecm/vecm_guide.html) | Visual explainer: cointegration, error correction, GIRFs, and the Bayesian treatment — with diagrams and collapsible maths |
+| 📓 [Practitioner Walkthrough](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/01_brand_vecm_walkthrough.ipynb) | End-to-end notebook: synthetic brand data → rank selection → horseshoe fit → GIRF fan charts → counterfactual ROI |
+
+---
+
 ## Installation
 
 ```bash
