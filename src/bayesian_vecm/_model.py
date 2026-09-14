@@ -174,6 +174,13 @@ class BayesianVECM:
         deterministic: str = "n",
         priors: dict[str, Any] | None = None,
     ) -> None:
+        """Configure the model. See the class docstring for parameter details.
+
+        No data is required here: data is passed to :meth:`fit`. Building a
+        model instance does not run any PyMC code. The graph is built lazily
+        on the first call to :meth:`fit`, once :math:`K` (the number of
+        endogenous series) is known.
+        """
         if k_ar_diff < 0:
             raise ValueError(f"k_ar_diff must be non-negative; got k_ar_diff={k_ar_diff}")
 

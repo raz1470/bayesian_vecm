@@ -81,3 +81,8 @@ dmypy.json
 
 # Build artifacts
 *.so
+# Local-only scoping doc (per dagshop/PREFERENCES.md convention)
+SCOPE.md
+
+# Local-only working journal (per dagshop/PREFERENCES.md convention)
+NOTES.md
