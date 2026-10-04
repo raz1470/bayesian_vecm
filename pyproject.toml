@@ -30,6 +30,7 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
     "Typing :: Typed",
@@ -40,6 +41,7 @@ classifiers = [
 dependencies = [
     "arviz>=1.1",
     "numpy>=1.26",
+    "nutpie>=0.16",
     "pymc>=6.0",
     "scipy>=1.11",
 ]
@@ -121,8 +123,6 @@ dev = [
     "ipykernel>=7.2.0",
     "jupyter>=1.1.1",
     "matplotlib>=3.10.9",
-    "nbstripout>=0.9.1",
-    "pre-commit>=4.6.0",
     "pytest-cov>=7.1.0",
     "statsmodels>=0.14.6",
 ]

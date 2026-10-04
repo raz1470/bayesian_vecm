@@ -161,12 +161,6 @@ uv run ruff format .
 uv build
 ```
 
-After cloning, install the pre-commit hooks:
-
-```bash
-pre-commit install
-```
-
 ---
 
 ## License

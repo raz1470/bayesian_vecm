@@ -1,0 +1,53 @@
+# Executes every notebook end to end to check that none has stopped running.
+# The notebooks sample PyMC models, so this is slow. It runs once a week and
+# on demand (Actions tab, "Run workflow"), not on every pull request.
+
+name: Notebooks
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Mondays at 06:00 UTC.
+    - cron: "0 6 * * 1"
+
+jobs:
+  notebooks:
+    name: Execute notebooks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Register Jupyter kernel
+        run: uv run python -m ipykernel install --sys-prefix
+
+      - name: Execute notebooks (build)
+        run: |
+          uv run jupyter nbconvert \
+            --to notebook \
+            --execute \
+            --inplace \
+            --ExecutePreprocessor.timeout=300 \
+            notebooks/build/*.ipynb
+
+      - name: Execute notebooks (guides)
+        run: |
+          uv run jupyter nbconvert \
+            --to notebook \
+            --execute \
+            --inplace \
+            --ExecutePreprocessor.timeout=300 \
+            notebooks/guides/*.ipynb
