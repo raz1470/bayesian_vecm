@@ -61,6 +61,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import pandas as pd
 
+    from bayesian_vecm._causality import CausalityResult
+
 import arviz as az
 import numpy as np
 import pymc as pm
@@ -319,6 +321,7 @@ class BayesianVECM:
         self.endog_ = endog_arr
         self.idata_ = idata
         self.variable_names_ = variable_names
+        self.exog_names_ = [str(c) for c in exog.columns] if hasattr(exog, "columns") else None
         self.exog_ = design.exog  # (T_eff, m) or None
         self.exog_coint_ = (
             None
@@ -575,6 +578,104 @@ class BayesianVECM:
             steps=steps,
             method=method,
             variable_names=self.variable_names_,
+        )
+
+    def fevd(
+        self,
+        steps: int,
+        *,
+        method: str = "girf",
+    ) -> xr.DataArray:
+        """Compute the posterior forecast error variance decomposition.
+
+        For each variable and horizon, the share of its forecast error
+        variance that is due to shocks in each variable.
+
+        Parameters
+        ----------
+        steps
+            Longest forecast horizon. Horizons ``1, ..., steps`` are returned.
+        method
+            ``"girf"`` (default) does not depend on the column order. Rows are
+            rescaled to sum to 1. ``"cholesky"`` uses the column order, the
+            same as :meth:`irf`.
+
+        Returns
+        -------
+        xarray.DataArray
+            Shape ``(chain, draw, horizon, response_variable, shock_variable)``.
+            Each row sums to 1 over ``shock_variable``.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`fit` has not been called.
+        ValueError
+            If ``steps < 1`` or ``method`` is unrecognised.
+        """
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+
+        from bayesian_vecm._fevd import compute_fevd
+
+        return compute_fevd(
+            idata=self.idata_,
+            k_ar_diff=self.k_ar_diff,
+            steps=steps,
+            method=method,
+            variable_names=self.variable_names_,
+        )
+
+    def granger_causality(
+        self,
+        *,
+        threshold: float = 0.95,
+        ci_prob: float = 0.89,
+    ) -> CausalityResult:
+        """Summarise the posterior evidence on what helps predict what.
+
+        Returns four tables: short-run Granger causality from
+        :math:`\\Gamma`, long-run links from :math:`\\Pi = \\alpha
+        \\beta^\\top`, weak exogeneity from the rows of :math:`\\alpha`,
+        and exogenous drivers from :math:`B`. Print the result for a
+        plain-English summary.
+
+        The evidence for each link is a number between 0 and 1: the highest
+        credible level at which zero lies outside the posterior region. These
+        are statements about prediction, not about cause.
+
+        Parameters
+        ----------
+        threshold
+            Evidence at or above this counts as a link.
+        ci_prob
+            Probability mass of the equal-tailed interval around each effect.
+
+        Returns
+        -------
+        CausalityResult
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`fit` has not been called.
+        ValueError
+            If ``threshold`` or ``ci_prob`` is not strictly between 0 and 1.
+        """
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+
+        from bayesian_vecm._causality import compute_causality
+
+        gamma_spec = (self.priors or {}).get("Gamma") or {}
+        return compute_causality(
+            self.idata_,
+            self.k_ar_diff,
+            variable_names=self.variable_names_,
+            exog_names=getattr(self, "exog_names_", None),
+            threshold=threshold,
+            ci_prob=ci_prob,
+            gamma_prior=str(gamma_spec.get("dist", "Normal")),
         )
 
     def sample_posterior_predictive(

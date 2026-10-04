@@ -81,57 +81,33 @@ from numpy.typing import NDArray
 _VALID_METHODS: frozenset[str] = frozenset({"girf", "cholesky"})
 
 
-def compute_irf(
-    idata: xr.DataTree,
+def ma_coefficients(
+    posterior: xr.Dataset | xr.DataTree,
     k_ar_diff: int,
-    steps: int,
-    method: str = "girf",
-    variable_names: list[str] | None = None,
-) -> xr.DataArray:
-    """Compute posterior IRFs for every draw in *idata*.
+    n_horizons: int,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Moving-average matrices and innovation covariance for every draw.
+
+    Converts the VECM to its levels VAR and iterates the companion matrix.
 
     Parameters
     ----------
-    idata
-        Fitted posterior from ``BayesianVECM.fit``.  Must contain a
-        ``posterior`` group with variables ``alpha``, ``beta``, ``Sigma``,
-        and — when ``k_ar_diff > 0`` — ``Gamma``.
+    posterior
+        Posterior group holding ``alpha``, ``beta`` and ``Sigma``. ``Gamma``
+        is also needed when ``k_ar_diff > 0``.
     k_ar_diff
         Number of lagged-difference blocks in the model.
-    steps
-        Forecast horizon; IRFs are computed for :math:`h = 0, 1, \\dots,
-        \\text{steps}` giving ``steps + 1`` horizons in total.
-    method
-        Identification scheme.  ``"girf"`` (default) — Generalised IRFs
-        (Pesaran & Shin 1998), order-invariant.  ``"cholesky"`` —
-        Orthogonalised IRFs (Sims 1980), requires a defensible recursive
-        causal ordering.
-    variable_names
-        Optional variable labels.  When provided, added as
-        ``response_variable`` and ``shock_variable`` coordinates.
+    n_horizons
+        Number of matrices to return: :math:`\\Phi_0, \\dots, \\Phi_{H-1}`.
 
     Returns
     -------
-    xarray.DataArray
-        Shape ``(chain, draw, horizon, response_variable, shock_variable)``.
-        ``horizon`` runs from ``0`` to ``steps`` (inclusive).
-        Entry ``[..., h, i, j]`` is the response of variable :math:`i` to a
-        unit shock in variable :math:`j` at horizon :math:`h`.
-
-    Raises
-    ------
-    ValueError
-        If ``method`` is not ``"girf"`` or ``"cholesky"``, or if ``steps``
-        is less than ``1``.
+    phi : np.ndarray, shape (n_samples, n_horizons, K, K)
+        ``phi[d, h]`` is :math:`\\Phi_h` for draw ``d``. Chains are stacked,
+        chain-major, so ``n_samples = n_chains * n_draws``.
+    sigma : np.ndarray, shape (n_samples, K, K)
+        Innovation covariance for each draw.
     """
-    if method not in _VALID_METHODS:
-        valid = sorted(_VALID_METHODS)
-        raise ValueError(f"method must be one of {valid}; got method={method!r}")
-    if steps < 1:
-        raise ValueError(f"steps must be at least 1; got steps={steps}")
-
-    posterior = idata.posterior
-
     # --- Extract posterior draws -------------------------------------------
     alpha_draws: NDArray[np.floating] = posterior["alpha"].values  # (C, D, K, r)
     beta_draws: NDArray[np.floating] = posterior["beta"].values  # (C, D, K, r)
@@ -202,15 +178,71 @@ def compute_irf(
             companion[:, :n_vars, j * n_vars : (j + 1) * n_vars] = a_next
 
     # --- Iterate Phi_h = top-left (K,K) block of F^h ----------------------
-    n_horizons = steps + 1
     irf_raw = np.empty((n_total, n_horizons, n_vars, n_vars), dtype=np.float64)
 
     current = np.broadcast_to(np.eye(kp), (n_total, kp, kp)).copy()  # companion^0 = I
 
     for h in range(n_horizons):
         irf_raw[:, h, :, :] = current[:, :n_vars, :n_vars]  # Phi_h
-        if h < steps:
+        if h < n_horizons - 1:
             current = np.einsum("dij,djk->dik", current, companion)
+
+    return irf_raw, sigma
+
+
+def compute_irf(
+    idata: xr.DataTree,
+    k_ar_diff: int,
+    steps: int,
+    method: str = "girf",
+    variable_names: list[str] | None = None,
+) -> xr.DataArray:
+    """Compute posterior IRFs for every draw in *idata*.
+
+    Parameters
+    ----------
+    idata
+        Fitted posterior from ``BayesianVECM.fit``.  Must contain a
+        ``posterior`` group with variables ``alpha``, ``beta``, ``Sigma``,
+        and — when ``k_ar_diff > 0`` — ``Gamma``.
+    k_ar_diff
+        Number of lagged-difference blocks in the model.
+    steps
+        Forecast horizon; IRFs are computed for :math:`h = 0, 1, \\dots,
+        \\text{steps}` giving ``steps + 1`` horizons in total.
+    method
+        Identification scheme.  ``"girf"`` (default) — Generalised IRFs
+        (Pesaran & Shin 1998), order-invariant.  ``"cholesky"`` —
+        Orthogonalised IRFs (Sims 1980), requires a defensible recursive
+        causal ordering.
+    variable_names
+        Optional variable labels.  When provided, added as
+        ``response_variable`` and ``shock_variable`` coordinates.
+
+    Returns
+    -------
+    xarray.DataArray
+        Shape ``(chain, draw, horizon, response_variable, shock_variable)``.
+        ``horizon`` runs from ``0`` to ``steps`` (inclusive).
+        Entry ``[..., h, i, j]`` is the response of variable :math:`i` to a
+        unit shock in variable :math:`j` at horizon :math:`h`.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is not ``"girf"`` or ``"cholesky"``, or if ``steps``
+        is less than ``1``.
+    """
+    if method not in _VALID_METHODS:
+        valid = sorted(_VALID_METHODS)
+        raise ValueError(f"method must be one of {valid}; got method={method!r}")
+    if steps < 1:
+        raise ValueError(f"steps must be at least 1; got steps={steps}")
+
+    posterior = idata.posterior
+    irf_raw, sigma = ma_coefficients(posterior, k_ar_diff, steps + 1)
+    n_chains, n_draws = posterior.sizes["chain"], posterior.sizes["draw"]
+    n_horizons, n_vars = irf_raw.shape[1], irf_raw.shape[2]
 
     # --- Apply identification scheme ---------------------------------------
     if method == "cholesky":
