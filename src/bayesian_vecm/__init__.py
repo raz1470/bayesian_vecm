@@ -2,6 +2,15 @@
 
 from bayesian_vecm._model import BayesianVECM
 from bayesian_vecm._rank import CointRankResult, select_coint_rank
+from bayesian_vecm._simulate import BrandData, BrandTruth, simulate_brand_data
 
 __version__ = "0.1.0"
-__all__ = ["BayesianVECM", "CointRankResult", "__version__", "select_coint_rank"]
+__all__ = [
+    "BayesianVECM",
+    "BrandData",
+    "BrandTruth",
+    "CointRankResult",
+    "__version__",
+    "select_coint_rank",
+    "simulate_brand_data",
+]
