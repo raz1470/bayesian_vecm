@@ -694,12 +694,14 @@ class BayesianVECM:
             \\Delta y_{T+h} = \\alpha \\beta' y_{T+h-1}
                              + \\sum_{i=1}^{k} \\Gamma_i \\, \\Delta y_{T+h-i}
                              + B X_{T+h}
+                             + d_{T+h}
                              + \\varepsilon_{T+h},
                              \\quad \\varepsilon_{T+h} \\sim \\mathcal{N}(0, \\Sigma)
 
             y_{T+h} = y_{T+h-1} + \\Delta y_{T+h}
 
-        for :math:`h = 1, \\dots, \\text{steps}`.
+        for :math:`h = 1, \\dots, \\text{steps}`. :math:`d_{T+h}` is the
+        constant or trend set by ``deterministic``, continued from the fit.
 
         Parameters
         ----------
@@ -781,4 +783,5 @@ class BayesianVECM:
             variable_names=self.variable_names_,
             exog_future=exog_future_arr,
             rng=rng,
+            deterministic=self.deterministic,
         )

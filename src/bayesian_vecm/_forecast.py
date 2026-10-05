@@ -6,6 +6,7 @@ Implements the VAR-level recursion:
 
     \\Delta y_{T+h} = \\alpha \\beta' y_{T+h-1}
                      + \\sum_{i=1}^{k} \\Gamma_i \\, \\Delta y_{T+h-i}
+                     + d_{T+h}
                      + \\varepsilon_{T+h},
                      \\quad \\varepsilon_{T+h} \\sim \\mathcal{N}(0, \\Sigma)
 
@@ -13,6 +14,15 @@ Implements the VAR-level recursion:
 
 for :math:`h = 1, \\dots, \\text{steps}`, seeded from the last
 :math:`k_{\\text{ar\\_diff}} + 1` rows of the fitted ``endog``.
+
+:math:`d_{T+h}` is the deterministic term the model was fitted with:
+
+* ``"co"`` / ``"lo"``: the last column of ``Gamma`` times 1 or the trend.
+* ``"ci"`` / ``"li"``: :math:`\\alpha` times row ``K`` of ``beta``, times 1
+  or the trend.
+
+The trend continues the fitted one. The design matrix numbers its rows
+``1, ..., T_eff``, so forecast step ``h`` uses ``T_eff + h``.
 
 All posterior draws are processed simultaneously — the (chain x draw)
 dimension is vectorised so only a single Python loop over forecast steps is
@@ -51,6 +61,7 @@ def forecast_posterior(
     variable_names: list[str] | None = None,
     exog_future: NDArray[np.floating] | None = None,
     rng: np.random.Generator | None = None,
+    deterministic: str = "n",
 ) -> xr.DataTree:
     """Roll the VECM recursion forward *steps* periods for every posterior draw.
 
@@ -79,6 +90,9 @@ def forecast_posterior(
     rng
         NumPy random generator. Pass a seeded generator for reproducibility;
         defaults to a fresh ``np.random.default_rng()`` if ``None``.
+    deterministic
+        The deterministic-term code the model was fitted with. The matching
+        constant or trend is carried into every forecast step.
 
     Returns
     -------
@@ -136,6 +150,19 @@ def forecast_posterior(
     if has_exog:
         b_mat = b_draws.reshape(n_total, n_vars, -1)  # (D, K, m)
 
+    # --- Deterministic terms ------------------------------------------------
+    # Outside terms are the column of Gamma after the K * k lag columns.
+    # Inside terms are row K of beta, the row after the K variables.
+    outside_coef: NDArray[np.floating] | None = None  # (D, K)
+    inside_coef: NDArray[np.floating] | None = None  # (D, r)
+    if deterministic in ("co", "lo"):
+        gamma_full = posterior["Gamma"].values.reshape(n_total, n_vars, -1)
+        outside_coef = gamma_full[:, :, n_vars * k_ar_diff]
+    elif deterministic in ("ci", "li"):
+        inside_coef = beta_draws[:, :, n_vars, :].reshape(n_total, r)
+    is_trend = deterministic in ("lo", "li")
+    n_eff = endog.shape[0] - k_ar_diff - 1  # rows in the fitted design
+
     # Pre-compute the Cholesky factor of Sigma once — reused at every step.
     # numpy.linalg.cholesky broadcasts over leading batch dims in NumPy >= 2.0;
     # for safety we compute it in a loop over draws (still O(K^3 * D), same
@@ -169,7 +196,16 @@ def forecast_posterior(
         #   y_prev @ beta  -> (D, r)   [contract K]
         #   result @ alpha' -> (D, K)  [contract r; alpha' has shape (D, r, K)]
         ec = np.einsum("di,dij->dj", y_prev, beta)  # (D, r)
+
+        # Value of the deterministic regressor at this step: 1 for a
+        # constant, the next value of the fitted trend otherwise.
+        det_value = float(n_eff + h + 1) if is_trend else 1.0
+        if inside_coef is not None:
+            ec = ec + det_value * inside_coef
+
         mu = np.einsum("dj,dkj->dk", ec, alpha)  # (D, K)
+        if outside_coef is not None:
+            mu = mu + det_value * outside_coef
 
         # Short-run dynamics: Gamma * delta_x
         # np.diff(y_window, axis=1) -> (D, k, K), row 0 = dy_{T+h-k}, last = dy_{T+h-1}
