@@ -532,9 +532,9 @@ class BayesianVECM:
         Two identification schemes are available:
 
         * ``"girf"`` (default) — Generalised IRFs (Pesaran & Shin 1998).
-          Order-invariant; the right choice when contemporaneous feedback loops
-          exist among the endogenous variables (e.g. brand awareness |harr|
-          consideration |harr| organic sales).
+          Order-invariant. The response to a shock in variable j equals the
+          Cholesky IRF with j ordered first, so it is structural only if j
+          leads the other variables within the period.
         * ``"cholesky"`` — Orthogonalised IRFs (Sims 1980).  Requires a
           defensible recursive causal ordering among the variables.  Use only
           when your system is genuinely triangular.
