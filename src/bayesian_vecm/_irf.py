@@ -30,6 +30,9 @@ Two identification schemes are supported:
         \\text{OIR}_h = \\Phi_h \\, P
 
     where :math:`P` is the lower-Cholesky factor of :math:`\\Sigma`.
+    The order is the column order unless ``order`` is given. ``order``
+    permutes :math:`\\Sigma` before the factorisation and maps the result
+    back, so the output keeps the original variable order.
 
 Both methods are computed via the **VAR companion form**: the VECM is first
 converted to a levels VAR(:math:`p`) with :math:`p = k_{\\text{ar\\_diff}} + 1`,
@@ -76,11 +79,68 @@ the companion matrix.  ``compute_irf`` always takes only the first
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import xarray as xr
 from numpy.typing import NDArray
 
 _VALID_METHODS: frozenset[str] = frozenset({"girf", "cholesky"})
+
+
+def resolve_order(
+    order: Any,
+    *,
+    method: str,
+    variable_names: list[str] | None,
+    n_vars: int,
+) -> list[int] | None:
+    """Turn a user ``order`` into column indices, or ``None`` for column order.
+
+    ``order`` lists every variable once, by name or by integer index. It is
+    only valid with ``method="cholesky"``.
+    """
+    if order is None:
+        return None
+    if method != "cholesky":
+        raise ValueError(f"order only applies to method='cholesky'; got method={method!r}")
+    if isinstance(order, str):
+        raise TypeError("order must be a sequence of variable names or indices, not a string")
+    indices: list[int] = []
+    for item in order:
+        if isinstance(item, str):
+            if variable_names is None or item not in variable_names:
+                raise ValueError(f"unknown variable {item!r} in order; known: {variable_names}")
+            indices.append(variable_names.index(item))
+        elif isinstance(item, (int, np.integer)) and not isinstance(item, bool):
+            indices.append(int(item))
+        else:
+            raise TypeError(f"order entries must be names or integers; got {item!r}")
+    if sorted(indices) != list(range(n_vars)):
+        raise ValueError(
+            f"order must list each of the {n_vars} variables exactly once; got {list(order)}"
+        )
+    return indices
+
+
+def cholesky_impact(
+    sigma: NDArray[np.floating], order: list[int] | None = None
+) -> NDArray[np.floating]:
+    """Cholesky impact matrix for each draw, in the original variable order.
+
+    With ``order`` the factorisation is of ``Sigma`` permuted to that order.
+    Rows and columns are then mapped back, so entry ``[d, i, j]`` is still
+    the impact on variable ``i`` of a shock to variable ``j``. The result
+    ``P`` satisfies ``P @ P.T == Sigma`` for any order.
+    """
+    if order is None:
+        return np.linalg.cholesky(sigma)
+    idx = np.asarray(order)
+    rows, cols = idx[:, np.newaxis], idx[np.newaxis, :]
+    chol = np.linalg.cholesky(sigma[:, rows, cols])
+    impact = np.empty_like(chol)
+    impact[:, rows, cols] = chol
+    return impact
 
 
 def ma_coefficients(
@@ -198,6 +258,7 @@ def compute_irf(
     steps: int,
     method: str = "girf",
     variable_names: list[str] | None = None,
+    order: Any = None,
 ) -> xr.DataArray:
     """Compute posterior IRFs for every draw in *idata*.
 
@@ -220,6 +281,10 @@ def compute_irf(
     variable_names
         Optional variable labels.  When provided, added as
         ``response_variable`` and ``shock_variable`` coordinates.
+    order
+        Cholesky ordering as variable names or column indices, listing each
+        variable once. ``None`` uses the column order. Only valid with
+        ``method="cholesky"``.
 
     Returns
     -------
@@ -232,8 +297,11 @@ def compute_irf(
     Raises
     ------
     ValueError
-        If ``method`` is not ``"girf"`` or ``"cholesky"``, or if ``steps``
-        is less than ``1``.
+        If ``method`` is not ``"girf"`` or ``"cholesky"``, if ``steps``
+        is less than ``1``, or if ``order`` is invalid.
+    TypeError
+        If ``order`` is a string or holds entries that are not names or
+        integers.
     """
     if method not in _VALID_METHODS:
         valid = sorted(_VALID_METHODS)
@@ -243,13 +311,16 @@ def compute_irf(
 
     posterior = idata.posterior
     irf_raw, sigma = ma_coefficients(posterior, k_ar_diff, steps + 1)
+    order_idx = resolve_order(
+        order, method=method, variable_names=variable_names, n_vars=sigma.shape[-1]
+    )
     n_chains, n_draws = posterior.sizes["chain"], posterior.sizes["draw"]
     n_horizons, n_vars = irf_raw.shape[1], irf_raw.shape[2]
 
     # --- Apply identification scheme ---------------------------------------
     if method == "cholesky":
         # OIR_h = Phi_h @ p_chol  where p_chol = chol(Sigma), lower triangular.
-        p_chol = np.linalg.cholesky(sigma)  # (D, K, K)
+        p_chol = cholesky_impact(sigma, order_idx)  # (D, K, K)
         irf_id = np.einsum("dhij,djk->dhik", irf_raw, p_chol)  # (D, H, K, K)
 
     else:  # method == "girf"

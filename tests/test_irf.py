@@ -268,3 +268,167 @@ def test_irf_deterministic_ci_does_not_raise() -> None:
     )
     result = model.irf(steps=5, method="girf")
     assert result.sizes["horizon"] == 6  # 0..5 inclusive
+
+
+# ---------------------------------------------------------------------------
+# Cholesky ordering — hand-built posterior, no sampling
+# ---------------------------------------------------------------------------
+
+_BRAND = ["organic_sales", "brand_awareness", "brand_consideration"]
+
+
+def _brand_posterior(n_chains: int = 2, n_draws: int = 50, seed: int = 0) -> xr.DataTree:
+    """Draws around the brand DGP, with a different Sigma in every draw."""
+    from bayesian_vecm import simulate_brand_data
+
+    truth = simulate_brand_data().truth
+    rng = np.random.default_rng(seed)
+
+    def scatter(value: np.ndarray, scale: float = 0.01) -> np.ndarray:
+        return value + scale * rng.standard_normal((n_chains, n_draws, *value.shape))
+
+    beta = scatter(truth.beta)
+    beta[:, :, :2, :] = np.eye(2)
+    noise = 0.002 * rng.standard_normal((n_chains, n_draws, 3, 3))
+    sigma = truth.sigma + np.einsum("cdij,cdkj->cdik", noise, noise)
+    data = {
+        "alpha": (("chain", "draw", "variable", "relation"), scatter(truth.alpha)),
+        "beta": (("chain", "draw", "variable", "relation"), beta),
+        "Gamma": (("chain", "draw", "variable", "regressor"), scatter(truth.gamma)),
+        "Sigma": (("chain", "draw", "variable", "variable_bis"), sigma),
+    }
+    coords = {"chain": np.arange(n_chains), "draw": np.arange(n_draws)}
+    return xr.DataTree.from_dict({"posterior": xr.Dataset(data, coords=coords)})
+
+
+@pytest.fixture(scope="module")
+def brand_posterior() -> xr.DataTree:
+    return _brand_posterior()
+
+
+def _chol(posterior: xr.DataTree, order=None) -> xr.DataArray:
+    from bayesian_vecm._irf import compute_irf
+
+    return compute_irf(posterior, 1, 12, method="cholesky", variable_names=_BRAND, order=order)
+
+
+def test_order_none_equals_column_order(brand_posterior: xr.DataTree) -> None:
+    default = _chol(brand_posterior)
+    np.testing.assert_array_equal(default.values, _chol(brand_posterior, _BRAND).values)
+    np.testing.assert_array_equal(default.values, _chol(brand_posterior, [0, 1, 2]).values)
+
+
+def test_order_by_name_equals_order_by_index(brand_posterior: xr.DataTree) -> None:
+    by_name = _chol(brand_posterior, ["brand_awareness", "brand_consideration", "organic_sales"])
+    by_index = _chol(brand_posterior, [1, 2, 0])
+    np.testing.assert_array_equal(by_name.values, by_index.values)
+
+
+def test_output_keeps_column_order(brand_posterior: xr.DataTree) -> None:
+    irf = _chol(brand_posterior, [2, 0, 1])
+    assert list(irf.coords["response_variable"].values) == _BRAND
+    assert list(irf.coords["shock_variable"].values) == _BRAND
+
+
+@pytest.mark.parametrize("first", [0, 1, 2])
+def test_cholesky_with_j_first_equals_girf_for_shock_j(
+    brand_posterior: xr.DataTree, first: int
+) -> None:
+    from bayesian_vecm._irf import compute_irf
+
+    order = [first] + [i for i in range(3) if i != first]
+    chol = _chol(brand_posterior, order)
+    girf = compute_irf(brand_posterior, 1, 12, method="girf", variable_names=_BRAND)
+    np.testing.assert_allclose(
+        chol.isel(shock_variable=first).values,
+        girf.isel(shock_variable=first).values,
+        rtol=1e-10,
+        atol=1e-14,
+    )
+
+
+def test_ordered_impact_reproduces_sigma(brand_posterior: xr.DataTree) -> None:
+    impact = _chol(brand_posterior, [1, 2, 0]).isel(horizon=0).values  # (C, D, K, K)
+    sigma = brand_posterior.posterior["Sigma"].values
+    np.testing.assert_allclose(np.einsum("cdij,cdkj->cdik", impact, impact), sigma, atol=1e-15)
+
+
+def test_ordered_impact_is_triangular_in_that_order(brand_posterior: xr.DataTree) -> None:
+    order = [1, 2, 0]
+    impact = _chol(brand_posterior, order).isel(horizon=0).values
+    permuted = impact[:, :, order][:, :, :, order]
+    upper = np.triu_indices(3, k=1)
+    np.testing.assert_array_equal(permuted[:, :, upper[0], upper[1]], 0.0)
+
+
+def test_last_in_order_does_not_move_others_on_impact(brand_posterior: xr.DataTree) -> None:
+    irf = _chol(brand_posterior, ["brand_awareness", "brand_consideration", "organic_sales"])
+    sales_shock = irf.isel(horizon=0).sel(shock_variable="organic_sales")
+    others = sales_shock.sel(response_variable=["brand_awareness", "brand_consideration"])
+    np.testing.assert_array_equal(others.values, 0.0)
+
+
+@pytest.mark.parametrize(
+    ("order", "error"),
+    [
+        ([0, 1], ValueError),
+        ([0, 0, 1], ValueError),
+        ([0, 1, 3], ValueError),
+        (["organic_sales", "brand_awareness", "csat"], ValueError),
+        ("organic_sales", TypeError),
+        ([0.0, 1, 2], TypeError),
+        ([True, 0, 1], TypeError),
+    ],
+)
+def test_bad_order_raises(brand_posterior: xr.DataTree, order, error) -> None:
+    with pytest.raises(error):
+        _chol(brand_posterior, order)
+
+
+def test_order_with_girf_raises(brand_posterior: xr.DataTree) -> None:
+    from bayesian_vecm._irf import compute_irf
+
+    with pytest.raises(ValueError, match="order only applies"):
+        compute_irf(brand_posterior, 1, 12, method="girf", variable_names=_BRAND, order=[0, 1, 2])
+
+
+def test_names_without_variable_names_raise(brand_posterior: xr.DataTree) -> None:
+    from bayesian_vecm._irf import compute_irf
+
+    with pytest.raises(ValueError, match="unknown variable"):
+        compute_irf(brand_posterior, 1, 12, method="cholesky", order=_BRAND)
+
+
+def test_fevd_order(brand_posterior: xr.DataTree) -> None:
+    from bayesian_vecm._fevd import compute_fevd
+
+    default = compute_fevd(brand_posterior, 1, 12, method="cholesky", variable_names=_BRAND)
+    same = compute_fevd(
+        brand_posterior, 1, 12, method="cholesky", variable_names=_BRAND, order=_BRAND
+    )
+    np.testing.assert_array_equal(default.values, same.values)
+
+    funnel = compute_fevd(
+        brand_posterior, 1, 12, method="cholesky", variable_names=_BRAND, order=[1, 2, 0]
+    )
+    np.testing.assert_allclose(funnel.sum("shock_variable").values, 1.0, atol=1e-12)
+    # Awareness is first, so all of its impact-period variance is its own shock.
+    first = funnel.isel(horizon=0).sel(response_variable="brand_awareness")
+    np.testing.assert_allclose(first.sel(shock_variable="brand_awareness").values, 1.0)
+
+    with pytest.raises(ValueError, match="order only applies"):
+        compute_fevd(brand_posterior, 1, 12, method="girf", variable_names=_BRAND, order=_BRAND)
+
+
+def test_model_irf_passes_order(fitted_model: BayesianVECM) -> None:
+    chol = fitted_model.irf(steps=_IRF_STEPS, method="cholesky", order=[1, 0])
+    girf = fitted_model.irf(steps=_IRF_STEPS, method="girf")
+    np.testing.assert_allclose(
+        chol.isel(shock_variable=1).values, girf.isel(shock_variable=1).values, rtol=1e-10
+    )
+
+
+def test_model_fevd_passes_order(fitted_model: BayesianVECM) -> None:
+    fevd = fitted_model.fevd(steps=_IRF_STEPS, method="cholesky", order=[1, 0])
+    own = fevd.isel(horizon=0, response_variable=1, shock_variable=1).values
+    np.testing.assert_allclose(own, 1.0)
