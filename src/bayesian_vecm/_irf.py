@@ -3,11 +3,13 @@
 Two identification schemes are supported:
 
 ``"girf"`` — Generalised IRFs (Pesaran & Shin 1998)
-    Order-invariant; the right default when contemporaneous feedback loops
-    exist among variables (e.g. brand awareness |harr| consideration |harr|
-    organic sales).  A unit shock to variable :math:`j`'s innovation is
-    conditioned on the historical covariance structure rather than on a
-    recursive Cholesky ordering.  At horizon :math:`h`:
+    Order-invariant: no column order is needed. A shock to variable
+    :math:`j` moves the other variables by their expected same-period
+    response under :math:`\\Sigma`. This equals the Cholesky IRF with
+    :math:`j` ordered first. Each shock is treated as first in its own
+    chain, so the responses to different shocks cannot all be structural
+    at once (Kim 2009). Read them for a variable that leads the system.
+    At horizon :math:`h`:
 
     .. math::
 

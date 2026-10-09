@@ -779,7 +779,13 @@
 
   <p>An <strong>impulse response function (IRF)</strong> answers the question: "if one variable is shocked by one unit today, what happens to all variables over the next N periods?" This is the key output for brand marketing — it quantifies the long-run tail of a brand spend shock on organic sales.</p>
 
-  <p>The standard IRF (Cholesky) requires you to specify a causal ordering: which variables affect which contemporaneously. For a brand system (awareness ↔ consideration ↔ sales, with feedback loops in all directions), any fixed ordering is wrong. <strong>Generalised IRFs (GIRF)</strong> solve this — they are order-invariant, computing the average effect across all possible orderings.</p>
+  <p>Shocks rarely arrive alone. The residuals are correlated, so a surprise in one series comes with same-week movement in the others. To trace a shock you have to decide who moves whom within the week.</p>
+
+  <p>The standard IRF (Cholesky) settles this with a causal ordering. Each variable can move the ones after it in the same week but not the ones before it. <strong>Generalised IRFs (GIRF)</strong> (Pesaran &amp; Shin 1998) need no ordering. A GIRF for a shock to variable j equals the Cholesky IRF with j placed first.</p>
+
+  <p>So a GIRF is not free of assumptions. Each one treats its own shocked variable as first in the chain. The GIRFs for different shocks therefore cannot all be structural at once (Kim 2009). They are safe to read for a variable that really does come first.</p>
+
+  <p>Cain (2022) estimates the same-week links in a brand funnel directly. He finds that awareness comes first: it moves consideration and sales in the same week and nothing moves it. Under that structure the GIRF of an awareness shock is also the structural response. For shocks further down the funnel a structural approach like his is the stronger choice.</p>
 
   <div class="diagram">
     <svg viewBox="0 0 700 230" xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width:660px">
@@ -841,9 +847,9 @@
       <div class="math">A₁ = I + αβ′ + Γ₁ &nbsp;&nbsp; A<sub>j</sub> = Γ<sub>j</sub> - Γ<sub>j-1</sub> (j=2..k) &nbsp;&nbsp; A<sub>k+1</sub> = -Γ<sub>k</sub></div>
       <p>Then iterate the companion matrix F (the K(k+1) × K(k+1) stacked-variable matrix) to get the impulse response matrices:</p>
       <div class="math">Φ<sub>h</sub> = top-left K×K block of F<sup>h</sup></div>
-      <p>The Cholesky IRF uses a lower-triangular factorisation P of Σ = PP′ and computes OIR<sub>h</sub> = Φ<sub>h</sub>P. The GIRF averages over all possible orderings, giving:</p>
+      <p>The Cholesky IRF uses a lower-triangular factorisation P of Σ = PP′ and computes OIR<sub>h</sub> = Φ<sub>h</sub>P. The GIRF shocks variable j by one standard deviation and lets the others move by their expected same-week response:</p>
       <div class="math">GIRF<sub>h</sub>(i, j) = Φ<sub>h</sub> Σ e<sub>j</sub> / sqrt(Σ<sub>jj</sub>)</div>
-      <p>This is equivalent to conditioning on a one-standard-deviation shock to variable j, averaging over the contemporaneous correlation structure. It is fully order-invariant and equals the Cholesky IRF only when Σ is diagonal.</p>
+      <p>The first column of the Cholesky factor of Σ is Σe<sub>1</sub> / sqrt(Σ<sub>11</sub>). So the GIRF for shock j equals the Cholesky IRF with j ordered first, whatever the order of the other variables. The GIRFs for all shocks match one Cholesky IRF together only when Σ is diagonal.</p>
     </div>
   </details>
 </section>
@@ -1009,7 +1015,7 @@
 
 <footer>
   Built with <a href="https://github.com/raz1470/bayesian_vecm" style="color:var(--accent)">bayesian_vecm</a> ·
-  Based on Johansen (1991), Pesaran &amp; Shin (1998), Piironen &amp; Vehtari (2017), and Cain (2022)
+  Based on Johansen (1991), Pesaran &amp; Shin (1998), Kim (2009), Piironen &amp; Vehtari (2017), and Cain (2022)
 </footer>
 
 </body>
