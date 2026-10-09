@@ -632,3 +632,128 @@ class TestHorseshoePrior:
         assert "alpha" in names
         assert "beta" in names
         assert "Sigma" in names
+
+
+# ---------------------------------------------------------------------------
+# Centred constant under "co" and "ci"
+# ---------------------------------------------------------------------------
+
+
+def _shifted_trivariate() -> np.ndarray:
+    """Trivariate rank-2 series moved far from zero, like log levels."""
+    return _synthetic_trivariate_r2() + np.array([7.0, 3.0, 2.5])
+
+
+def _random_point(model: pm.Model, seed: int) -> dict[str, np.ndarray]:
+    """Initial point with the location parameters drawn at random."""
+    rng = np.random.default_rng(seed)
+    point = model.initial_point()
+    for name in ("alpha", "beta_free", "Gamma_centred", "Gamma"):
+        if name in point:
+            point[name] = rng.normal(scale=0.3, size=point[name].shape)
+    return point
+
+
+def _observed_logp(model: pm.Model, point: dict[str, np.ndarray]) -> float:
+    fn = model.compile_fn(
+        model.logp(vars=[model["delta_y_obs"]]), inputs=model.value_vars, on_unused_input="ignore"
+    )
+    return float(fn(point))
+
+
+def _deterministics(model: pm.Model, point: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    names = ["beta", "Sigma", "Gamma"]
+    outputs = model.replace_rvs_by_values([model[n] for n in names])
+    fn = model.compile_fn(outputs, inputs=model.value_vars, on_unused_input="ignore")
+    return dict(zip(names, fn(point), strict=True))
+
+
+def _mvn_logp(resid: np.ndarray, sigma: np.ndarray) -> float:
+    k = sigma.shape[0]
+    _, logdet = np.linalg.slogdet(sigma)
+    quad = np.einsum("ti,ij,tj->", resid, np.linalg.inv(sigma), resid)
+    return float(-0.5 * (resid.shape[0] * (k * np.log(2 * np.pi) + logdet) + quad))
+
+
+class TestCentredConstant:
+    @pytest.mark.parametrize("code", ["co", "ci"])
+    def test_means_stored(self, code):
+        design = cointegration_design(_shifted_trivariate(), k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=2, deterministic=code)
+        np.testing.assert_allclose(
+            model["y_lag1_mean"].get_value(), design.y_lag1[:, :3].mean(axis=0)
+        )
+
+    @pytest.mark.parametrize("code", ["n", "lo", "li"])
+    def test_other_codes_unchanged(self, code):
+        design = cointegration_design(_shifted_trivariate(), k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=2, deterministic=code)
+        names = {rv.name for rv in model.free_RVs}
+        assert "Gamma" in names
+        assert "Gamma_centred" not in names
+        assert "y_lag1_mean" not in model.named_vars
+
+    def test_co_samples_gamma_centred(self):
+        design = cointegration_design(_shifted_trivariate(), k_ar_diff=1, deterministic="co")
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=2, deterministic="co")
+        free = {rv.name for rv in model.free_RVs}
+        assert "Gamma_centred" in free
+        assert "Gamma" not in free
+        assert "Gamma" in {d.name for d in model.deterministics}
+
+    def test_co_horseshoe_samples_gamma_centred(self):
+        design = cointegration_design(_shifted_trivariate(), k_ar_diff=1, deterministic="co")
+        model = build_pymc_model(
+            design,
+            k_ar_diff=1,
+            coint_rank=2,
+            deterministic="co",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        free = {rv.name for rv in model.free_RVs}
+        assert {"Gamma_centred", "Gamma_tau", "Gamma_lambda", "Gamma_c2"} <= free
+        assert "Gamma" in {d.name for d in model.deterministics}
+
+    def test_co_constant_maps_back(self):
+        design = cointegration_design(_shifted_trivariate(), k_ar_diff=1, deterministic="co")
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=2, deterministic="co")
+        point = _random_point(model, seed=0)
+        det = _deterministics(model, point)
+        m = design.y_lag1.mean(axis=0)
+        g_tilde = point["Gamma_centred"]
+        expected = g_tilde[:, -1] - point["alpha"] @ det["beta"].T @ m
+        np.testing.assert_allclose(det["Gamma"][:, :-1], g_tilde[:, :-1])
+        np.testing.assert_allclose(det["Gamma"][:, -1], expected)
+
+    def test_ci_constant_maps_back(self):
+        design = cointegration_design(_shifted_trivariate(), k_ar_diff=1, deterministic="ci")
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=2, deterministic="ci")
+        point = _random_point(model, seed=1)
+        beta = _deterministics(model, point)["beta"]
+        m = design.y_lag1[:, :3].mean(axis=0)
+        b_tilde = point["beta_free"][1]
+        np.testing.assert_allclose(beta[:2], np.eye(2))
+        np.testing.assert_allclose(beta[2], point["beta_free"][0])
+        np.testing.assert_allclose(beta[3], b_tilde - beta[:3].T @ m)
+
+    @pytest.mark.parametrize("code", ["co", "ci"])
+    def test_likelihood_matches_demeaned_model(self, code):
+        # The graph's likelihood on raw levels must equal the likelihood of
+        # the demeaned model evaluated at the free parameters directly.
+        design = cointegration_design(_shifted_trivariate(), k_ar_diff=1, deterministic=code)
+        model = build_pymc_model(design, k_ar_diff=1, coint_rank=2, deterministic=code)
+        point = _random_point(model, seed=2)
+        det = _deterministics(model, point)
+        alpha = point["alpha"]
+        y = design.y_lag1[:, :3]
+        m = y.mean(axis=0)
+        beta_y = det["beta"][:3]
+        if code == "co":
+            gamma = point["Gamma_centred"]
+            mu = (y - m) @ beta_y @ alpha.T + design.delta_x @ gamma.T
+        else:
+            b_tilde = point["beta_free"][1]
+            ec = (y - m) @ beta_y + b_tilde
+            mu = ec @ alpha.T + design.delta_x @ det["Gamma"].T
+        expected = _mvn_logp(design.delta_y - mu, det["Sigma"])
+        assert _observed_logp(model, point) == pytest.approx(expected, rel=1e-9)

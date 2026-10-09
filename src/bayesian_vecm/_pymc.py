@@ -88,6 +88,37 @@ doesn't fit the simple ``{"dist": ..., **kwargs}`` pattern — and v0 only
 accepts ``eta`` and ``sd_sigma`` overrides for it. A richer covariance-prior
 API is a follow-up.
 
+Centred constant
+----------------
+Log levels in marketing data sit far from zero (log sales near 7). With a
+raw constant :math:`c`, the term :math:`\\alpha\\beta^{\\top} y_{t-1}` is
+large and :math:`c` must cancel most of it. The posterior then ties
+:math:`c` to :math:`\\alpha` with a correlation near :math:`-1`, and NUTS
+needs very long trajectories.
+
+For the two codes that carry a constant (``"co"`` and ``"ci"``) the graph
+samples the constant of the model in demeaned levels instead. With
+:math:`m` the column means of the lagged levels:
+
+.. math::
+
+    \\alpha\\beta^{\\top} y_{t-1} + c
+        \\;=\\; \\alpha\\beta^{\\top}(y_{t-1} - m) + \\tilde c,
+    \\qquad c = \\tilde c - \\alpha\\beta^{\\top} m.
+
+* ``"co"``: the free variable is ``Gamma_centred``. Its last column is
+  :math:`\\tilde c`. ``Gamma`` is a deterministic with the raw constant
+  :math:`c` in its last column.
+* ``"ci"``: the constant row of ``beta_free`` is :math:`\\tilde b`. The
+  constant row of ``beta`` is :math:`b = \\tilde b - \\beta_y^{\\top} m`,
+  where :math:`\\beta_y` is the first :math:`K` rows of :math:`\\beta`.
+
+The likelihood is unchanged, and ``Gamma`` and ``beta`` in the posterior
+are on the raw scale. Only the prior moves: it now applies to the constant
+of the demeaned model. ``"n"``, ``"lo"`` and ``"li"`` have no constant to
+absorb the shift and are left as they are. The means are stored as
+``y_lag1_mean`` in the constant data.
+
 Regularised horseshoe prior on :math:`\\Gamma`
 -----------------------------------------------
 With real marketing data the true lag order is unknown.  Setting ``k_ar_diff``
@@ -152,6 +183,9 @@ _VALID_SIGMA_KEYS: frozenset[str] = frozenset({"eta", "sd_sigma"})
 #: ``dist`` sentinel that triggers the regularised horseshoe path for Gamma.
 #: All other ``dist`` values are passed to :func:`_resolve_dist` which looks
 #: them up on the ``pm`` namespace.
+#: Deterministic codes whose constant is sampled in demeaned levels.
+_CENTRED_CODES: frozenset[str] = frozenset({"co", "ci"})
+
 _HORSESHOE_DIST_NAME: str = "Horseshoe"
 
 #: Recognised kwargs inside a ``{"dist": "Horseshoe", ...}`` spec.
@@ -195,10 +229,12 @@ def build_pymc_model(
     -------
     pm.Model
         The compiled PyMC model with free parameters ``alpha``, ``beta_free``,
-        ``Gamma`` (if ``k_ar_diff > 0``), and ``Sigma_chol``; deterministics
-        ``beta`` and ``Sigma`` for convenient downstream access; and an
+        ``Gamma`` (if the design has short-run columns), and ``Sigma_chol``;
+        deterministics ``beta`` and ``Sigma`` for convenient downstream
+        access; and an
         observed ``delta_y_obs`` carrying the row-wise multivariate-Normal
-        likelihood.
+        likelihood. Under ``"co"`` the free variable is ``Gamma_centred``
+        and ``Gamma`` is a deterministic on the raw scale.
 
     Raises
     ------
@@ -249,6 +285,12 @@ def build_pymc_model(
         if exog is not None:
             pm.Data("exog", exog)
 
+        # Means of the lagged levels. Under "co" and "ci" the constant is
+        # sampled in demeaned levels and mapped back (see module docstring).
+        centre = deterministic in _CENTRED_CODES
+        if centre:
+            y_mean = pm.Data("y_lag1_mean", y_lag1[:, :n_vars].mean(axis=0))
+
         # --- alpha: (K, r) loadings on the cointegration relation ------------
         # alpha is always (K, r) regardless of deterministic code — the
         # constant/trend rows in beta absorb inside terms, not alpha.
@@ -270,10 +312,17 @@ def build_pymc_model(
             default_spec={"dist": "Normal", "mu": 0.0, "sigma": 5.0},
             shape=(y_lag1_cols - r, r),
         )
-        beta = pm.Deterministic(
-            "beta",
-            pt.concatenate([pt.eye(r), beta_free], axis=0),
-        )
+        if centre and deterministic == "ci":
+            # Row K of beta is the inside constant. beta_free holds it in
+            # demeaned levels: b = b_tilde - beta_y' m.
+            beta_y = pt.concatenate([pt.eye(r), beta_free[: n_vars - r]], axis=0)
+            const_row = beta_free[n_vars - r] - pt.dot(y_mean, beta_y)
+            beta_stacked = pt.concatenate(
+                [beta_y, const_row[None, :], beta_free[n_vars - r + 1 :]], axis=0
+            )
+        else:
+            beta_stacked = pt.concatenate([pt.eye(r), beta_free], axis=0)
+        beta = pm.Deterministic("beta", beta_stacked)
 
         # --- Gamma: (K, delta_x_cols) short-run dynamics + outside terms -----
         # For outside terms ("co", "lo") delta_x_cols = K * k + 1, so Gamma
@@ -284,19 +333,32 @@ def build_pymc_model(
         # Two prior paths:
         #   (a) {"dist": "Horseshoe", ...} → regularised horseshoe hierarchy.
         #   (b) anything else              → standard _resolve_dist path.
+        #
+        # Under "co" the free variable is Gamma_centred, whose last column is
+        # the constant in demeaned levels. Gamma is then a deterministic with
+        # the raw constant c = c_tilde - alpha beta_y' m in its last column.
         if delta_x_cols > 0:
+            centre_gamma = centre and deterministic == "co"
+            gamma_name = "Gamma_centred" if centre_gamma else "Gamma"
             user_gamma_spec = user_priors.get("Gamma")
             if _is_horseshoe_spec(user_gamma_spec):
                 gamma = _build_horseshoe_gamma(
+                    name=gamma_name,
                     shape=(n_vars, delta_x_cols),
                     **_horseshoe_kwargs(user_gamma_spec),
                 )
             else:
                 gamma = _resolve_dist(
-                    name="Gamma",
+                    name=gamma_name,
                     user_spec=user_gamma_spec,
                     default_spec={"dist": "Normal", "mu": 0.0, "sigma": 0.5},
                     shape=(n_vars, delta_x_cols),
+                )
+            if centre_gamma:
+                shift = pt.dot(alpha, pt.dot(beta[:n_vars].T, y_mean))  # (K,)
+                const_col = gamma[:, -1] - shift
+                gamma = pm.Deterministic(
+                    "Gamma", pt.concatenate([gamma[:, :-1], const_col[:, None]], axis=1)
                 )
 
         # --- Sigma: K x K covariance via LKJCholeskyCov ----------------------
@@ -432,6 +494,7 @@ def _horseshoe_kwargs(user_spec: dict[str, Any]) -> dict[str, float]:
 def _build_horseshoe_gamma(
     *,
     shape: tuple[int, int],
+    name: str = "Gamma",
     tau_scale: float = 1.0,
     slab_scale: float = 2.0,
     slab_df: float = 4.0,
@@ -459,6 +522,9 @@ def _build_horseshoe_gamma(
     ----------
     shape
         ``(K, delta_x_cols)`` — the shape of the Gamma block.
+    name
+        Name of the returned random variable. ``"Gamma_centred"`` under
+        ``"co"``, where ``Gamma`` itself is a deterministic.
     tau_scale
         Scale of the global HalfCauchy shrinkage prior.
     slab_scale
@@ -491,7 +557,7 @@ def _build_horseshoe_gamma(
     # lam_tilde -> sqrt(c2)/tau when tau*lam >> sqrt(c2)  (caps large entries)
     lam_tilde = lam * pt.sqrt(c2) / pt.sqrt(c2 + tau**2 * lam**2)
 
-    return pm.Normal("Gamma", mu=0.0, sigma=tau * lam_tilde, shape=shape)
+    return pm.Normal(name, mu=0.0, sigma=tau * lam_tilde, shape=shape)
 
 
 def _build_sigma(*, n_vars: int, user_spec: dict[str, Any] | None) -> Any:
