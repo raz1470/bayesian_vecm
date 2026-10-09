@@ -59,6 +59,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import pandas as pd
 
     from bayesian_vecm._causality import CausalityResult
@@ -522,6 +524,7 @@ class BayesianVECM:
         steps: int,
         *,
         method: str = "girf",
+        order: Sequence[str | int] | None = None,
     ) -> xr.DataArray:
         """Compute posterior Impulse Response Functions for *steps* horizons.
 
@@ -536,8 +539,9 @@ class BayesianVECM:
           Cholesky IRF with j ordered first, so it is structural only if j
           leads the other variables within the period.
         * ``"cholesky"`` — Orthogonalised IRFs (Sims 1980).  Requires a
-          defensible recursive causal ordering among the variables.  Use only
-          when your system is genuinely triangular.
+          defensible recursive causal ordering among the variables: a shock
+          to one variable moves the variables after it in the same period,
+          and not the ones before it. Set the ordering with ``order``.
 
         Parameters
         ----------
@@ -547,6 +551,13 @@ class BayesianVECM:
             ``steps + 1`` entries along the ``horizon`` dimension.
         method
             Identification scheme — ``"girf"`` or ``"cholesky"``.
+        order
+            Cholesky ordering, listing every endogenous variable once by
+            name or column index. ``None`` uses the column order of
+            ``endog``. The output keeps the column order either way. Only
+            valid with ``method="cholesky"``. Changing the column order of
+            ``endog`` instead would also change the normalisation of
+            :math:`\\beta`.
 
         Returns
         -------
@@ -563,7 +574,11 @@ class BayesianVECM:
         RuntimeError
             If :meth:`fit` has not been called.
         ValueError
-            If ``steps < 1`` or ``method`` is unrecognised.
+            If ``steps < 1``, ``method`` is unrecognised, or ``order`` is
+            invalid.
+        TypeError
+            If ``order`` is a string or holds entries that are not names or
+            integers.
         """
         if not hasattr(self, "idata_"):
             raise RuntimeError(_NOT_FITTED_MSG)
@@ -578,6 +593,7 @@ class BayesianVECM:
             steps=steps,
             method=method,
             variable_names=self.variable_names_,
+            order=order,
         )
 
     def fevd(
@@ -585,6 +601,7 @@ class BayesianVECM:
         steps: int,
         *,
         method: str = "girf",
+        order: Sequence[str | int] | None = None,
     ) -> xr.DataArray:
         """Compute the posterior forecast error variance decomposition.
 
@@ -599,6 +616,9 @@ class BayesianVECM:
             ``"girf"`` (default) does not depend on the column order. Rows are
             rescaled to sum to 1. ``"cholesky"`` uses the column order, the
             same as :meth:`irf`.
+        order
+            Cholesky ordering, as in :meth:`irf`. Only valid with
+            ``method="cholesky"``.
 
         Returns
         -------
@@ -611,7 +631,11 @@ class BayesianVECM:
         RuntimeError
             If :meth:`fit` has not been called.
         ValueError
-            If ``steps < 1`` or ``method`` is unrecognised.
+            If ``steps < 1``, ``method`` is unrecognised, or ``order`` is
+            invalid.
+        TypeError
+            If ``order`` is a string or holds entries that are not names or
+            integers.
         """
         if not hasattr(self, "idata_"):
             raise RuntimeError(_NOT_FITTED_MSG)
@@ -624,6 +648,7 @@ class BayesianVECM:
             steps=steps,
             method=method,
             variable_names=self.variable_names_,
+            order=order,
         )
 
     def granger_causality(

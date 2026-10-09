@@ -34,10 +34,12 @@ converge: at long horizons the permanent shocks account for everything.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import xarray as xr
 
-from bayesian_vecm._irf import _VALID_METHODS, ma_coefficients
+from bayesian_vecm._irf import _VALID_METHODS, cholesky_impact, ma_coefficients, resolve_order
 
 
 def compute_fevd(
@@ -46,6 +48,7 @@ def compute_fevd(
     steps: int,
     method: str = "girf",
     variable_names: list[str] | None = None,
+    order: Any = None,
 ) -> xr.DataArray:
     """Compute the posterior FEVD for every draw in *idata*.
 
@@ -59,10 +62,13 @@ def compute_fevd(
         Longest forecast horizon. Horizons ``1, ..., steps`` are returned.
     method
         ``"girf"`` (default) is order-invariant with rows rescaled to sum
-        to 1. ``"cholesky"`` uses the column order.
+        to 1. ``"cholesky"`` uses the column order, or ``order`` if given.
     variable_names
         Optional variable labels for the ``response_variable`` and
         ``shock_variable`` coordinates.
+    order
+        Cholesky ordering as variable names or column indices, listing each
+        variable once. Only valid with ``method="cholesky"``.
 
     Returns
     -------
@@ -75,7 +81,11 @@ def compute_fevd(
     Raises
     ------
     ValueError
-        If ``method`` is not ``"girf"`` or ``"cholesky"``, or ``steps < 1``.
+        If ``method`` is not ``"girf"`` or ``"cholesky"``, if ``steps < 1``,
+        or if ``order`` is invalid.
+    TypeError
+        If ``order`` is a string or holds entries that are not names or
+        integers.
     """
     if method not in _VALID_METHODS:
         valid = sorted(_VALID_METHODS)
@@ -87,9 +97,10 @@ def compute_fevd(
     phi, sigma = ma_coefficients(posterior, k_ar_diff, steps)  # (D, H, K, K), (D, K, K)
     n_chains, n_draws = posterior.sizes["chain"], posterior.sizes["draw"]
     n_vars = sigma.shape[-1]
+    order_idx = resolve_order(order, method=method, variable_names=variable_names, n_vars=n_vars)
 
     if method == "cholesky":
-        impact = np.linalg.cholesky(sigma)  # (D, K, K)
+        impact = cholesky_impact(sigma, order_idx)  # (D, K, K)
     else:
         sigma_diag_sqrt = np.sqrt(np.diagonal(sigma, axis1=1, axis2=2))  # (D, K)
         impact = sigma / sigma_diag_sqrt[:, np.newaxis, :]  # Sigma[:, j] / sqrt(sigma_jj)
