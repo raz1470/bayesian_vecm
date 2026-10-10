@@ -352,3 +352,82 @@ def compute_irf(
         dims=["chain", "draw", "horizon", "response_variable", "shock_variable"],
         coords=coords,
     )
+
+
+def compute_exog_irf(
+    idata: xr.DataTree,
+    k_ar_diff: int,
+    steps: int,
+    variable_names: list[str] | None = None,
+    exog_names: list[str] | None = None,
+) -> xr.DataArray:
+    """Dynamic multipliers of the exogenous drivers for every draw in *idata*.
+
+    The response of the endogenous levels to a one-period, one-unit rise in
+    each exogenous variable, with every other input at its baseline. The
+    driver enters as :math:`B X_t`, so the impact is a column of :math:`B`
+    and the path is
+
+    .. math::
+
+        M_h = \\Phi_h \\, B, \\qquad h = 0, 1, \\dots
+
+    The cumulative sum over ``horizon`` gives the response to a rise that
+    is held for every period. In a cointegrated system :math:`M_h` tends
+    to :math:`C B`, where :math:`C` is the long-run impact matrix, so a
+    one-period pulse can move the levels permanently.
+
+    Parameters
+    ----------
+    idata
+        Fitted posterior holding ``alpha``, ``beta``, ``Sigma`` and ``B``.
+        ``Gamma`` is also needed when ``k_ar_diff > 0``.
+    k_ar_diff
+        Number of lagged-difference blocks in the model.
+    steps
+        Horizons :math:`h = 0, \\dots, \\text{steps}` are returned.
+    variable_names
+        Optional labels for the endogenous variables.
+    exog_names
+        Optional labels for the exogenous variables.
+
+    Returns
+    -------
+    xarray.DataArray
+        Shape ``(chain, draw, horizon, response_variable, exog_variable)``.
+        Entry ``[..., h, i, j]`` is the change in variable :math:`i` at
+        horizon :math:`h` after a unit rise in exogenous variable :math:`j`
+        at horizon 0.
+
+    Raises
+    ------
+    ValueError
+        If ``steps`` is less than ``1`` or the posterior has no ``B``.
+    """
+    if steps < 1:
+        raise ValueError(f"steps must be at least 1; got steps={steps}")
+    posterior = idata.posterior
+    if "B" not in posterior:
+        raise ValueError("The posterior has no B: fit the model with exog to get exog IRFs.")
+
+    phi, _ = ma_coefficients(posterior, k_ar_diff, steps + 1)  # (D, H, K, K)
+    b_draws: NDArray[np.floating] = posterior["B"].values  # (C, D, K, m)
+    n_chains, n_draws, n_vars, n_exog = b_draws.shape
+    b_mat = b_draws.reshape(n_chains * n_draws, n_vars, n_exog)
+    multipliers = np.einsum("dhij,djk->dhik", phi, b_mat)  # (D, H, K, m)
+
+    coords: dict = {
+        "chain": posterior.coords["chain"].values,
+        "draw": posterior.coords["draw"].values,
+        "horizon": np.arange(steps + 1),
+    }
+    if variable_names is not None:
+        coords["response_variable"] = variable_names
+    if exog_names is not None:
+        coords["exog_variable"] = exog_names
+
+    return xr.DataArray(
+        multipliers.reshape(n_chains, n_draws, steps + 1, n_vars, n_exog),
+        dims=["chain", "draw", "horizon", "response_variable", "exog_variable"],
+        coords=coords,
+    )

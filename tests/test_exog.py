@@ -354,3 +354,40 @@ class TestForecastExog:
         x_fut = np.zeros((self.STEPS, M))
         result = model.sample_posterior_predictive(self.STEPS, exog_future=x_fut, random_seed=0)
         assert np.isfinite(result.posterior_predictive["y"].values).all()
+
+
+# ---------------------------------------------------------------------------
+# Exogenous dynamic multipliers
+# ---------------------------------------------------------------------------
+
+
+class TestExogIrf:
+    def test_raises_before_fit(self):
+        from bayesian_vecm import BayesianVECM
+
+        with pytest.raises(RuntimeError):
+            BayesianVECM(k_ar_diff=1, coint_rank=1).exog_irf(5)
+
+    def test_raises_without_exog(self, fitted_model_no_exog):
+        model, _ = fitted_model_no_exog[:2]
+        with pytest.raises(ValueError, match="no B"):
+            model.exog_irf(5)
+
+    def test_raises_for_steps_zero(self, fitted_model_with_exog):
+        model, _, _ = fitted_model_with_exog
+        with pytest.raises(ValueError, match="steps"):
+            model.exog_irf(0)
+
+    def test_shape_and_dims(self, fitted_model_with_exog):
+        model, _, _ = fitted_model_with_exog
+        result = model.exog_irf(6)
+        assert result.dims == ("chain", "draw", "horizon", "response_variable", "exog_variable")
+        assert result.shape == (1, 20, 7, K, M)
+        assert np.isfinite(result.values).all()
+
+    def test_impact_equals_b(self, fitted_model_with_exog):
+        model, _, _ = fitted_model_with_exog
+        result = model.exog_irf(3)
+        np.testing.assert_allclose(
+            result.isel(horizon=0).values, model.idata.posterior["B"].values, atol=1e-12
+        )

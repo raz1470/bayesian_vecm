@@ -432,3 +432,77 @@ def test_model_fevd_passes_order(fitted_model: BayesianVECM) -> None:
     fevd = fitted_model.fevd(steps=_IRF_STEPS, method="cholesky", order=[1, 0])
     own = fevd.isel(horizon=0, response_variable=1, shock_variable=1).values
     np.testing.assert_allclose(own, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Exogenous dynamic multipliers against the brand DGP, no sampling
+# ---------------------------------------------------------------------------
+
+
+def _truth_posterior() -> xr.DataTree:
+    """One draw at the exact generating parameters, with B."""
+    from bayesian_vecm import simulate_brand_data
+
+    truth = simulate_brand_data().truth
+
+    def one(value: np.ndarray) -> np.ndarray:
+        return value[np.newaxis, np.newaxis]
+
+    data = {
+        "alpha": (("chain", "draw", "variable", "relation"), one(truth.alpha)),
+        "beta": (("chain", "draw", "variable", "relation"), one(truth.beta)),
+        "Gamma": (("chain", "draw", "variable", "regressor"), one(truth.gamma)),
+        "Sigma": (("chain", "draw", "variable", "variable_bis"), one(truth.sigma)),
+        "B": (("chain", "draw", "variable", "exog"), one(truth.b)),
+    }
+    coords = {"chain": [0], "draw": [0]}
+    return xr.DataTree.from_dict({"posterior": xr.Dataset(data, coords=coords)})
+
+
+def _long_run_matrix(alpha: np.ndarray, beta: np.ndarray, gamma: np.ndarray) -> np.ndarray:
+    """C = beta_perp (alpha_perp' (I - Gamma) beta_perp)^-1 alpha_perp'."""
+    from scipy.linalg import null_space
+
+    alpha_perp = null_space(alpha.T)
+    beta_perp = null_space(beta.T)
+    inner = alpha_perp.T @ (np.eye(len(alpha)) - gamma) @ beta_perp
+    return beta_perp @ np.linalg.inv(inner) @ alpha_perp.T
+
+
+def test_exog_irf_impact_is_b() -> None:
+    from bayesian_vecm import simulate_brand_data
+    from bayesian_vecm._irf import compute_exog_irf
+
+    result = compute_exog_irf(_truth_posterior(), 1, 5)
+    np.testing.assert_allclose(result.values[0, 0, 0], simulate_brand_data().truth.b)
+
+
+def test_exog_irf_settles_at_long_run_matrix_times_b() -> None:
+    from bayesian_vecm import simulate_brand_data
+    from bayesian_vecm._irf import compute_exog_irf
+
+    truth = simulate_brand_data().truth
+    expected = _long_run_matrix(truth.alpha, truth.beta, truth.gamma) @ truth.b
+    result = compute_exog_irf(_truth_posterior(), 1, 400)
+    np.testing.assert_allclose(result.values[0, 0, -1], expected, atol=1e-10)
+
+
+def test_exog_irf_brand_spend_reaches_sales_with_a_lag() -> None:
+    from bayesian_vecm._irf import compute_exog_irf
+    from bayesian_vecm._simulate import ENDOG_NAMES, EXOG_NAMES
+
+    result = compute_exog_irf(
+        _truth_posterior(), 1, 52, variable_names=list(ENDOG_NAMES), exog_names=list(EXOG_NAMES)
+    )
+    path = result.sel(response_variable="organic_sales", exog_variable="brand_spend").values[0, 0]
+    # Spend acts on awareness only, so sales move from the second week on.
+    assert path[0] == 0.0
+    assert path[1] == 0.0
+    assert (path[2:] > 0).all()
+
+
+def test_exog_irf_raises_without_b(brand_posterior: xr.DataTree) -> None:
+    from bayesian_vecm._irf import compute_exog_irf
+
+    with pytest.raises(ValueError, match="no B"):
+        compute_exog_irf(brand_posterior, 1, 5)
