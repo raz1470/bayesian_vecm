@@ -596,6 +596,57 @@ class BayesianVECM:
             order=order,
         )
 
+    def exog_irf(self, steps: int) -> xr.DataArray:
+        """Posterior response of the levels to a one-period rise in each exogenous driver.
+
+        Each exogenous variable is raised by one unit for one period, with
+        every other input at its baseline. The path is
+        :math:`\\Phi_h B` for :math:`h = 0, \\dots, \\text{steps}`. No
+        identification scheme is needed: the driver is observed, so its
+        impact is a column of :math:`B`.
+
+        Use the result to value a driver. With log-transformed ``endog``,
+        entry ``[..., h, i, j]`` is the log change in variable :math:`i`
+        at horizon :math:`h` per unit of driver :math:`j`. The cumulative
+        sum over ``horizon`` is the response to a rise held for every
+        period. In a cointegrated system the path settles at :math:`C B`,
+        so a one-period rise can move the levels for good.
+
+        The model is linear in the drivers. The result is a marginal
+        effect near the levels seen in the data and shows no saturation.
+
+        Parameters
+        ----------
+        steps
+            Number of periods ahead. ``steps + 1`` horizons are returned,
+            from ``0`` (impact) to ``steps``.
+
+        Returns
+        -------
+        xarray.DataArray
+            Shape ``(chain, draw, horizon, response_variable, exog_variable)``.
+            Coordinates are set when variable names are available.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`fit` has not been called.
+        ValueError
+            If ``steps < 1`` or the model was fitted without ``exog``.
+        """
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+
+        from bayesian_vecm._irf import compute_exog_irf
+
+        return compute_exog_irf(
+            idata=self.idata_,
+            k_ar_diff=self.k_ar_diff,
+            steps=steps,
+            variable_names=self.variable_names_,
+            exog_names=getattr(self, "exog_names_", None),
+        )
+
     def fevd(
         self,
         steps: int,
