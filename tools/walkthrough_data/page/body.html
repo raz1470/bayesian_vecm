@@ -1,0 +1,572 @@
+<body>
+
+<header class="hdr">
+  <h1>How Long Does Brand Last?</h1>
+  <p class="tagline">An MMM counts a few weeks of brand effect. This article uses a Bayesian VECM to follow the rest: from spend to awareness, consideration and sales, over years.</p>
+</header>
+
+<nav class="snav">
+  <a href="#data" class="active">1 · The data</a>
+  <a href="#problem">2 · The problem</a>
+  <a href="#longrun">3 · The long run</a>
+  <a href="#awareness">4 · The awareness effect</a>
+  <a href="#drivers">5 · What drives what</a>
+  <a href="#campaign">6 · A campaign</a>
+  <a href="#return">7 · Return per channel</a>
+  <a href="#yourdata">8 · Your own data</a>
+  <a href="#faq">9 · Questions</a>
+  <a href="#together">10 · Bringing it together</a>
+</nav>
+
+<main>
+
+<p>Brand teams have long argued that brand advertising pays back over years, not weeks. Les Binet and Peter Field put evidence behind that in <a href="https://ipa.co.uk/knowledge/ipa-blog/the-next-chapter-for-the-long-and-the-short-of-it/" target="_blank" rel="noopener">The Long and the Short of It</a> (IPA, 2013). Activation drives short sales spikes. Brand building grows slowly and lasts much longer.</p>
+
+<p>Marketing Mix Models find the long part hard to see. An MMM carries each week's spend forward with adstock, a decay that is often gone within a few weeks. Whatever brand does after that lands in the baseline. The model then reads it as organic growth that would have happened anyway.</p>
+
+<p>The long effect works through the brand funnel. Spend lifts awareness. Awareness lifts consideration, which lifts sales. Each of these is a slow-moving level that trends over years. The three also tend to move together. A <strong>Vector Error Correction Model (VECM)</strong> is built for series like that: they wander but stay tied to each other in the long run. <a href="https://ideas.repec.org/a/eee/ijrema/v39y2022i1p96-116.html" target="_blank" rel="noopener">Cain (2022)</a> used this approach on awareness, consideration and base sales to measure short and long-term marketing effects through the purchase journey.</p>
+
+<p>This article walks through a Bayesian VECM on simulated brand data, where we know the true answer and can check every estimate against it. The question it answers is how much of brand's return an MMM leaves out. In our simulation, £1 of brand spend brings back £2.00 within a year and £11.34 within five. Only 18% of that arrives in the first year.</p>
+
+<!-- SECTION 1: THE DATA -->
+<section id="data">
+  <p class="s-label">1 · The data</p>
+  <h2>We simulate a brand funnel where we know the truth</h2>
+
+  <p>Nobody knows how much revenue last year's brand campaign will still be driving in three years' time. To test whether a model can measure it, we need data where the answer is known. So we simulate five years of weekly brand data from a VECM with fixed parameters, then fit a fresh model to that data and compare.</p>
+
+  <h3>Step 1: Build the funnel</h3>
+
+  <p>The simulation follows one chain:</p>
+
+  <div class="eqn">marketing channels &rarr; awareness &rarr; consideration &rarr; sales</div>
+
+  <ul class="probs">
+    <li><strong>Channels act on awareness only.</strong> Brand spend has the largest effect and sponsorship the smallest. PR reach sits in between.</li>
+    <li><strong>Awareness leads.</strong> Nothing else in the system pulls it back once it moves.</li>
+    <li><strong>Consideration follows awareness, and sales follow consideration.</strong> Each closes part of its gap to the one before it every week.</li>
+    <li><strong>Two macro drivers act on consideration.</strong> The interest rate and consumer confidence move it from week to week.</li>
+  </ul>
+
+  <div class="dtable-wrap">
+    <table class="dtable vars">
+      <caption>The eight series in the model</caption>
+      <thead>
+        <tr><th>Series</th><th>Role</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Organic sales</td><td>Brand metric</td><td>Weekly revenue not explained by paid performance media</td></tr>
+        <tr><td>Awareness</td><td>Brand metric</td><td>% with unaided awareness of the brand (survey)</td></tr>
+        <tr><td>Consideration</td><td>Brand metric</td><td>% who would consider the brand (survey)</td></tr>
+        <tr><td>Brand spend</td><td>Driver</td><td>Brand investment: TV, digital brand, out of home</td></tr>
+        <tr><td>PR reach</td><td>Driver</td><td>People reached by earned media</td></tr>
+        <tr><td>Sponsorship reach</td><td>Driver</td><td>People reached by sponsorships</td></tr>
+        <tr><td>Interest rate</td><td>Driver</td><td>Central bank base rate</td></tr>
+        <tr><td>Consumer confidence</td><td>Driver</td><td>Consumer confidence index</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>The three brand metrics trend over time. The model treats them as one system and lets each one respond to the others. The five drivers do not trend. They go in from outside and push the system each week.</p>
+
+  <h3>Step 2: Write down how each week changes</h3>
+
+  <p>A VECM describes each brand metric by its change from one week to the next:</p>
+
+  <div class="eqn"><i>weekly change</i> = <i>pull towards the long run</i> + <i>last week's changes</i> + <i>drivers</i> + <i>noise</i></div>
+
+  <ul class="probs">
+    <li><strong>Pull towards the long run.</strong> Sales and consideration each have a level they should sit at, given the brand metric before them in the chain. When they sit below it, they are pulled up. This term is what makes brand effects last.</li>
+    <li><strong>Last week's changes.</strong> Momentum. A rise in awareness last week feeds into consideration this week.</li>
+    <li><strong>Drivers.</strong> Spend, reach and the macro series, each with its own effect.</li>
+    <li><strong>Noise.</strong> Everything else that moves the metrics in a given week. Shocks to the three metrics can be correlated with each other.</li>
+  </ul>
+
+  <h3>Step 3: Generate five years of data</h3>
+
+  <p>We run the system forward for 260 weeks, from January 2021 to December 2025. Sales start at £1,000 a week, awareness at 20% and consideration at 10%.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">Five years of simulated brand data</div>
+      <div class="fig-sub">Each series indexed to 100 in its first week</div>
+    </div>
+    <div class="fig-body">
+      <div class="legend">
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#2563eb" stroke-width="2.5"/></svg> Organic sales</span>
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#059669" stroke-width="2.5"/></svg> Awareness</span>
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#7c3aed" stroke-width="2.5"/></svg> Consideration</span>
+      </div>
+      <svg class="chart" id="chartSeries" viewBox="0 0 700 260" preserveAspectRatio="xMinYMin meet"></svg>
+    </div>
+    <p class="fig-cap">Sales roughly double over the five years. Awareness rises from 20% to 36% and consideration from 10% to 17%. The three climb together because they are tied in the long run. The rise and fall in 2024 comes from the simulated shocks and drivers, and all three series go through it together.</p>
+  </div>
+
+  <p>By the end, sales are 99% above where they started. Awareness is up 82% and consideration 72%. The series are noisy week to week but never drift far apart. That shared path is the long-run relationship the model has to find.</p>
+
+  <p>With your own data, you need weekly series for the same three metrics. You also need spend or reach for each brand channel. Take logs of the three metrics so effects read as percentages. Put spend in £1,000s and reach in 100,000s, then subtract each driver's average. Check how your brand tracker is built: a rolling four-week average smooths away the week-to-week timing the model learns from.</p>
+</section>
+
+<!-- SECTION 2: THE PROBLEM -->
+<section id="problem">
+  <p class="s-label">2 · The problem</p>
+  <h2>An MMM stops counting after a few weeks</h2>
+
+  <p>An MMM and a VECM tell different stories about what happens after a brand burst. The chart below is an illustration, not an estimate. It shows the shape each model assumes for the weekly sales response.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">Weekly sales response after a brand burst</div>
+      <div class="fig-sub">Illustration, scaled so each response peaks at 1</div>
+    </div>
+    <div class="fig-body">
+      <div class="legend">
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="5,3"/></svg> MMM: geometric adstock, decay 0.7</span>
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#2563eb" stroke-width="2.5"/></svg> VECM: error correction, 12% of the gap a week</span>
+      </div>
+      <svg class="chart" id="chartIllus" viewBox="0 0 700 260" preserveAspectRatio="xMinYMin meet"></svg>
+    </div>
+    <p class="fig-cap">The adstock response is down to 3% of its peak by week 10. The error-correction response is 72% of the way to its new level by week 10 and stays there.</p>
+  </div>
+
+  <p><strong>The MMM view.</strong> Adstock carries a share of each week's effect into the next. With a decay of 0.7, 70% carries over, so the effect halves about every two weeks. By week 10 it is gone. Add up every week and the total is worth about three weeks of the first week's effect.</p>
+
+  <p><strong>The VECM view.</strong> A brand burst raises awareness. Awareness leads, so the gain stays. Consideration and sales now sit below where the new awareness level says they should be. Each week they close part of that gap (12% here) until they reach a new and higher level. Sales do not return to where they started.</p>
+
+  <p>That changes how the return adds up. Under adstock the total stops growing after a few weeks. Under error correction every week adds more because sales stay higher for good. The longer you look, the bigger the gap between the two answers. Section 4 sets the fitted model against an adstock curve. By week 52 the VECM's total is 9.7 times larger, though that ratio depends on the decay and the window we pick.</p>
+
+  <div class="callout">
+    <p>An MMM measures how fast a brand burst fades. A VECM measures where sales settle afterwards. For brand spend, the second number is most of the return.</p>
+  </div>
+</section>
+
+<!-- SECTION 3: THE LONG RUN -->
+<section id="longrun">
+  <p class="s-label">3 · The long run</p>
+  <h2>Brand and sales share an equilibrium</h2>
+
+  <p>Before fitting anything, we need to know two things about the data. Which series trend, and how many long-run relationships tie the trending ones together. The package has a test for each.</p>
+
+  <h3>Step 1: Which series trend?</h3>
+
+  <p>A trending series has no fixed level to return to. A stationary one keeps coming back to its average. The difference decides where each series goes in the model:</p>
+
+  <ul class="probs">
+    <li><strong>Trending series are the system.</strong> Sales, awareness and consideration go in as the model's own variables, where they can share long-run relationships.</li>
+    <li><strong>Stationary series are drivers.</strong> Spend, reach and the macro series go in from outside and push the system week by week.</li>
+  </ul>
+
+  <p><code>check_stationarity</code> runs an Augmented Dickey-Fuller test on each column. On our data it finds the three brand metrics trending and the five drivers stationary, which is how the data was built. The test is a guide. A stationary series that returns to its average slowly can look like a trend, especially in a short sample.</p>
+
+  <h3>Step 2: How many long-run relationships?</h3>
+
+  <p>With three trending series there can be up to three long-run relationships. The Johansen trace test in <code>select_coint_rank</code> recommends two. That is the true number: sales track consideration and consideration tracks awareness.</p>
+
+  <p>This test is a guide too. Across 400 simulated datasets from the same process, it returns the true rank about 80% of the time. If you have a good reason to expect a given number of relationships, set it yourself.</p>
+
+  <h3>Step 3: Fit the model</h3>
+
+<pre class="code"><span class="cm"># endog: log levels of the three brand metrics. exog: the five drivers.</span>
+model = BayesianVECM(k_ar_diff=1, coint_rank=2, deterministic="co")
+model.fit(endog, exog=exog, draws=1000, tune=1000, chains=2)</pre>
+
+  <p>PyMC samples the posterior of every parameter, so every number from here on comes with an interval. All intervals in this article are 89%. The sampler checks are clean: no divergences, an r-hat of 1.00 and at least 850 effective draws for every parameter.</p>
+
+  <h3>Step 4: Read the long-run relationships</h3>
+
+  <p>The model returns two sets of parameters that carry the long-run story. <strong>β</strong> says what the relationships are. <strong>α</strong> says how fast each series moves back when it drifts away from one.</p>
+
+  <div class="dtable-wrap">
+    <table class="dtable scen">
+      <caption>The two long-run relationships (β)</caption>
+      <thead>
+        <tr><th>Relationship</th><th>Estimate</th><th>89% interval</th><th>Truth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Sales against consideration</td><td>1.27</td><td>1.24 to 1.31</td><td>1.25</td></tr>
+        <tr><td>Awareness against consideration</td><td>1.13</td><td>1.10 to 1.17</td><td>1.13</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>The series are in logs, so these are long-run elasticities. In the long run, sales are 1.27% higher for every 1% of extra consideration. Both estimates sit close to the truth with tight intervals.</p>
+
+  <p>A long-run relationship should hold on average but not every week. The gap between the two sides should keep returning to zero. If it wanders off and stays away, the model has found the wrong relationship.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">Gaps from the two long-run relationships</div>
+      <div class="fig-sub">Log units, centred on zero</div>
+    </div>
+    <div class="fig-body">
+      <div class="legend">
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#2563eb" stroke-width="2.5"/></svg> Gap 1: sales against consideration</span>
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#7c3aed" stroke-width="2.5"/></svg> Gap 2: awareness against consideration</span>
+      </div>
+      <svg class="chart" id="chartGaps" viewBox="0 0 700 240" preserveAspectRatio="xMinYMin meet"></svg>
+    </div>
+    <p class="fig-cap">Both gaps keep crossing zero across the five years, even through the 2024 spike in the raw series. That is what a real long-run relationship looks like.</p>
+  </div>
+
+  <p>The adjustment speeds say who follows whom. A clear non-zero α means a series is pulled back towards a relationship. An α near zero means it does not adjust, so it leads.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">Adjustment speeds (α) against the truth</div>
+      <div class="fig-sub">How strongly each series responds to each gap, with 89% interval. Gaps as in the chart above.</div>
+    </div>
+    <div class="fig-body">
+      <div class="legend">
+        <span class="li"><svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke="#6b7280" stroke-width="6" stroke-linecap="round"/></svg> 89% interval</span>
+        <span class="li"><svg width="12" height="12"><circle cx="6" cy="6" r="4" fill="#fff" stroke="#6b7280" stroke-width="1.8"/></svg> Estimate</span>
+        <span class="li"><svg width="10" height="14"><line x1="5" y1="0" x2="5" y2="14" stroke="#111827" stroke-width="1.6" stroke-dasharray="3,2"/></svg> Truth</span>
+      </div>
+      <svg class="chart" id="chartAlpha" viewBox="0 0 700 300" preserveAspectRatio="xMinYMin meet"></svg>
+    </div>
+    <p class="fig-cap">Sales close 24% of their gap to consideration each week (α of &minus;0.24). Consideration closes 19% of its gap to awareness (α of 0.19). Awareness barely moves in either relationship.</p>
+  </div>
+
+  <p>That is the funnel, recovered from the data alone. Sales follow consideration and consideration follows awareness. One of awareness's speeds (0.03) sits just off zero, and its interval misses the true value of zero. Section 5 tests both of its speeds together and finds no clear evidence that awareness adjusts at all.</p>
+
+  <p>With your own data, plot the gaps first. If they wander like the raw series, the rank is probably too high or a series is in the wrong group. Go back to steps 1 and 2.</p>
+</section>
+
+<!-- SECTION 4: THE AWARENESS EFFECT -->
+<section id="awareness">
+  <p class="s-label">4 · The awareness effect</p>
+  <h2>A rise in awareness lifts sales for good</h2>
+
+  <p>Suppose awareness jumps unexpectedly this week, after a TV burst for example. What happens to sales over the next year? An <strong>impulse response function</strong> traces the answer through the fitted system, with an interval at every week.</p>
+
+  <p>The jump is one standard deviation of awareness's weekly surprise. Responses are in percent.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">Response to a surprise rise in awareness</div>
+      <div class="fig-sub">% change from where each series would otherwise be, with 89% interval</div>
+    </div>
+    <div class="fig-body">
+      <div class="legend">
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#2563eb" stroke-width="2.5"/></svg> Organic sales</span>
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#059669" stroke-width="2.5"/></svg> Awareness</span>
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#7c3aed" stroke-width="2.5"/></svg> Consideration</span>
+      </div>
+      <svg class="chart" id="chartIrf" viewBox="0 0 700 260" preserveAspectRatio="xMinYMin meet"></svg>
+    </div>
+    <p class="fig-cap">None of the three responses fades. Sales settle 1.08% higher (0.94% to 1.24%) and are still there at week 52.</p>
+  </div>
+
+  <p>Sales move 0.58% in the same week and peak at 1.16% in week 4. They then settle at 1.08% above where they would have been. Awareness leads, so nothing pulls its gain back. Consideration and sales follow it to a new and higher level.</p>
+
+  <p>The gap with an MMM shows up when you add the weeks together. Below, the VECM's response is set against an adstock curve with decay 0.7, scaled to agree with the VECM over the first four weeks.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">Total sales response, VECM against adstock</div>
+      <div class="fig-sub">Sum of the weekly % uplifts, both matched at week 4</div>
+    </div>
+    <div class="fig-body">
+      <div class="legend">
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#2563eb" stroke-width="2.5"/></svg> VECM, with 89% interval</span>
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="5,3"/></svg> Adstock, decay 0.7</span>
+      </div>
+      <svg class="chart" id="chartCum" viewBox="0 0 700 260" preserveAspectRatio="xMinYMin meet"></svg>
+    </div>
+    <p class="fig-cap">The two agree for a month. By week 52 the VECM's total is 9.7 times the adstock's, and the gap keeps growing after that.</p>
+  </div>
+
+  <p>This is not a fitted MMM. The adstock curve is our own choice: a decay of 0.7 scaled to match over the first month. A slower decay would close some of the gap and a longer window would widen it. What does not change is the shape. Any adstock total flattens out, while the VECM's total keeps growing for as long as sales stay higher.</p>
+
+  <h3>Why a generalised impulse response?</h3>
+
+  <p>Shocks to the three metrics are correlated within a week. A surprise in awareness usually comes with some surprise in the others. An impulse response has to decide who moves whom inside the same week. We use the <strong>generalised impulse response (GIRF)</strong> of <a href="https://ideas.repec.org/a/eee/ecolet/v58y1998i1p17-29.html" target="_blank" rel="noopener">Pesaran and Shin (1998)</a>. For a shock to awareness, it lets awareness move the other two in the same week but not the other way round.</p>
+
+  <p>That suits this funnel. Cain (2022) estimated these same-week links on real brand data and found awareness was the only metric that moved the others within the week. Changing the assumption barely matters here anyway. If sales are allowed to move first instead, the week-52 response is 1.01% (0.87% to 1.19%) rather than 1.08%.</p>
+
+<pre class="code">irf = model.irf(steps=52, method="girf")</pre>
+</section>
+
+<!-- SECTION 5: WHAT DRIVES WHAT -->
+<section id="drivers">
+  <p class="s-label">5 · What drives what</p>
+  <h2>Whether, how much, and what it's worth</h2>
+
+  <p>Once the model is fitted, the next question is which metrics lead and which follow. It is a bit like feature importance after training a model, but the package splits it into three questions:</p>
+
+  <ul class="probs">
+    <li><strong>Whether.</strong> Is there a link at all? The evidence tables answer this.</li>
+    <li><strong>How much.</strong> How much of each metric's movement comes from each of the others? The variance decomposition answers this.</li>
+    <li><strong>What it's worth.</strong> How much revenue does a channel bring back? Section 7 answers this.</li>
+  </ul>
+
+  <p>Readers who know Granger causality may expect it as a check before the model. In a system like this it has to come after. One metric can predict another through the long-run pull alone, and a pre-test on weekly changes would miss that. So the tests read both parts from the fitted model.</p>
+
+  <h3>Whether: the evidence tables</h3>
+
+  <p>Each possible link gets an evidence score between 0 and 1. It is the highest credible level at which zero lies outside the posterior. A score of 0.95 or more counts as a link. The score says how sure we are that a link exists, not how big it is. A small, precisely estimated effect can score 1.</p>
+
+  <div class="dtable-wrap">
+    <table class="dtable scen evid">
+      <caption>Evidence for each link between the brand metrics</caption>
+      <thead>
+        <tr><th>Link</th><th>Short run</th><th>Long run</th><th>In the truth?</th></tr>
+      </thead>
+      <tbody>
+        <tr class="hit"><td>Awareness &rarr; consideration</td><td>1.00</td><td>1.00</td><td>Yes</td></tr>
+        <tr class="hit"><td>Consideration &rarr; sales</td><td>1.00</td><td>1.00</td><td>Yes</td></tr>
+        <tr><td>Consideration &rarr; awareness</td><td>0.53</td><td>0.68</td><td>No</td></tr>
+        <tr><td>Sales &rarr; consideration</td><td>0.43</td><td>0.38</td><td>No</td></tr>
+        <tr><td>Awareness &rarr; sales</td><td>0.27</td><td>0.06</td><td>No</td></tr>
+        <tr><td>Sales &rarr; awareness</td><td>0.11</td><td>0.02</td><td>No</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>The short run asks whether last week's change in one metric helps predict this week's change in another. The long run asks whether the level of one pulls on another. Both find the two links in the data and nothing else. A third test asks whether each metric adjusts to the long run at all. Sales and consideration do, with evidence of 1.00. Awareness does not: its evidence is 0.82, below the bar. It leads the system.</p>
+
+  <p>Awareness has no direct link to sales in either table. Its effect on sales runs through consideration, which is how the data was built.</p>
+
+  <p>The same test covers the drivers. All three channels act on awareness, and their sizes come out in the right order.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">Effect of each channel on awareness</div>
+      <div class="fig-sub">% change in awareness in the same week, per unit of the channel</div>
+    </div>
+    <div class="fig-body">
+      <div class="legend">
+        <span class="li"><svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke="#6b7280" stroke-width="6" stroke-linecap="round"/></svg> 89% interval</span>
+        <span class="li"><svg width="12" height="12"><circle cx="6" cy="6" r="4" fill="#fff" stroke="#6b7280" stroke-width="1.8"/></svg> Estimate</span>
+        <span class="li"><svg width="10" height="14"><line x1="5" y1="0" x2="5" y2="14" stroke="#111827" stroke-width="1.6" stroke-dasharray="3,2"/></svg> Truth</span>
+      </div>
+      <svg class="chart" id="chartChannels" viewBox="0 0 700 200" preserveAspectRatio="xMinYMin meet"></svg>
+    </div>
+    <p class="fig-cap">Each interval contains the truth. A unit is £1,000 of brand spend or 100,000 people reached by PR or sponsorship.</p>
+  </div>
+
+  <p>No channel shows a link to sales or consideration directly, and both macro series act on consideration only. Across the eight series, no link is reported that is not in the data.</p>
+
+  <h3>How much: the variance decomposition</h3>
+
+  <p>The forecast error variance decomposition (FEVD) takes the uncertainty in a forecast some weeks ahead and splits it by source. For sales, it says how much of what we can't predict comes from surprises in sales itself, in consideration and in awareness.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">What drives the uncertainty in a sales forecast</div>
+      <div class="fig-sub">Share of forecast uncertainty by source, posterior mean</div>
+    </div>
+    <div class="fig-body">
+      <div class="legend">
+        <span class="li"><svg width="12" height="12"><rect width="12" height="12" fill="#2563eb" opacity=".75"/></svg> Sales surprises</span>
+        <span class="li"><svg width="12" height="12"><rect width="12" height="12" fill="#7c3aed" opacity=".75"/></svg> Consideration surprises</span>
+        <span class="li"><svg width="12" height="12"><rect width="12" height="12" fill="#059669" opacity=".75"/></svg> Awareness surprises</span>
+      </div>
+      <svg class="chart" id="chartFevd" viewBox="0 0 700 260" preserveAspectRatio="xMinYMin meet"></svg>
+    </div>
+    <p class="fig-cap">A week ahead, sales are mostly their own noise. A year ahead, 60% of the uncertainty traces back to awareness.</p>
+  </div>
+
+  <p>The awareness share grows from 13% one week ahead to 37% at a quarter and 60% at a year. Short-run noise washes out over time. The surprises that last take over, and in this system only awareness surprises last.</p>
+
+  <p>Two limits apply. The FEVD covers the three brand metrics only, so the channels do not appear in it. Their importance comes from their effects on awareness above and their return in section 7. Like the evidence tables it describes prediction. It says what moves the forecast, not what would happen if you intervened.</p>
+
+<pre class="code">evidence = model.granger_causality()
+fevd = model.fevd(steps=52, method="girf")</pre>
+</section>
+
+<!-- SECTION 6: A CAMPAIGN -->
+<section id="campaign">
+  <p class="s-label">6 · A campaign</p>
+  <h2>Six months of extra spend, still paying at week 52</h2>
+
+  <p>Impulse responses describe surprises. A brand manager plans spend. So we run the fitted model forward twice for a year. In the baseline every driver sits at its average. In the campaign, brand spend runs one standard deviation above average for 26 weeks and then returns to average. Both runs share the same random shocks, so the difference between them is the effect of the spend alone.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">A 26-week brand campaign</div>
+      <div class="fig-sub">% above the baseline run, with 89% interval. Shading marks the campaign.</div>
+    </div>
+    <div class="fig-body">
+      <div class="legend">
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#059669" stroke-width="2.5"/></svg> Awareness</span>
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#2563eb" stroke-width="2.5"/></svg> Organic sales</span>
+      </div>
+      <svg class="chart" id="chartCampaign" viewBox="0 0 700 260" preserveAspectRatio="xMinYMin meet"></svg>
+    </div>
+    <p class="fig-cap">Awareness stops rising when the campaign ends but keeps its gain. Sales keep climbing towards the new level and are 20.8% up at week 52.</p>
+  </div>
+
+  <p>Awareness is 17.6% above the baseline when the campaign ends and holds at 18.4% to week 52. Sales are 14.6% up when the campaign ends. Half a year later they are 20.8% up (14.8% to 27.0%), because they are still closing the gap to the higher awareness level. An MMM with a few weeks of adstock would report no effect by then.</p>
+
+  <p>Over the year the campaign adds £11,555 of revenue (£7,820 to £15,229), valued at last year's average weekly sales of £1,753. The extra spend costs about £7,470. That is £1.55 back per £1 within the year, below the £2.00 in section 7. The gap is timing. A pound spent in week 26 has only half a year to pay back before the count stops at week 52.</p>
+
+  <p>The simulated business is small, so this campaign is a large push relative to its sales. The shape of the response matters more than its size.</p>
+
+  <h3>The response curve</h3>
+
+  <p>The same comparison can be run at any spend level. Below, brand spend is held at one level for the whole year, from two standard deviations below average to two above.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">Sales uplift across brand spend levels</div>
+      <div class="fig-sub">Average % uplift over the year, with 89% interval</div>
+    </div>
+    <div class="fig-body">
+      <svg class="chart" id="chartCurve" viewBox="0 0 700 260" preserveAspectRatio="xMinYMin meet"></svg>
+    </div>
+    <p class="fig-cap">Holding spend one standard deviation above average for a year lifts sales by 16.2% over that year. The curve is close to a straight line.</p>
+  </div>
+
+  <p>The curve has no saturation point by design. The model is linear in spend, so every extra pound works as hard as the last. The slight upward bend comes only from turning log changes into percentages. This curve shows the size of the effect and its uncertainty. It cannot say where spend stops paying back. To let the data show diminishing returns, transform spend before fitting with logs or a saturation curve.</p>
+</section>
+
+<!-- SECTION 7: RETURN PER CHANNEL -->
+<section id="return">
+  <p class="s-label">7 · Return per channel</p>
+  <h2>£2 per £1 in year one, £11 over five</h2>
+
+  <p>A budget decision needs a return per unit for each channel. So we put one more unit into a channel for one week and trace the extra revenue it brings back. A unit is £1,000 of brand spend, or 100,000 people reached by PR or sponsorship.</p>
+
+  <p>That pulse lifts awareness, and awareness keeps its gain. Sales settle at a higher level and stay there. So the extra revenue never stops: every week adds a little more. The total depends on where we stop counting, so we report three windows.</p>
+
+  <div class="dtable-wrap">
+    <table class="dtable ret">
+      <caption>Extra revenue from one more unit for one week</caption>
+      <thead>
+        <tr><th>Channel</th><th>1 year</th><th>3 years</th><th>5 years</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Brand spend, per £1</td><td>£2.00<span class="ci">£1.41 to £2.58</span></td><td>£6.67<span class="ci">£4.84 to £8.53</span></td><td>£11.34<span class="ci">£8.27 to £14.48</span></td></tr>
+        <tr class="truth"><td>Truth</td><td>£1.83</td><td>£5.92</td><td>£10.02</td></tr>
+        <tr><td>PR, per 100,000 reached</td><td>£1,516<span class="ci">£1,094 to £1,955</span></td><td>£4,856<span class="ci">£3,551 to £6,208</span></td><td>£8,195<span class="ci">£5,994 to £10,489</span></td></tr>
+        <tr class="truth"><td>Truth</td><td>£1,214</td><td>£3,935</td><td>£6,656</td></tr>
+        <tr><td>Sponsorship, per 100,000 reached</td><td>£623<span class="ci">£162 to £1,071</span></td><td>£2,046<span class="ci">£634 to £3,434</span></td><td>£3,469<span class="ci">£1,122 to £5,816</span></td></tr>
+        <tr class="truth"><td>Truth</td><td>£605</td><td>£1,960</td><td>£3,316</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>£1 of brand spend brings back £2.00 within a year and £11.34 within five. Only 18% of the five-year return arrives in the first year. An adstock that fades within a few weeks would capture only part of that first-year figure.</p>
+
+  <div class="fig">
+    <div class="fig-hdr">
+      <div class="fig-title">Revenue from one more unit, building over five years</div>
+      <div class="fig-sub">Cumulative extra revenue per unit, with 89% interval and the true path</div>
+    </div>
+    <div class="fig-body">
+      <div class="legend">
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#d97706" stroke-width="2.5"/></svg> Brand spend (£1,000)</span>
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#db2777" stroke-width="2.5"/></svg> PR (100,000 reached)</span>
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#0891b2" stroke-width="2.5"/></svg> Sponsorship (100,000 reached)</span>
+        <span class="li"><svg width="20" height="3"><line x1="0" y1="1.5" x2="20" y2="1.5" stroke="#111827" stroke-width="1.5" stroke-dasharray="4,3"/></svg> Truth</span>
+      </div>
+      <svg class="chart" id="chartReturn" viewBox="0 0 700 280" preserveAspectRatio="xMinYMin meet"></svg>
+    </div>
+    <p class="fig-cap">None of the curves levels off: each week of higher sales adds to the total. The true path lies inside the interval for every channel at every window.</p>
+  </div>
+
+  <p>A longer window is not more accurate. It answers a different question: how much comes back within the horizon you plan over. Sponsorship has the widest interval for its size, because its effect is the smallest in the data. PR and sponsorship need a cost per 100,000 reached before they can be ranked against brand spend.</p>
+
+  <p>Three things these figures are not:</p>
+
+  <ul class="probs">
+    <li><strong>Not a budget limit.</strong> They are marginal returns, one more unit near current spend. The model has no saturation, so they cannot say where a budget should stop.</li>
+    <li><strong>Not adjusted for growth.</strong> Revenue is valued at last year's average weekly sales. A growing business earns more from the same uplift later on, so the longer windows are conservative.</li>
+    <li><strong>Not free of overlap.</strong> The simulated channels move together, with a correlation of 0.5. The model separates them using the weeks where they differ. Real channels often overlap more, which widens the intervals.</li>
+  </ul>
+
+<pre class="code">response = model.exog_irf(steps=260)  <span class="cm"># log response of each series to one unit of each driver</span></pre>
+
+  <div class="callout">
+    <p>Most of brand's return arrives after the window an MMM looks at. In this simulation, four-fifths of the five-year return comes after the first year.</p>
+  </div>
+</section>
+
+<!-- SECTION 8: YOUR OWN DATA -->
+<section id="yourdata">
+  <p class="s-label">8 · Your own data</p>
+  <h2>Three steps from your data to a return per channel</h2>
+
+  <p>The <a href="https://github.com/raz1470/bayesian_vecm/blob/main/notebooks/guides/01_brand_vecm_walkthrough.ipynb" target="_blank" rel="noopener">guide notebook</a> runs everything in this article. One cell loads the data. Swap it for your own and the rest runs as it is.</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-n" style="background: var(--aware)">1</div>
+      <div>
+        <h3>Prepare</h3>
+        <p>Use weekly data with at least a few years of history. Take logs of the three brand metrics. Put spend in £1,000s and reach in 100,000s, then subtract each driver's average. Decide which series are drivers: a driver must not respond to the brand metrics. If your budget follows last month's sales, spend is not a clean driver and its effect will absorb that feedback. Check how your brand tracker is built. Rolling averages smooth away the timing the model learns from.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n" style="background: var(--consid)">2</div>
+      <div>
+        <h3>Fit</h3>
+        <p>Run the trend test and the rank test. Then fit with one or two lags. Check the sampler before reading anything: no divergences, r-hat at or below 1.01 and effective draws in the hundreds. If it diverges, raise <code>target_accept</code> to 0.95. Take more draws if r-hat is high or effective draws are few. Then plot the gaps from the long-run relationships and check they keep returning to zero.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n" style="background: var(--sales)">3</div>
+      <div>
+        <h3>Read</h3>
+        <p>Start with the impulse response to an awareness surprise: does the sales uplift last? Then the evidence tables and the variance decomposition: does the funnel run the way you expect? Then the campaign scenario and the return per channel. Set a £ cost per unit for each reach channel so all of them come out per £1.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 9: QUESTIONS -->
+<section id="faq">
+  <p class="s-label">9 · Questions</p>
+  <h2>Frequently asked questions</h2>
+
+  <p class="faq-q">Why not just use a longer adstock in my MMM?</p>
+  <p>A longer adstock still decays to zero, just more slowly. You also have to pick the decay rate, and ordinary spend data rarely pins it down. A VECM lets the data say whether sales settle at a new level. It also ties that level to brand metrics you already measure.</p>
+
+  <p class="faq-q">Is this causal?</p>
+  <p>The evidence tables and the variance decomposition are statements about prediction. The campaign and the return per channel read the driver effects as causal, which holds only if spend does not respond to the brand metrics or to sales. If your budget follows performance, some of that feedback ends up in the estimates.</p>
+
+  <p class="faq-q">What about saturation?</p>
+  <p>The model is linear in each driver and has no diminishing returns. Its returns are marginal returns near current spend. To see saturation, transform spend before fitting. Until then treat the returns as a measure of the long tail and not as a budget allocator.</p>
+
+  <p class="faq-q">What if spend takes a week or two to move awareness?</p>
+  <p>Drivers act in the same week. A delayed effect can go in as extra columns of spend lagged by one or two weeks. The total effect of a pulse is then the sum of each column's response, shifted by its lag. Keep the number of lags small, since lagged spend columns move together.</p>
+
+  <p class="faq-q">Does the GIRF ordering matter?</p>
+  <p>For an awareness surprise it barely does here: 1.08% at week 52 against 1.01% with sales allowed to move first. It matters more when shocks are strongly correlated within a week. Read the GIRF for the metric you believe comes first in the funnel, and use an explicit ordering for the others.</p>
+
+  <p class="faq-q">How much data do I need?</p>
+  <p>The long-run part is learned from how the series move together over years, so more history helps. We use five years of weekly data. Even then the rank test finds the true number of relationships about 80% of the time. With less data, expect wider intervals and lean more on what you know about your funnel.</p>
+
+  <p class="faq-q">Why Bayesian?</p>
+  <p>Every quantity in this article, from the impulse response to the return per £1, is computed from each posterior draw in turn. The intervals then carry the uncertainty in every parameter at once.</p>
+</section>
+
+<!-- SECTION 10: BRINGING IT TOGETHER -->
+<section id="together">
+  <p class="s-label">10 · Bringing it together</p>
+  <h2>Brand pays back over years, and you can measure it</h2>
+
+  <p>Brand works through awareness and consideration. When they move up, they settle at new levels that hold sales up for years. A Bayesian VECM models that directly. On simulated data where we know the truth it recovers the funnel and the long-run relationships. The truth sits inside the interval for every headline figure. That covers the long-run elasticities, the channel effects and the return per channel.</p>
+
+  <p>The return is large and slow, and most of it arrives after the first year. A model that stops counting after a few weeks misses most of it.</p>
+
+  <h3>What comes next</h3>
+
+  <p>The model is linear, so it measures the long tail but not where spend stops paying back. Saturation is the next step before it can allocate a budget. The other is real data: the same steps, run on a real brand's weekly tracker and spend.</p>
+
+  <div class="callout">
+    <p>The question is not whether brand works over the long run. It is how much of that return your current model can see. A VECM lets you measure it.</p>
+  </div>
+</section>
+
+<div class="cta">
+  <p>Want to measure the long tail on your own brand data?</p>
+  <a class="cta-btn" href="https://github.com/raz1470/bayesian_vecm">Try the package →</a>
+</div>
+
+<footer>
+  <p><code>bayesian_vecm</code> is an open-source Python package for Bayesian vector error correction models, built on PyMC. Source and notebooks: <a href="https://github.com/raz1470/bayesian_vecm" target="_blank" rel="noopener">github.com/raz1470/bayesian_vecm</a></p>
+</footer>
+
+</main>
+
