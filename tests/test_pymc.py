@@ -594,6 +594,53 @@ class TestHorseshoePrior:
         # K=2, delta_x_cols = K*k + 1 = 3
         assert value.shape == (2, 3)
 
+    def test_horseshoe_is_non_centred(self, design_k1):
+        """The free RV is Gamma_z. Gamma is a deterministic built from it."""
+        model = build_pymc_model(
+            design_k1,
+            k_ar_diff=1,
+            coint_rank=1,
+            deterministic="n",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        free = {rv.name for rv in model.free_RVs}
+        deterministics = {d.name for d in model.deterministics}
+        assert "Gamma_z" in free
+        assert "Gamma" not in free
+        assert "Gamma" in deterministics
+
+    def test_horseshoe_leaves_the_constant_unshrunk(self):
+        """Under "co" only the lag columns are shrunk. The constant gets Gamma_det."""
+        data = _synthetic_cointegrated()
+        design = cointegration_design(data, k_ar_diff=1, deterministic="co")
+        model = build_pymc_model(
+            design,
+            k_ar_diff=1,
+            coint_rank=1,
+            deterministic="co",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        with model:
+            lam_val = pm.draw(model.named_vars["Gamma_lambda"], draws=1, random_seed=0)
+            det_val = pm.draw(model.named_vars["Gamma_det"], draws=1, random_seed=0)
+        assert lam_val.shape == (2, 2)
+        assert det_val.shape == (2, 1)
+
+    def test_horseshoe_with_only_a_constant_has_no_shrinkage(self):
+        """k_ar_diff=0 with "co" leaves one constant column and nothing to shrink."""
+        data = _synthetic_cointegrated()
+        design = cointegration_design(data, k_ar_diff=0, deterministic="co")
+        model = build_pymc_model(
+            design,
+            k_ar_diff=0,
+            coint_rank=1,
+            deterministic="co",
+            priors={"Gamma": {"dist": "Horseshoe"}},
+        )
+        names = set(model.named_vars)
+        assert "Gamma" in names
+        assert "Gamma_tau" not in names
+
     def test_horseshoe_k0_silently_no_gamma(self):
         """With k=0 and no outside term there is no Gamma block; horseshoe spec ignored."""
         data = _synthetic_cointegrated()
@@ -701,7 +748,7 @@ class TestCentredConstant:
         assert "Gamma" not in free
         assert "Gamma" in {d.name for d in model.deterministics}
 
-    def test_co_horseshoe_samples_gamma_centred(self):
+    def test_co_horseshoe_builds_gamma_centred(self):
         design = cointegration_design(_shifted_trivariate(), k_ar_diff=1, deterministic="co")
         model = build_pymc_model(
             design,
@@ -711,8 +758,9 @@ class TestCentredConstant:
             priors={"Gamma": {"dist": "Horseshoe"}},
         )
         free = {rv.name for rv in model.free_RVs}
-        assert {"Gamma_centred", "Gamma_tau", "Gamma_lambda", "Gamma_c2"} <= free
-        assert "Gamma" in {d.name for d in model.deterministics}
+        assert {"Gamma_z", "Gamma_det", "Gamma_tau", "Gamma_lambda", "Gamma_c2"} <= free
+        deterministics = {d.name for d in model.deterministics}
+        assert {"Gamma_centred", "Gamma"} <= deterministics
 
     def test_co_constant_maps_back(self):
         design = cointegration_design(_shifted_trivariate(), k_ar_diff=1, deterministic="co")
