@@ -53,21 +53,36 @@ The ranges cover the test with and without `exog`.
 
 ### Setting lags generously with the horseshoe prior
 
-`priors={"Gamma": {"dist": "Horseshoe"}}` is meant to let you set
-`k_ar_diff` long and shrink the lags you do not need. It does not sample
-well at present, so use the default Normal prior with the HQ choice.
+When the criteria disagree, set `k_ar_diff` one or two lags long and put a
+regularised horseshoe prior on Γ. It shrinks the lags the data does not
+support.
 
-Simulated data, 2 chains, 1,000 draws, `target_accept=0.90`:
+```python
+model = BayesianVECM(
+    k_ar_diff=3,
+    coint_rank=2,
+    deterministic="co",
+    priors={"Gamma": {"dist": "Horseshoe"}},
+)
+model.fit(endog, exog=exog, target_accept=0.99)
+```
 
-| `k_ar_diff` | Prior | Divergences | Max r-hat | Min bulk ESS |
-|---|---|---|---|---|
-| 1 | Normal | 0 | 1.003 | 850 |
-| 1 | Horseshoe | 253 | 1.072 | 30 |
-| 3 | Normal | 0 | 1.007 | 902 |
-| 3 | Horseshoe | 303 | 1.128 | 21 |
+Simulated data, true `k_ar_diff=1`, 2 chains and 1,000 draws:
 
-The Normal prior with `k_ar_diff=3` still samples cleanly. The two spare lags
-come out near zero but not at it: their mean absolute coefficient is 0.07.
+| `k_ar_diff` | Prior | `target_accept` | Divergences | Max r-hat | Min bulk ESS | Spare lags, mean \|Γ\| |
+|---|---|---|---|---|---|---|
+| 1 | Normal | 0.90 | 0 | 1.003 | 850 | |
+| 3 | Normal | 0.90 | 0 | 1.007 | 902 | 0.068 |
+| 1 | Horseshoe | 0.99 | 2 | 1.003 | 935 | |
+| 3 | Horseshoe | 0.99 | 1 | 1.005 | 780 | 0.008 |
+
+- The horseshoe shrinks the two spare lags about eight times further than
+  the Normal prior.
+- It needs `target_accept=0.99`. At 0.90 it gives 28 divergences with one
+  lag and 97 with three.
+- `tau_scale=0.1` with `target_accept=0.95` gave 756 divergences at three
+  lags. Keep the default of 1.0.
+- With the lag order from HQ, the default Normal prior is enough.
 
 ## 2. Rank
 
