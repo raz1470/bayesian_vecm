@@ -12,8 +12,9 @@ The primary motivation is **brand marketing**: brand spend and revenue are often
 
 | | |
 |---|---|
-| 📖 [VECM Guide](https://raz1470.github.io/bayesian_vecm/vecm_guide.html) | Visual explainer: cointegration, error correction, GIRFs, and the Bayesian treatment — with diagrams and collapsible maths |
-| 📓 [Practitioner Walkthrough](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/01_brand_vecm_walkthrough.ipynb) | End-to-end notebook: synthetic brand data → rank selection → horseshoe fit → GIRF fan charts → counterfactual ROI |
+| 📖 [Walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html) | How long does brand last? The method, the tests and the results on simulated brand data |
+| 📓 [Practitioner Walkthrough](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/01_brand_vecm_walkthrough.ipynb) | End-to-end notebook: synthetic brand data → rank selection → fit → GIRF fan charts → counterfactual ROI |
+| 🧭 [Choosing the rank and the lags](docs/choosing_rank_and_lags.md) | Which tests to use and how often they find the truth on simulated data |
 
 ---
 
@@ -112,7 +113,9 @@ uplift = high["posterior_predictive"]["y"] - low["posterior_predictive"]["y"]
 
 ## Horseshoe priors
 
-With real marketing data, the right lag order `k` is unknown. Setting `k_ar_diff` generously and applying a horseshoe prior shrinks irrelevant lag coefficients toward zero while preserving genuine short-run dynamics — more principled than hard lag selection via information criteria.
+With real marketing data, the right lag order `k` is unknown. Setting `k_ar_diff` generously and applying a horseshoe prior is meant to shrink irrelevant lag coefficients toward zero.
+
+> The horseshoe prior does not sample well at present (hundreds of divergences on the simulated brand data). Until it is fixed, choose `k_ar_diff` with the HQ criterion and keep the default Normal prior. See [Choosing the rank and the lags](docs/choosing_rank_and_lags.md).
 
 ```python
 model = BayesianVECM(
