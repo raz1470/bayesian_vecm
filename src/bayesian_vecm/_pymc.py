@@ -157,8 +157,25 @@ The hierarchy is:
 
 The slab variance :math:`c^2` acts as a finite upper bound on the effective
 prior scale, preventing the heavy tails of the pure horseshoe from causing
-sampling pathologies.  Auxiliary RVs added to the graph: ``Gamma_tau``,
-``Gamma_lambda``, ``Gamma_c2``.
+sampling pathologies.
+
+Two choices keep the sampler stable:
+
+* **Non-centred.** The free variable is
+  :math:`z_{ij} \\sim \\mathcal{N}(0, 1)` and
+  :math:`\\Gamma_{ij} = z_{ij} \\tau \\tilde{\\lambda}_{ij}` is a
+  deterministic. Drawing :math:`\\Gamma` directly from
+  :math:`\\mathcal{N}(0, \\tau^2 \\tilde{\\lambda}^2)` gives a funnel
+  that NUTS cannot cross.
+* **Lags only.** The shrinkage covers the lag columns of :math:`\\Gamma`.
+  Any outside deterministic column (the constant under ``"co"``, the trend
+  under ``"lo"``) keeps the default ``Normal(0, 0.5)`` prior, so the drift
+  is not pulled towards zero.
+
+Auxiliary RVs added to the graph: ``Gamma_tau``, ``Gamma_lambda``,
+``Gamma_c2``, ``Gamma_z`` and, with an outside deterministic term,
+``Gamma_det``. Expect a few divergences at the default ``target_accept``.
+``target_accept=0.99`` removes most of them.
 """
 
 from __future__ import annotations
@@ -345,6 +362,7 @@ def build_pymc_model(
                 gamma = _build_horseshoe_gamma(
                     name=gamma_name,
                     shape=(n_vars, delta_x_cols),
+                    n_lag_cols=n_vars * k_ar_diff,
                     **_horseshoe_kwargs(user_gamma_spec),
                 )
             else:
@@ -494,6 +512,7 @@ def _horseshoe_kwargs(user_spec: dict[str, Any]) -> dict[str, float]:
 def _build_horseshoe_gamma(
     *,
     shape: tuple[int, int],
+    n_lag_cols: int | None = None,
     name: str = "Gamma",
     tau_scale: float = 1.0,
     slab_scale: float = 2.0,
@@ -522,6 +541,10 @@ def _build_horseshoe_gamma(
     ----------
     shape
         ``(K, delta_x_cols)`` — the shape of the Gamma block.
+    n_lag_cols
+        Number of leading lag columns, ``K * k_ar_diff``. Only these are
+        shrunk. The remaining columns hold outside deterministic terms and
+        get a ``Normal(0, 0.5)`` prior. ``None`` shrinks every column.
     name
         Name of the returned random variable. ``"Gamma_centred"`` under
         ``"co"``, where ``Gamma`` itself is a deterministic.
@@ -535,15 +558,24 @@ def _build_horseshoe_gamma(
     Returns
     -------
     Any
-        The ``pm.Normal("Gamma", ...)`` random variable with the RHS
-        hierarchical sigma.  Auxiliary RVs ``Gamma_tau``, ``Gamma_lambda``,
-        and ``Gamma_c2`` are also added to the active model context.
+        A deterministic named ``name`` with the full ``shape``. The free
+        RVs ``Gamma_tau``, ``Gamma_lambda``, ``Gamma_c2``, ``Gamma_z`` and,
+        when there are deterministic columns, ``Gamma_det`` are added to
+        the active model context.
     """
+    n_rows, n_cols = shape
+    n_lag = n_cols if n_lag_cols is None else n_lag_cols
+    n_det = n_cols - n_lag
+    if n_lag == 0:
+        # Nothing to shrink: only a deterministic column, e.g. k_ar_diff=0
+        # with "co". Use the default prior.
+        return pm.Normal(name, mu=0.0, sigma=0.5, shape=shape)
+
     # Global shrinkage: one scalar shared across all Gamma entries.
     tau = pm.HalfCauchy("Gamma_tau", beta=tau_scale)
 
-    # Local shrinkage: one per Gamma entry.
-    lam = pm.HalfCauchy("Gamma_lambda", beta=1.0, shape=shape)
+    # Local shrinkage: one per lag entry.
+    lam = pm.HalfCauchy("Gamma_lambda", beta=1.0, shape=(n_rows, n_lag))
 
     # Slab variance: regularises large local scales to prevent divergences.
     c2 = pm.InverseGamma(
@@ -557,7 +589,14 @@ def _build_horseshoe_gamma(
     # lam_tilde -> sqrt(c2)/tau when tau*lam >> sqrt(c2)  (caps large entries)
     lam_tilde = lam * pt.sqrt(c2) / pt.sqrt(c2 + tau**2 * lam**2)
 
-    return pm.Normal(name, mu=0.0, sigma=tau * lam_tilde, shape=shape)
+    # Non-centred: sample a standard normal and scale it.
+    z = pm.Normal("Gamma_z", mu=0.0, sigma=1.0, shape=(n_rows, n_lag))
+    lags = z * tau * lam_tilde
+    if n_det == 0:
+        return pm.Deterministic(name, lags)
+
+    det = pm.Normal("Gamma_det", mu=0.0, sigma=0.5, shape=(n_rows, n_det))
+    return pm.Deterministic(name, pt.concatenate([lags, det], axis=1))
 
 
 def _build_sigma(*, n_vars: int, user_spec: dict[str, Any] | None) -> Any:

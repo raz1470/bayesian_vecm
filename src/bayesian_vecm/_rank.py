@@ -20,10 +20,10 @@ Notes
 -----
 Rank selection is a *frequentist* pre-processing step — we use the Johansen
 trace test to settle the structural question of how many cointegrating
-relations exist before handing off to the Bayesian sampler.  The horseshoe
-prior on :math:`\\Gamma` makes this less critical for lag selection (set
-``k_ar_diff`` generously and let the prior shrink), but the rank :math:`r`
-is not a continuous parameter and must still be specified explicitly.
+relations exist before handing off to the Bayesian sampler.  The rank
+:math:`r` is not a continuous parameter, so it must be set explicitly.
+``docs/choosing_rank_and_lags.md`` covers how often the test finds the
+true rank on simulated brand data.
 """
 
 from __future__ import annotations
