@@ -56,6 +56,7 @@ were accepted at construction time to lock in the public API, but raise
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -615,6 +616,9 @@ class BayesianVECM:
         The model is linear in the drivers. The result is a marginal
         effect near the levels seen in the data and shows no saturation.
 
+        Only ``exog`` is covered. Variables passed as ``exog_coint`` enter
+        the cointegrating relation and have no response here.
+
         Parameters
         ----------
         steps
@@ -814,11 +818,27 @@ class BayesianVECM:
             If ``steps`` is less than ``1``, or if the model was fitted with
             ``exog`` but ``exog_future`` is not provided (or has the wrong
             shape).
+
+        Warns
+        -----
+        UserWarning
+            If the model was fitted with ``exog_coint``. The forecast drops
+            the ``exog_coint`` rows of :math:`\\beta`, so the
+            error-correction term leaves those variables out.
         """
         if not hasattr(self, "idata_"):
             raise RuntimeError(_NOT_FITTED_MSG)
         if steps < 1:
             raise ValueError(f"steps must be at least 1; got steps={steps}")
+        if getattr(self, "exog_coint_", None) is not None:
+            warnings.warn(
+                "This model was fitted with exog_coint, but the forecast does not "
+                "use it. The exog_coint rows of beta are dropped, so the "
+                "error-correction term leaves those variables out and the "
+                "forecast is biased whenever their contribution is not zero.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # Validate exog_future when the model was fitted with exog.
         exog_future_arr = None

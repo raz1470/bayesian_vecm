@@ -10,6 +10,8 @@ Coverage
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -338,6 +340,33 @@ class TestForecastExog:
         # Should not raise — exog_future is irrelevant when model has no exog.
         result = model.sample_posterior_predictive(self.STEPS, exog_future=x_fut, random_seed=0)
         assert result.posterior_predictive["y"].shape[-2] == self.STEPS
+
+    def test_forecast_warns_when_fitted_with_exog_coint(self):
+        """The forecast drops the exog_coint rows of beta, so it must say so."""
+        from bayesian_vecm import BayesianVECM
+
+        model = BayesianVECM(k_ar_diff=1, coint_rank=1, deterministic="n")
+        model.fit(
+            _make_endog(),
+            exog_coint=_make_exog(),
+            draws=20,
+            tune=20,
+            chains=1,
+            cores=1,
+            progressbar=False,
+            random_seed=0,
+        )
+        with pytest.warns(UserWarning, match="exog_coint"):
+            result = model.sample_posterior_predictive(self.STEPS, random_seed=0)
+        assert result.posterior_predictive["y"].shape[-2] == self.STEPS
+
+    def test_forecast_does_not_warn_without_exog_coint(self, fitted_model_with_exog):
+        model, _, _ = fitted_model_with_exog
+        x_fut = np.ones((self.STEPS, M))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            model.sample_posterior_predictive(self.STEPS, exog_future=x_fut, random_seed=0)
+        assert not any("exog_coint" in str(w.message) for w in caught)
 
     def test_forecast_reproducible_with_seed(self, fitted_model_with_exog):
         model, _, _ = fitted_model_with_exog
