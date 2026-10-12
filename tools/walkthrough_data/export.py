@@ -268,21 +268,6 @@ def main() -> None:
         "exog": records(exog_table),
     }
 
-    fevd = model.fevd(steps=52, method="girf")
-    fevd_mean = fevd.mean(dim=["chain", "draw"])
-    out["fevd"] = {
-        "horizon": fevd["horizon"].values.tolist(),
-        "shares": {
-            resp: {
-                shock: np.round(
-                    fevd_mean.sel(response_variable=resp, shock_variable=shock).values, 4
-                ).tolist()
-                for shock in names
-            }
-            for resp in names
-        },
-    }
-
     # --- 6 · A campaign ------------------------------------------------------------
     steps, uplift_weeks = 52, 26
     spend_sd = float(exog["brand_spend"].std())

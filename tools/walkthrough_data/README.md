@@ -42,8 +42,8 @@ equal-tailed.
 | 8 · A campaign | `campaign`, `response_curve` | §9, §9a |
 | 9 · Return per channel | `return_per_channel` | §9b |
 
-`fevd` is still exported but no longer drawn. `holdout` refits on the first
-208 weeks, so the export takes about four minutes.
+`holdout` refits on the first 208 weeks, so the export takes about four
+minutes.
 
 ## What has been checked
 
