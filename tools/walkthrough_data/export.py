@@ -36,6 +36,9 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 # Same settings as the notebook's fast run, so the numbers match its committed outputs.
 DRAWS, TUNE, CHAINS = 1000, 1000, 2
 SEED = 42
+HOLDOUT = 52  # weeks held back for the out-of-sample check
+SPURIOUS_SEED = 7  # one pair of unrelated random walks for the illustration
+SPURIOUS_PAIRS = 1000
 CI_LO, CI_HI = 5.5, 94.5
 OUT = Path(__file__).parent / "results" / "walkthrough.json"
 
@@ -96,13 +99,59 @@ def main() -> None:
         "vecm": np.round(1.0 - (1.0 - 0.12) ** weeks, 4).tolist(),
     }
 
+    # --- What a VECM is: spurious regression against cointegration ----------------
+    from statsmodels.tsa.stattools import coint
+
+    def ols(y: np.ndarray, x: np.ndarray) -> tuple[float, float, float, np.ndarray]:
+        """Slope, its t-statistic, R squared and residuals of y on x with a constant."""
+        design = np.column_stack([np.ones_like(x), x])
+        coef, *_ = np.linalg.lstsq(design, y, rcond=None)
+        resid = y - design @ coef
+        s2 = resid @ resid / (len(y) - 2)
+        se = np.sqrt(s2 * np.linalg.inv(design.T @ design)[1, 1])
+        r2 = 1 - resid @ resid / ((y - y.mean()) @ (y - y.mean()))
+        return float(coef[1]), float(coef[1] / se), float(r2), resid
+
+    rng = np.random.default_rng(SPURIOUS_SEED)
+    walks = rng.normal(size=(len(endog), 2)).cumsum(axis=0)
+    slope, t_stat, r2, _ = ols(walks[:, 0], walks[:, 1])
+    significant = 0
+    pair_rng = np.random.default_rng(0)
+    for _ in range(SPURIOUS_PAIRS):
+        pair = pair_rng.normal(size=(len(endog), 2)).cumsum(axis=0)
+        significant += abs(ols(pair[:, 0], pair[:, 1])[1]) > 1.96
+    _, _, eg_r2, _ = ols(endog["organic_sales"].values, endog["brand_consideration"].values)
+    out["spurious"] = {
+        "walk_a": np.round(walks[:, 0], 3).tolist(),
+        "walk_b": np.round(walks[:, 1], 3).tolist(),
+        "slope": round(slope, 3),
+        "t_stat": round(t_stat, 1),
+        "r2": round(r2, 2),
+        "coint_p": round(float(coint(walks[:, 0], walks[:, 1])[1]), 3),
+        "pairs": SPURIOUS_PAIRS,
+        "share_significant_pct": round(100 * significant / SPURIOUS_PAIRS, 1),
+        "sales_consideration_r2": round(eg_r2, 3),
+        "sales_consideration_coint_p": round(
+            float(coint(endog["organic_sales"], endog["brand_consideration"])[1]), 4
+        ),
+    }
+
     # --- 3 · The long run ----------------------------------------------------------
     stationarity = check_stationarity(pd.concat([endog, exog], axis=1))
-    out["stationarity"] = {"endog": stationarity.endog, "exog": stationarity.exog}
-    coint = select_coint_rank(endog, det_order=0, k_ar_diff=1)
-    out["rank"] = {"recommended": int(coint.rank)}
+    out["stationarity"] = {
+        "endog": stationarity.endog,
+        "exog": stationarity.exog,
+        "table": records(stationarity.table),
+    }
+    coint_rank = select_coint_rank(endog, det_order=0, k_ar_diff=1)
+    out["rank"] = {
+        "recommended": int(coint_rank.rank),
+        "trace": np.round(coint_rank.test_stats, 2).tolist(),
+        "crit_5pct": np.round(coint_rank.crit_vals, 2).tolist(),
+    }
 
-    model = BayesianVECM(k_ar_diff=1, coint_rank=max(coint.rank, 1), deterministic="co")
+    model = BayesianVECM(k_ar_diff=1, coint_rank=max(coint_rank.rank, 1), deterministic="co")
+    fit_start = time.time()
     model.fit(
         endog,
         exog=exog,
@@ -113,12 +162,31 @@ def main() -> None:
         random_seed=SEED,
         progressbar=False,
     )
+    fit_start_elapsed = time.time() - fit_start
     summary = model.summary().apply(pd.to_numeric, errors="coerce")
     out["sampler"] = {
         "divergences": int(model.idata.sample_stats["diverging"].sum()),
         "max_rhat": round(float(summary["r_hat"].max()), 3),
         "min_ess_bulk": int(summary["ess_bulk"].min()),
+        "min_ess_tail": int(summary["ess_tail"].min()),
+        "fit_s": round(fit_start_elapsed, 0),
     }
+
+    # In-sample fit of the weekly changes and residual checks.
+    fitted = model.fittedvalues.mean(("chain", "draw")).values
+    resid = model.resid.mean(("chain", "draw")).values
+    actual = fitted + resid
+    whiteness = model.test_whiteness(lags=10)
+    normality = model.test_normality()
+    out["fit"] = [
+        {
+            "variable": name,
+            "r2": round(float(1 - resid[:, i].var() / actual[:, i].var()), 3),
+            "lb_p": round(float(whiteness["p_value"].iloc[i]), 3),
+            "jb_p": round(float(normality["p_value"].iloc[i]), 3),
+        }
+        for i, name in enumerate(names)
+    ]
 
     post = model.idata.posterior
     r = post["alpha"].shape[-1]
@@ -323,6 +391,57 @@ def main() -> None:
         "channels": per_channel,
         "brand_share_year1_pct": round(float(share_y1.mean()) * 100, 1),
     }
+
+    # --- Hold-out forecast: fit on the first four years, forecast the fifth ------------
+    train = len(endog) - HOLDOUT
+    holdout_model = BayesianVECM(k_ar_diff=1, coint_rank=model.coint_rank, deterministic="co")
+    holdout_model.fit(
+        endog.iloc[:train],
+        exog=exog.iloc[:train],
+        draws=DRAWS,
+        tune=TUNE,
+        chains=CHAINS,
+        target_accept=0.90,
+        random_seed=SEED,
+        progressbar=False,
+    )
+    fc = holdout_model.sample_posterior_predictive(
+        HOLDOUT, exog_future=exog.iloc[train:].values, random_seed=0
+    )
+    fc_y = fc.posterior_predictive["y"].values.reshape(-1, HOLDOUT, k)
+    test = endog.iloc[train:].values
+    hist = endog.iloc[:train].values
+    drift = (hist[-1] - hist[0]) / (train - 1)
+    naive = hist[-1] + drift * np.arange(1, HOLDOUT + 1)[:, None]
+    fc_levels = np.exp(fc_y)
+    fc_mean = fc_levels.mean(axis=0)
+    fc_lo, fc_hi = np.percentile(fc_levels, [CI_LO, CI_HI], axis=0)
+    actual_levels = np.exp(test)
+    naive_levels = np.exp(naive)
+    holdout = {
+        "train_end": str(endog.index[train - 1].date()),
+        "weeks": HOLDOUT,
+        "dates": [str(d.date()) for d in endog.index[train - 26 :]],
+        "history_sales": np.round(np.exp(hist[-26:, sales_idx]), 1).tolist(),
+        "series": {},
+    }
+    for i, name in enumerate(names):
+        inside = (actual_levels[:, i] >= fc_lo[:, i]) & (actual_levels[:, i] <= fc_hi[:, i])
+        holdout["series"][name] = {
+            "actual": np.round(actual_levels[:, i], 2).tolist(),
+            "mean": np.round(fc_mean[:, i], 2).tolist(),
+            "lo": np.round(fc_lo[:, i], 2).tolist(),
+            "hi": np.round(fc_hi[:, i], 2).tolist(),
+            "naive": np.round(naive_levels[:, i], 2).tolist(),
+            "mape_vecm": round(
+                float(np.mean(np.abs(fc_mean[:, i] / actual_levels[:, i] - 1)) * 100), 1
+            ),
+            "mape_naive": round(
+                float(np.mean(np.abs(naive_levels[:, i] / actual_levels[:, i] - 1)) * 100), 1
+            ),
+            "coverage_pct": round(float(inside.mean()) * 100, 0),
+        }
+    out["holdout"] = holdout
 
     out["meta"]["runtime_s"] = round(time.time() - start, 1)
     OUT.parent.mkdir(parents=True, exist_ok=True)

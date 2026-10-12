@@ -136,6 +136,23 @@ function drawIllus(svg, narrow) {
   f.g.appendChild(el('text', { x: x10 + 6, y: f.sy(il.mmm[10]) - 8, 'font-size': fn, fill: COLOR.mmm, 'font-weight': 700 }, `${Math.round(il.mmm[10] * 100)}% by week 10`));
 }
 
+// ── What a VECM is: two unrelated random walks ───────────────────────────────
+function drawSpurious(svg, narrow) {
+  const sp = DATA.spurious, n = sp.walk_a.length;
+  const all = sp.walk_a.concat(sp.walk_b);
+  const lo = Math.floor(Math.min(...all) / 10) * 10, hi = Math.ceil(Math.max(...all) / 10) * 10;
+  const ticks = []; for (let v = lo; v <= hi; v += 10) ticks.push([v, String(v)]);
+  const f = frame(svg, narrow, {
+    hW: 240, hN: 220, x: [0, n - 1], y: [lo, hi],
+    xTicks: [0, 52, 104, 156, 208, 259].map(v => [v, String(v)]),
+    xTicksN: [0, 104, 208].map(v => [v, String(v)]),
+    yTicks: ticks, xLabel: 'Week', yLabel: 'Level',
+  });
+  hline(f, 0);
+  line(f, range(n), sp.walk_a, COLOR.sales, { width: narrow ? 1.2 : 1.4 });
+  line(f, range(n), sp.walk_b, COLOR.brand, { width: narrow ? 1.2 : 1.4 });
+}
+
 // ── Forest: estimate, interval and truth per row ─────────────────────────────
 // rows: [{ label, mean, lo, hi, truth, color }]. On a phone each label sits on
 // its own line above its bar, so long labels never squeeze the plot.
@@ -205,6 +222,32 @@ function drawAlpha(svg, narrow) {
   });
 }
 
+// ── 5 · The fit: hold-out forecast of sales ──────────────────────────────────
+function drawHoldout(svg, narrow) {
+  const ho = DATA.holdout, s = ho.series.organic_sales;
+  const nh = ho.history_sales.length, n = nh + ho.weeks;
+  const xsH = range(nh), xsF = range(ho.weeks).map(i => nh + i);
+  const vals = ho.history_sales.concat(s.actual, s.lo, s.hi, s.naive);
+  const lo = Math.floor(Math.min(...vals) / 200) * 200, hi = Math.ceil(Math.max(...vals) / 200) * 200;
+  const ticks = []; for (let v = lo; v <= hi; v += 400) ticks.push([v, `£${(v / 1000).toFixed(1)}k`]);
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const lab = d => `${MON[+d.slice(5, 7) - 1]} ${d.slice(2, 4)}`;
+  const xt = [0, nh, nh + 13, nh + 26, nh + 39].map(i => [i, lab(ho.dates[i])]);
+  const f = frame(svg, narrow, {
+    hW: 260, hN: 240, x: [0, n - 1], y: [lo, hi],
+    xTicks: xt, xTicksN: [xt[0], xt[1], xt[3]],
+    yTicks: ticks, xLabel: 'Week', yLabel: 'Weekly organic sales',
+  });
+  const xc = f.sx(nh - 0.5);
+  f.g.appendChild(el('line', { x1: xc, y1: f.m.top, x2: xc, y2: f.m.top + f.ph, stroke: '#9ca3af', 'stroke-width': 1, 'stroke-dasharray': '2,3' }));
+  const fn = narrow ? FSN.note : FS.note;
+  f.g.appendChild(el('text', { x: xc + 6, y: f.m.top + 14, 'font-size': fn, fill: '#6b7280', 'font-weight': 700 }, 'Forecast from here'));
+  bandArea(f, xsF, s.lo, s.hi, COLOR.sales, 0.16);
+  line(f, xsF, s.naive, COLOR.mmm, { dash: '6,4' });
+  line(f, xsF, s.mean, COLOR.sales);
+  line(f, xsH.concat(xsF), ho.history_sales.concat(s.actual), COLOR.truth, { width: narrow ? 1 : 1.2 });
+}
+
 // ── 4 · The awareness effect ─────────────────────────────────────────────────
 function drawIrf(svg, narrow) {
   const ir = DATA.irf_awareness;
@@ -248,22 +291,6 @@ function drawChannels(svg, narrow) {
     x: [0, 2.5], ticks: [0, 0.5, 1, 1.5, 2, 2.5], labelW: 170,
     fmtTick: v => `${v}%`, axisLabel: '% change in awareness per unit',
   });
-}
-
-function drawFevd(svg, narrow) {
-  const fv = DATA.fevd, sh = fv.shares.organic_sales;
-  const f = frame(svg, narrow, {
-    hW: 260, hN: 240, x: [1, 52], y: [0, 1],
-    xTicks: [1, 13, 26, 39, 52].map(v => [v, String(v)]),
-    yTicks: [0, 0.25, 0.5, 0.75, 1].map(v => [v, `${Math.round(v * 100)}%`]),
-    xLabel: 'Weeks ahead', yLabel: 'Share of uncertainty',
-  });
-  let lower = fv.horizon.map(() => 0);
-  for (const k of ['organic_sales', 'brand_consideration', 'brand_awareness']) {
-    const upper = lower.map((v, i) => v + sh[k][i]);
-    bandArea(f, fv.horizon, lower, upper, VCOL[k], 0.75);
-    lower = upper;
-  }
 }
 
 // ── 6 · A campaign ───────────────────────────────────────────────────────────
@@ -326,6 +353,8 @@ function drawReturn(svg, narrow) {
   }
 }
 
+chart('chartSpurious', '0 0 700 240', s => drawSpurious(s, false), s => drawSpurious(s, true));
+chart('chartHoldout', '0 0 700 260', s => drawHoldout(s, false), s => drawHoldout(s, true));
 chart('chartSeries', '0 0 700 260', s => drawSeries(s, false), s => drawSeries(s, true));
 chart('chartIllus', '0 0 700 260', s => drawIllus(s, false), s => drawIllus(s, true));
 chart('chartGaps', '0 0 700 240', s => drawGaps(s, false), s => drawGaps(s, true));
@@ -333,7 +362,6 @@ chart('chartAlpha', '0 0 700 300', s => drawAlpha(s, false), s => drawAlpha(s, t
 chart('chartIrf', '0 0 700 260', s => drawIrf(s, false), s => drawIrf(s, true));
 chart('chartCum', '0 0 700 260', s => drawCum(s, false), s => drawCum(s, true));
 chart('chartChannels', '0 0 700 200', s => drawChannels(s, false), s => drawChannels(s, true));
-chart('chartFevd', '0 0 700 260', s => drawFevd(s, false), s => drawFevd(s, true));
 chart('chartCampaign', '0 0 700 260', s => drawCampaign(s, false), s => drawCampaign(s, true));
 chart('chartCurve', '0 0 700 260', s => drawCurve(s, false), s => drawCurve(s, true));
 chart('chartReturn', '0 0 700 280', s => drawReturn(s, false), s => drawReturn(s, true));

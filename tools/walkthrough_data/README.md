@@ -8,7 +8,7 @@ self-contained. Nothing here runs in CI.
 Run from the repo root:
 
 ```
-uv run python tools/walkthrough_data/export.py   # refit, about two minutes
+uv run python tools/walkthrough_data/export.py   # refit, about four minutes
 python tools/walkthrough_data/page/build.py      # rebuild docs/walkthrough.html
 ```
 
@@ -32,13 +32,18 @@ equal-tailed.
 
 | Walkthrough section | JSON keys | Notebook section |
 |---|---|---|
-| 1 · The data | `meta`, `series` | §2 |
-| 2 · The problem | `illustration` | §1 |
-| 3 · The long run | `stationarity`, `rank`, `sampler`, `alpha`, `beta`, `relations` | §3 to §6 |
-| 4 · The awareness effect | `irf_awareness`, `irf_cumulative`, `irf_week52_sales` | §7 |
-| 5 · What drives what | `causality`, `fevd` | §8 |
-| 6 · A campaign | `campaign`, `response_curve` | §9, §9a |
-| 7 · Return per channel | `return_per_channel` | §9b |
+| 1 · The problem | `illustration` | §1 |
+| 2 · What a VECM is | `spurious` | none |
+| 3 · The data | `meta`, `series` | §2 |
+| 4 · Tests before fitting | `stationarity`, `rank` | §3, §4 |
+| 5 · The fit | `sampler`, `beta`, `alpha`, `relations`, `fit`, `holdout` | §5, §6 |
+| 6 · The awareness effect | `irf_awareness`, `irf_cumulative`, `irf_week52_sales` | §7 |
+| 7 · Which links exist | `causality` | §8 |
+| 8 · A campaign | `campaign`, `response_curve` | §9, §9a |
+| 9 · Return per channel | `return_per_channel` | §9b |
+
+`fevd` is still exported but no longer drawn. `holdout` refits on the first
+208 weeks, so the export takes about four minutes.
 
 ## What has been checked
 
@@ -49,6 +54,7 @@ Every headline number matches the notebook's committed outputs:
 - Brand spend one standard deviation up for 26 weeks: 20.8% [14.8%, 27.0%] at week 52.
 - Brand spend per £1: £2.00 [£1.41, £2.58] in year 1, £11.34 [£8.27, £14.48] over five years.
 - Sampler: 0 divergences, max r-hat 1.00, min bulk ESS 850.
+- Hold-out 2025: sales error 2.3% against 3.7% for a random walk with drift.
 
 The charts were checked with `how_wrong_is_your_mmm/tools/check_charts.js` at
 desktop and phone widths: every chart draws, no text under 9px, no clipping
