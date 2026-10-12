@@ -1,9 +1,9 @@
-"""Public ``BayesianVECM`` class — skeleton only.
+"""Public ``BayesianVECM`` class.
 
-This module defines the public-facing class that the rest of the package will
-hang off. **No estimation is implemented yet**: every method that depends on a
-fitted PyMC graph raises :class:`NotImplementedError`. The point of this slice
-is to lock in the API shape before any PyMC code lands.
+This module defines the model class that the rest of the package hangs off.
+``fit`` builds and samples the PyMC graph. The output methods (forecasts,
+impulse responses, FEVD, Granger causality and residual checks) read the
+fitted posterior.
 
 Design decisions captured here
 ------------------------------
@@ -45,13 +45,13 @@ fit-time state, mirroring scikit-learn:
 * ``variable_names_`` : ``list[str] | None`` — column labels, if the input
   exposed them via a DataFrame-like ``.columns`` attribute.
 
-v0 scope
---------
-``fit`` only estimates the simplest VECM that actually samples: known
-cointegration rank :math:`r = 1`, ``deterministic="n"``, weakly-informative
-defaults for :math:`\\alpha, \\beta, \\Gamma, \\Sigma`. Other configurations
-were accepted at construction time to lock in the public API, but raise
-:class:`NotImplementedError` from inside the PyMC graph builder.
+Scope
+-----
+``fit`` estimates any fixed rank :math:`1 \\le r < K`, any single
+deterministic code (``"n"``, ``"co"``, ``"ci"``, ``"lo"``, ``"li"``) and
+optional exogenous regressors. The rank is chosen beforehand, for example
+with :func:`~bayesian_vecm.select_coint_rank`. Compound deterministic codes
+are not supported.
 """
 
 from __future__ import annotations
@@ -93,6 +93,7 @@ class BayesianVECM:
 
         \\Delta y_t = \\alpha \\beta' y_{t-1}
                      + \\sum_{i=1}^{k} \\Gamma_i \\, \\Delta y_{t-i}
+                     + B x_t
                      + D_t \\Phi
                      + \\varepsilon_t,
                      \\quad \\varepsilon_t \\sim \\mathcal{N}(0, \\Sigma),
@@ -100,17 +101,8 @@ class BayesianVECM:
     where :math:`\\alpha, \\beta` are :math:`K \\times r`, the :math:`\\Gamma_i`
     are :math:`K \\times K` short-run dynamics, and :math:`D_t` collects any
     requested deterministic terms (constants, trends, inside or outside the
-    cointegration relation).
-
-    .. warning::
-
-        This is a v0 implementation. ``fit``, ``idata`` and ``summary`` are
-        live, but only for ``coint_rank=1`` + ``deterministic="n"``. Other
-        configurations are accepted at construction time (the public API is
-        locked in) but raise :class:`NotImplementedError` from inside the
-        PyMC graph builder. ``sample_posterior_predictive`` is deferred to
-        its own follow-up slice — forecasting through the VAR recursion is
-        meaningfully its own design problem.
+    cointegration relation). :math:`x_t` holds the same-period exogenous
+    regressors passed as ``exog`` to :meth:`fit`.
 
     Parameters
     ----------
@@ -120,12 +112,12 @@ class BayesianVECM:
         pure error-correction equation. Defaults to ``1``.
     coint_rank
         Cointegration rank :math:`r`. Sets the shared inner dimension of
-        :math:`\\alpha` and :math:`\\beta`. Must be at least ``1``; cannot
-        exceed :math:`K` (enforced at ``fit`` time when :math:`K` is known).
+        :math:`\\alpha` and :math:`\\beta`. Must be at least ``1`` and below
+        :math:`K`.
         Defaults to ``1``.
     deterministic
         Deterministic-term code, following the convention of
-        :mod:`statsmodels.tsa.vector_ar.vecm`. Single codes in v0:
+        :mod:`statsmodels.tsa.vector_ar.vecm`. Single codes only:
 
         * ``"n"`` — no deterministic terms (default).
         * ``"co"`` — constant outside the cointegration relation.
@@ -133,10 +125,10 @@ class BayesianVECM:
         * ``"lo"`` — linear trend outside the cointegration relation.
         * ``"li"`` — linear trend inside the cointegration relation.
 
-        Compound codes (Johansen cases 4 and 5) are deferred to a follow-up.
+        Compound codes (Johansen cases 4 and 5) are not supported.
     priors
         Optional mapping from parameter name to distribution spec. Keys
-        recognised in v0: ``"alpha"``, ``"beta"``, ``"Gamma"``, ``"Sigma"``.
+        recognised: ``"alpha"``, ``"beta"``, ``"Gamma"``, ``"Sigma"``, ``"B"``.
         Each value is a dict of the form ``{"dist": "<DistName>", **kwargs}``
         — for example ``{"dist": "Normal", "mu": 0.0, "sigma": 1.0}``. Any
         parameter omitted from the dict falls back to a weakly-informative
@@ -147,7 +139,7 @@ class BayesianVECM:
     ------
     ValueError
         If ``k_ar_diff`` is negative, ``coint_rank`` is less than ``1``, or
-        ``deterministic`` is not one of the recognised v0 codes.
+        ``deterministic`` is not one of the recognised codes.
     TypeError
         If ``priors`` is not ``None`` and not a ``dict``.
 
@@ -162,14 +154,10 @@ class BayesianVECM:
         >>> model.deterministic
         'ci'
 
-    For a non-default configuration (``coint_rank=1, deterministic="n"``
-    is the only one ``fit`` currently estimates), ``fit`` raises a
-    :class:`NotImplementedError` from the PyMC graph builder::
+    Fit, then forecast with the drivers at chosen values::
 
-        >>> model.fit(...)                       # doctest: +SKIP
-        Traceback (most recent call last):
-            ...
-        NotImplementedError: deterministic='ci' is not yet supported ...
+        >>> model.fit(endog, exog=exog)                        # doctest: +SKIP
+        >>> fc = model.sample_posterior_predictive(52, exog_future=x_future)  # doctest: +SKIP
     """
 
     def __init__(
