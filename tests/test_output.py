@@ -72,7 +72,7 @@ def models() -> _Models:
     Only k_ar_diff=1 is sampled here.  The k_ar_diff=0 slot is left as
     ``None``; tests that require it are marked ``skip`` because a second
     ``pm.sample`` call in the same pytest session triggers a macOS SIGINT
-    during PyTensor compilation.  See NOTES.md — macOS + PyMC parallel mode.
+    during PyTensor compilation.
     """
     data = _tiny_cointegrated_series()
     m1 = BayesianVECM(k_ar_diff=1, coint_rank=1, deterministic="n")
@@ -146,7 +146,7 @@ def test_fittedvalues_are_finite(models: _Models) -> None:
     assert np.all(np.isfinite(models.k1.fittedvalues.values))
 
 
-@pytest.mark.skip(reason="second pm.sample triggers macOS SIGINT; see NOTES.md")
+@pytest.mark.skip(reason="second pm.sample triggers macOS SIGINT")
 def test_fittedvalues_k0_shape(models: _Models) -> None:
     m = models.k0
     fv = m.fittedvalues
@@ -225,7 +225,7 @@ def test_var_rep_values_are_finite(models: _Models) -> None:
     assert np.all(np.isfinite(models.k1.var_rep.values))
 
 
-@pytest.mark.skip(reason="second pm.sample triggers macOS SIGINT; see NOTES.md")
+@pytest.mark.skip(reason="second pm.sample triggers macOS SIGINT")
 def test_var_rep_k0_a1_identity(models: _Models) -> None:
     """For k=0: A_1 = I + alpha @ beta.T (no Gamma term)."""
     m = models.k0
