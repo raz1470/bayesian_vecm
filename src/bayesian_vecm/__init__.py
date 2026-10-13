@@ -1,6 +1,7 @@
 """Bayesian Vector Error Correction Models in Python."""
 
 from bayesian_vecm._causality import CausalityResult
+from bayesian_vecm._granger import GrangerPretestResult, granger_pretest
 from bayesian_vecm._model import BayesianVECM
 from bayesian_vecm._rank import CointRankResult, select_coint_rank
 from bayesian_vecm._simulate import BrandData, BrandTruth, simulate_brand_data
@@ -13,9 +14,11 @@ __all__ = [
     "BrandTruth",
     "CausalityResult",
     "CointRankResult",
+    "GrangerPretestResult",
     "StationarityResult",
     "__version__",
     "check_stationarity",
+    "granger_pretest",
     "select_coint_rank",
     "simulate_brand_data",
 ]

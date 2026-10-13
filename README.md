@@ -15,6 +15,7 @@ The primary motivation is **brand marketing**. Brand metrics and sales move toge
 | 📖 [Walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html) | How long does brand last? The method, the tests and the results on simulated brand data |
 | 📓 [Practitioner Walkthrough](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/01_brand_vecm_walkthrough.ipynb) | End-to-end notebook: synthetic brand data → rank selection → fit → GIRF fan charts → counterfactual ROI |
 | 🧭 [Choosing the rank and the lags](docs/choosing_rank_and_lags.md) | Which tests to use and how often they find the truth on simulated data |
+| 🔎 [The Granger pretest](docs/granger_pretest.md) | What helps predict what before fitting: drivers, delays, links and feedback |
 
 ---
 
@@ -39,7 +40,20 @@ data = simulate_brand_data()
 endog, exog = data.endog, data.exog
 ```
 
-### 1. Choose the lags and the rank
+### 1. Check what helps predict what
+
+Run the Granger pretest on the levels before choosing anything. It tests the drivers against the brand metrics in both directions. [The Granger pretest](docs/granger_pretest.md) explains each table and how often it finds the truth.
+
+```python
+from bayesian_vecm import granger_pretest
+
+result = granger_pretest(endog, exog[["brand_spend", "interest_rate", "consumer_confidence"]])
+print(result)
+```
+
+Feedback from a brand metric to spend means budgets follow performance. Spend is then not exogenous and its effect in `B` is biased.
+
+### 2. Choose the lags and the rank
 
 Pick the lag order with the HQ criterion on a levels VAR, then run the Johansen trace test with the same lags. [Choosing the rank and the lags](docs/choosing_rank_and_lags.md) explains both choices and how far to trust them.
 
@@ -59,7 +73,7 @@ print(result)
 #   Recommended rank: 2
 ```
 
-### 2. Fit the model
+### 3. Fit the model
 
 ```python
 from bayesian_vecm import BayesianVECM
@@ -74,7 +88,7 @@ model.fit(endog, exog=exog, target_accept=0.90)
 
 `exog` enters in the same week only, through the coefficient matrix `B`.
 
-### 3. Inspect the posterior
+### 4. Inspect the posterior
 
 ```python
 model.summary(var_names=["alpha", "beta"])
@@ -82,7 +96,7 @@ model.summary(var_names=["alpha", "beta"])
 
 `beta` holds the long-run relationships. `alpha` says how fast each series closes a gap in each relationship.
 
-### 4. Responses to shocks and to drivers
+### 5. Responses to shocks and to drivers
 
 ```python
 irf = model.irf(steps=52, method="girf")  # shocks to the brand metrics
@@ -91,7 +105,7 @@ response = model.exog_irf(steps=260)      # a one-week, one-unit rise in each dr
 
 Both are `xarray.DataArray`s over `(chain, draw, horizon, response_variable, ...)`. The last dimension is `shock_variable` for `irf` and `exog_variable` for `exog_irf`. A GIRF for one shock equals the Cholesky IRF with that series ordered first. With log `endog`, the responses are log changes.
 
-### 5. Counterfactual forecast
+### 6. Counterfactual forecast
 
 ```python
 import numpy as np
