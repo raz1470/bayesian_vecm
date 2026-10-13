@@ -13,10 +13,11 @@ changes (`k_ar_diff=1`, a VAR(2) in levels) and rank 2.
 ## The order of work
 
 1. Check that each series has a unit root (`check_stationarity`).
-2. Choose the lags.
-3. Choose the rank with the same `k_ar_diff`.
-4. Fit with `deterministic` matched to the rank test.
-5. Check the fit and fit the next rank up and down if the test was close.
+2. Check what helps predict what (`granger_pretest`, see [the Granger pretest](granger_pretest.md)).
+3. Choose the lags.
+4. Choose the rank with the same `k_ar_diff`.
+5. Fit with `deterministic` matched to the rank test.
+6. Check the fit and fit the next rank up and down if the test was close.
 
 The lags come first because the rank test depends on them.
 
@@ -111,7 +112,7 @@ Share of seeds that pick the true rank of 2:
   and picks rank 3 in about 60% of seeds. Rank 3 with three series says every
   series is stationary, which the unit-root tests contradict.
 - Extra lags in the test lower the hit rate a little. Use the `k_ar_diff`
-  from step 1.
+  chosen in section 1.
 - The test ignores `exog`, so its critical values assume a model without
   drivers. Treat the result as a guide, not a verdict.
 
