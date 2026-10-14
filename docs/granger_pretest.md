@@ -73,7 +73,7 @@ Lags chosen: 1 in 188 weekly seeds and 198 monthly seeds.
 - **Monthly data creates a delay.** Spend late in a month moves awareness in
   the next month's average. The delay test picks this up in 56% of monthly
   seeds even though the weekly effect has no lag. With monthly data expect
-  lagged `exog` to matter.
+  lagged `exog` to matter: fit with `BayesianVECM(..., exog_lags=1)`.
 - **60 months finds the strong links and misses weak ones.** Awareness to
   consideration is found in most seeds. Consideration to sales is found in
   fewer than half. A miss is not evidence that a link is absent.

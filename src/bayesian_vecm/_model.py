@@ -93,7 +93,7 @@ class BayesianVECM:
 
         \\Delta y_t = \\alpha \\beta' y_{t-1}
                      + \\sum_{i=1}^{k} \\Gamma_i \\, \\Delta y_{t-i}
-                     + B x_t
+                     + \\sum_{l=0}^{L} B_l x_{t-l}
                      + D_t \\Phi
                      + \\varepsilon_t,
                      \\quad \\varepsilon_t \\sim \\mathcal{N}(0, \\Sigma),
@@ -101,8 +101,8 @@ class BayesianVECM:
     where :math:`\\alpha, \\beta` are :math:`K \\times r`, the :math:`\\Gamma_i`
     are :math:`K \\times K` short-run dynamics, and :math:`D_t` collects any
     requested deterministic terms (constants, trends, inside or outside the
-    cointegration relation). :math:`x_t` holds the same-period exogenous
-    regressors passed as ``exog`` to :meth:`fit`.
+    cointegration relation). :math:`x_t` holds the exogenous regressors
+    passed as ``exog`` to :meth:`fit`, and :math:`L` is ``exog_lags``.
 
     Parameters
     ----------
@@ -134,12 +134,20 @@ class BayesianVECM:
         parameter omitted from the dict falls back to a weakly-informative
         default chosen at ``fit`` time. ``None`` (the default) means "use
         defaults for everything".
+    exog_lags
+        Number of past periods of each ``exog`` driver to include,
+        :math:`L`. ``0`` (default) keeps the same period only. Use ``1`` or
+        ``2`` when a driver acts with a delay, for example on monthly data
+        where spend late in a month moves next month's average. Lags of a
+        flighted driver are highly correlated, so read the effect summed
+        over lags (:meth:`exog_irf`, :meth:`granger_causality`) rather than
+        each lag on its own.
 
     Raises
     ------
     ValueError
-        If ``k_ar_diff`` is negative, ``coint_rank`` is less than ``1``, or
-        ``deterministic`` is not one of the recognised codes.
+        If ``k_ar_diff`` or ``exog_lags`` is negative, ``coint_rank`` is less
+        than ``1``, or ``deterministic`` is not one of the recognised codes.
     TypeError
         If ``priors`` is not ``None`` and not a ``dict``.
 
@@ -166,6 +174,7 @@ class BayesianVECM:
         coint_rank: int = 1,
         deterministic: str = "n",
         priors: dict[str, Any] | None = None,
+        exog_lags: int = 0,
     ) -> None:
         """Configure the model. See the class docstring for parameter details.
 
@@ -179,6 +188,9 @@ class BayesianVECM:
 
         if coint_rank < 1:
             raise ValueError(f"coint_rank must be at least 1; got coint_rank={coint_rank}")
+
+        if exog_lags < 0:
+            raise ValueError(f"exog_lags must be non-negative; got exog_lags={exog_lags}")
 
         if deterministic not in VALID_DETERMINISTIC:
             valid = sorted(VALID_DETERMINISTIC)
@@ -196,6 +208,7 @@ class BayesianVECM:
         self.coint_rank = coint_rank
         self.deterministic = deterministic
         self.priors = priors
+        self.exog_lags = exog_lags
 
     def fit(
         self,
@@ -222,10 +235,14 @@ class BayesianVECM:
             ``pandas.DataFrame``. Column labels (if present) are captured
             into ``self.variable_names_``.
         exog
-            Optional contemporaneous exogenous regressors, shape ``(T, m)``.
-            These enter the short-run equation as :math:`B X_t` where
-            :math:`B` is a ``(K, m)`` coefficient matrix with a
-            ``Normal(0, 1.0)`` prior. Pass ``None`` (default) to omit.
+            Optional exogenous regressors, shape ``(T, m)``. These enter
+            the short-run equation as :math:`\\sum_{l=0}^{L} B_l X_{t-l}`
+            with :math:`L` = ``exog_lags``. The posterior ``B`` is
+            ``(K, m * (L + 1))``, lag-major, with a
+            ``Normal(0, 1 / sqrt(L + 1))`` prior on each entry. With
+            ``exog_lags > k_ar_diff + 1`` the first
+            ``exog_lags - k_ar_diff - 1`` rows are dropped. Pass ``None``
+            (default) to omit.
         exog_coint
             Optional exogenous variables inside the cointegrating relation,
             shape ``(T, m_c)``. Their columns are appended to :math:`y_{t-1}`
@@ -264,6 +281,7 @@ class BayesianVECM:
             deterministic=self.deterministic,
             exog=exog,
             exog_coint=exog_coint,
+            exog_lags=self.exog_lags,
         )
 
         model = build_pymc_model(
@@ -272,6 +290,7 @@ class BayesianVECM:
             coint_rank=self.coint_rank,
             deterministic=self.deterministic,
             priors=self.priors,
+            exog_lags=self.exog_lags,
         )
 
         with model:
@@ -313,7 +332,14 @@ class BayesianVECM:
         self.idata_ = idata
         self.variable_names_ = variable_names
         self.exog_names_ = [str(c) for c in exog.columns] if hasattr(exog, "columns") else None
-        self.exog_ = design.exog  # (T_eff, m) or None
+        self.exog_ = design.exog  # (T_eff, m * (exog_lags + 1)) or None
+        # The last exog_lags rows of the raw drivers seed the lags in a forecast.
+        self.exog_tail_ = None
+        if exog is not None:
+            exog_raw = np.asarray(
+                exog.to_numpy() if hasattr(exog, "to_numpy") else exog, dtype=np.float64
+            )
+            self.exog_tail_ = exog_raw[exog_raw.shape[0] - self.exog_lags :]
         self.exog_coint_ = (
             None
             if exog_coint is None
@@ -601,6 +627,12 @@ class BayesianVECM:
         period. In a cointegrated system the path settles at :math:`C B`,
         so a one-period rise can move the levels for good.
 
+        With ``exog_lags = L`` the lag-:math:`l` block :math:`B_l` acts
+        :math:`l` periods after the rise, so the path is
+        :math:`\\sum_{l} \\Phi_{h-l} B_l` and settles at
+        :math:`C \\sum_l B_l`. The result has one column per driver, with
+        all lags included.
+
         The model is linear in the drivers. The result is a marginal
         effect near the levels seen in the data and shows no saturation.
 
@@ -637,6 +669,7 @@ class BayesianVECM:
             steps=steps,
             variable_names=self.variable_names_,
             exog_names=getattr(self, "exog_names_", None),
+            exog_lags=getattr(self, "exog_lags", 0),
         )
 
     def fevd(
@@ -741,6 +774,7 @@ class BayesianVECM:
             self.k_ar_diff,
             variable_names=self.variable_names_,
             exog_names=getattr(self, "exog_names_", None),
+            exog_lags=getattr(self, "exog_lags", 0),
             threshold=threshold,
             ci_prob=ci_prob,
             gamma_prior=str(gamma_spec.get("dist", "Normal")),
@@ -761,7 +795,7 @@ class BayesianVECM:
 
             \\Delta y_{T+h} = \\alpha \\beta' y_{T+h-1}
                              + \\sum_{i=1}^{k} \\Gamma_i \\, \\Delta y_{T+h-i}
-                             + B X_{T+h}
+                             + \\sum_{l=0}^{L} B_l X_{T+h-l}
                              + d_{T+h}
                              + \\varepsilon_{T+h},
                              \\quad \\varepsilon_{T+h} \\sim \\mathcal{N}(0, \\Sigma)
@@ -779,7 +813,9 @@ class BayesianVECM:
             Future values of the exogenous regressors, shape ``(steps, m)``.
             Required when the model was fitted with ``exog``; ignored
             otherwise. Must have exactly ``steps`` rows and the same number
-            of columns as the ``exog`` passed to :meth:`fit`.
+            of columns as the ``exog`` passed to :meth:`fit`. With
+            ``exog_lags`` the lags of the first steps are taken from the
+            last rows of the ``exog`` passed to :meth:`fit`.
         random_seed
             Seed for the NumPy random generator used to draw innovations.
             Pass an integer for reproducible forecasts; ``None`` (the
@@ -849,11 +885,20 @@ class BayesianVECM:
                     f"exog_future must have {steps} rows (one per forecast step); "
                     f"got {exog_future_arr.shape[0]}"
                 )
-            m_fit = self.exog_.shape[1]  # type: ignore[union-attr]
+            n_lags = getattr(self, "exog_lags", 0) + 1
+            m_fit = self.exog_.shape[1] // n_lags  # type: ignore[union-attr]
             if exog_future_arr.shape[1] != m_fit:
                 raise ValueError(
                     f"exog_future has {exog_future_arr.shape[1]} columns but the model "
                     f"was fitted with {m_fit} exog column(s)"
+                )
+            if n_lags > 1:
+                # Row h stacks [X_{T+h}, X_{T+h-1}, ..., X_{T+h-L}], lag-major
+                # as in the fit. Early lags come from the end of the fit sample.
+                history = np.vstack([self.exog_tail_, exog_future_arr])
+                exog_future_arr = np.concatenate(
+                    [history[n_lags - 1 - lag : n_lags - 1 - lag + steps] for lag in range(n_lags)],
+                    axis=1,
                 )
 
         from bayesian_vecm._forecast import forecast_posterior

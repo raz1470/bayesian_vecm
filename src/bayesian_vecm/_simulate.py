@@ -149,7 +149,7 @@ class BrandTruth:
     gamma : np.ndarray, shape (K, K)
         Coefficients on :math:`\\Delta y_{t-1}`.
     b : np.ndarray, shape (K, m)
-        Coefficients on the contemporaneous exogenous variables.
+        Coefficients on the same-period exogenous variables.
     sigma : np.ndarray, shape (K, K)
         Innovation covariance.
     const : np.ndarray, shape (K,)
@@ -159,6 +159,10 @@ class BrandTruth:
         How each series loads on the common trend. ``beta.T @ loading`` is zero.
     growth : np.ndarray, shape (K,)
         Expected log growth per period of each series.
+    b_lag : np.ndarray, shape (K, m)
+        Coefficients on the exogenous variables one period back. Zero unless
+        ``exog_lag_share`` is set. The long-run effect of a driver depends on
+        ``b + b_lag`` only.
     """
 
     alpha: NDArray[np.float64]
@@ -169,6 +173,7 @@ class BrandTruth:
     const: NDArray[np.float64]
     loading: NDArray[np.float64]
     growth: NDArray[np.float64]
+    b_lag: NDArray[np.float64]
 
 
 @dataclass(frozen=True)
@@ -198,6 +203,7 @@ def simulate_brand_data(
     *,
     seed: int = 14,
     start_levels: tuple[float, float, float] = _START_LEVELS,
+    exog_lag_share: float = 0.0,
 ) -> BrandData:
     """Simulate weekly brand data from a VECM with known parameters.
 
@@ -212,6 +218,11 @@ def simulate_brand_data(
         Starting values of sales, awareness and consideration in original
         units (not logs). Awareness and consideration are percentages; start
         them low enough to leave room to grow.
+    exog_lag_share
+        Share of each exogenous effect that arrives one week late, between
+        0 and 1. ``0`` (default) puts the whole effect in the same week. The
+        same-week coefficients become ``(1 - share) * b`` and the lagged ones
+        ``share * b``, so the long-run effect of each driver is unchanged.
 
     Returns
     -------
@@ -221,7 +232,8 @@ def simulate_brand_data(
     Raises
     ------
     ValueError
-        If ``n_obs`` is less than 3 or any starting level is not positive.
+        If ``n_obs`` is less than 3, any starting level is not positive, or
+        ``exog_lag_share`` is outside ``[0, 1]``.
     """
     import pandas as pd
 
@@ -230,6 +242,10 @@ def simulate_brand_data(
     start = np.asarray(start_levels, dtype=np.float64)
     if start.shape != (3,) or not (start > 0).all():
         raise ValueError("start_levels must be three positive numbers")
+    if not 0.0 <= exog_lag_share <= 1.0:
+        raise ValueError(f"exog_lag_share must be between 0 and 1; got {exog_lag_share}")
+    b_now = (1.0 - exog_lag_share) * _B
+    b_lag = exog_lag_share * _B
 
     rng = np.random.default_rng(seed)
     x = _simulate_exog(n_obs, rng)
@@ -241,7 +257,7 @@ def simulate_brand_data(
     pi = _ALPHA @ _BETA.T
     dy_prev = np.zeros(3)
     for t in range(1, n_obs):
-        dy = const + pi @ y[t - 1] + _GAMMA @ dy_prev + _B @ x[t] + eps[t]
+        dy = const + pi @ y[t - 1] + _GAMMA @ dy_prev + b_now @ x[t] + b_lag @ x[t - 1] + eps[t]
         y[t] = y[t - 1] + dy
         dy_prev = dy
 
@@ -250,11 +266,12 @@ def simulate_brand_data(
         alpha=_ALPHA.copy(),
         beta=_BETA.copy(),
         gamma=_GAMMA.copy(),
-        b=_B.copy(),
+        b=b_now,
         sigma=_SIGMA.copy(),
         const=const,
         loading=_LOADING.copy(),
         growth=_SALES_GROWTH * _LOADING,
+        b_lag=b_lag,
     )
     return BrandData(
         endog=pd.DataFrame(y, index=dates, columns=list(ENDOG_NAMES)),
