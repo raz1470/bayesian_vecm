@@ -216,6 +216,7 @@ def build_pymc_model(
     coint_rank: int,
     deterministic: str,
     priors: dict[str, Any] | None = None,
+    exog_lags: int = 0,
 ) -> pm.Model:
     """Build the PyMC model graph for a v0 BayesianVECM fit.
 
@@ -241,6 +242,11 @@ def build_pymc_model(
         keys: ``"alpha"``, ``"beta"``, ``"Gamma"``, ``"Sigma"``. Any key not
         present falls back to the weakly-informative default. ``None`` and
         ``{}`` are both legal — both mean "use defaults".
+    exog_lags
+        Number of past periods of ``exog`` in the design, :math:`L`. ``B``
+        then has ``m * (L + 1)`` columns, lag-major. The default prior on
+        each entry is ``Normal(0, 1 / sqrt(L + 1))``, so the prior on the
+        sum over lags stays ``Normal(0, 1)``.
 
     Returns
     -------
@@ -383,16 +389,17 @@ def build_pymc_model(
         chol = _build_sigma(n_vars=n_vars, user_spec=user_priors.get("Sigma"))
         pm.Deterministic("Sigma", chol @ chol.T)
 
-        # --- B: (K, m) contemporaneous exogenous coefficients ----------------
-        # Only added when exog is present. The prior is Normal(0, 1.0) —
-        # same scale as alpha; exog columns are typically standardised before
-        # fitting so a unit-scale prior is weakly informative.
+        # --- B: (K, m * (L + 1)) exogenous coefficients, lag-major ---------
+        # Only added when exog is present. The default prior is Normal(0, 1)
+        # with no exog lags. With L lags each entry gets sd 1 / sqrt(L + 1),
+        # so the summed effect of a driver keeps a Normal(0, 1) prior.
         if exog is not None:
             n_exog = exog.shape[1]
+            b_sd = 1.0 / (exog_lags + 1) ** 0.5
             b_mat = _resolve_dist(
                 name="B",
                 user_spec=user_priors.get("B"),
-                default_spec={"dist": "Normal", "mu": 0.0, "sigma": 1.0},
+                default_spec={"dist": "Normal", "mu": 0.0, "sigma": b_sd},
                 shape=(n_vars, n_exog),
             )
 

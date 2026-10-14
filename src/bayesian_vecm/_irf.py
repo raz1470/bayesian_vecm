@@ -360,6 +360,7 @@ def compute_exog_irf(
     steps: int,
     variable_names: list[str] | None = None,
     exog_names: list[str] | None = None,
+    exog_lags: int = 0,
 ) -> xr.DataArray:
     """Dynamic multipliers of the exogenous drivers for every draw in *idata*.
 
@@ -377,6 +378,15 @@ def compute_exog_irf(
     to :math:`C B`, where :math:`C` is the long-run impact matrix, so a
     one-period pulse can move the levels permanently.
 
+    With ``exog_lags = L`` the driver enters as
+    :math:`\\sum_{l=0}^{L} B_l X_{t-l}` and the path becomes
+
+    .. math::
+
+        M_h = \\sum_{l=0}^{\\min(h, L)} \\Phi_{h-l} \\, B_l,
+
+    which tends to :math:`C \\sum_l B_l`.
+
     Parameters
     ----------
     idata
@@ -389,7 +399,11 @@ def compute_exog_irf(
     variable_names
         Optional labels for the endogenous variables.
     exog_names
-        Optional labels for the exogenous variables.
+        Optional labels for the exogenous variables, one per driver (not
+        per lag).
+    exog_lags
+        Number of past periods of each driver in the model, :math:`L`.
+        ``B`` holds ``m * (L + 1)`` columns, lag-major.
 
     Returns
     -------
@@ -411,10 +425,19 @@ def compute_exog_irf(
         raise ValueError("The posterior has no B: fit the model with exog to get exog IRFs.")
 
     phi, _ = ma_coefficients(posterior, k_ar_diff, steps + 1)  # (D, H, K, K)
-    b_draws: NDArray[np.floating] = posterior["B"].values  # (C, D, K, m)
-    n_chains, n_draws, n_vars, n_exog = b_draws.shape
-    b_mat = b_draws.reshape(n_chains * n_draws, n_vars, n_exog)
-    multipliers = np.einsum("dhij,djk->dhik", phi, b_mat)  # (D, H, K, m)
+    b_draws: NDArray[np.floating] = posterior["B"].values  # (C, D, K, m * (L + 1))
+    n_chains, n_draws, n_vars, n_cols = b_draws.shape
+    n_lags = exog_lags + 1
+    if n_cols % n_lags != 0:
+        raise ValueError(f"B has {n_cols} columns, which does not split into {n_lags} lags.")
+    n_exog = n_cols // n_lags
+    b_lags = b_draws.reshape(n_chains * n_draws, n_vars, n_lags, n_exog)
+    # M_h = sum_l Phi_{h-l} B_l: the lag-l block starts acting l periods later.
+    multipliers = np.zeros((phi.shape[0], steps + 1, n_vars, n_exog))  # (D, H, K, m)
+    for lag in range(min(n_lags, steps + 1)):
+        multipliers[:, lag:] += np.einsum(
+            "dhij,djk->dhik", phi[:, : steps + 1 - lag], b_lags[:, :, lag, :]
+        )
 
     coords: dict = {
         "chain": posterior.coords["chain"].values,

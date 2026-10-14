@@ -48,8 +48,9 @@ from bayesian_vecm._data import difference, lag_matrix, validate_endog
 class CointegrationDesign(NamedTuple):
     """Aligned design matrices for a VECM regression.
 
-    All arrays have the same number of rows, ``T_eff = T - k_ar_diff - 1``;
-    row :math:`r` of each refers to the same underlying time index.
+    All arrays have the same number of rows,
+    ``T_eff = T - max(k_ar_diff + 1, exog_lags)``; row :math:`r` of each
+    refers to the same underlying time index.
 
     Attributes
     ----------
@@ -64,10 +65,12 @@ class CointegrationDesign(NamedTuple):
         Level lag :math:`y_{t-1}`, shape ``(T_eff, K)``. This is the term the
         cointegration relation :math:`\\beta' y_{t-1}` is built from.
     exog
-        Contemporaneous exogenous regressors aligned to ``T_eff`` rows, shape
-        ``(T_eff, m)``, or ``None`` when no exogenous variables were supplied.
-        These enter the short-run equation as :math:`B X_t` where :math:`B` is
-        ``(K, m)``. Note that ``exog_coint`` is **not** stored here — it is
+        Exogenous regressors aligned to ``T_eff`` rows, shape
+        ``(T_eff, m * (exog_lags + 1))``, or ``None`` when no exogenous
+        variables were supplied. Columns are lag-major:
+        :math:`[X_t, X_{t-1}, \\dots, X_{t-L}]`. These enter the short-run
+        equation as :math:`\\sum_l B_l X_{t-l}`. Note that ``exog_coint``
+        is **not** stored here — it is
         absorbed into ``y_lag1`` (extra appended columns) before the
         ``CointegrationDesign`` is constructed.
     """
@@ -84,6 +87,7 @@ def cointegration_design(
     deterministic: str = "n",
     exog: Any = None,
     exog_coint: Any = None,
+    exog_lags: int = 0,
 ) -> CointegrationDesign:
     """Build aligned design matrices for a VECM.
 
@@ -121,12 +125,18 @@ def cointegration_design(
         appended as extra columns of ``y_lag1`` — exactly the same mechanism
         used by inside deterministic terms (``"ci"``, ``"li"``). The extra
         rows of ``beta`` are then estimated from the data.
+    exog_lags
+        Number of past periods of ``exog`` to add, :math:`L`. ``0`` (default)
+        keeps only the same period. When ``exog_lags > k_ar_diff + 1``
+        the first ``exog_lags - k_ar_diff - 1`` rows are dropped so every
+        lag exists. Ignored when ``exog`` is ``None``.
 
     Returns
     -------
     CointegrationDesign
         Named tuple with fields ``delta_y``, ``delta_x``, ``y_lag1``,
-        ``exog``.  All have ``T_eff = T - k_ar_diff - 1`` rows.
+        ``exog``.  All have ``T_eff = T - max(k_ar_diff + 1, exog_lags)``
+        rows (``exog_lags`` counts only when ``exog`` is given).
 
     Raises
     ------
@@ -134,10 +144,13 @@ def cointegration_design(
         If ``k_ar_diff`` is negative, if ``k_ar_diff >= T - 1`` (no usable
         rows), if ``deterministic`` is not in :data:`VALID_DETERMINISTIC`, if
         ``data`` fails any of ``validate_endog``'s checks, or if ``exog`` /
-        ``exog_coint`` have the wrong number of rows or are not 2-D.
+        ``exog_coint`` have the wrong number of rows or are not 2-D, or if
+        ``exog_lags`` is negative.
     """
     if k_ar_diff < 0:
         raise ValueError(f"k_ar_diff must be non-negative; got k_ar_diff={k_ar_diff}")
+    if exog_lags < 0:
+        raise ValueError(f"exog_lags must be non-negative; got exog_lags={exog_lags}")
 
     if deterministic not in VALID_DETERMINISTIC:
         # Pick a message tailored to the failure mode so users know whether
@@ -161,6 +174,24 @@ def cointegration_design(
     # below so we can give a dedicated error message instead of having the
     # generic min_obs check fire.
     arr = validate_endog(data)
+
+    # Validate exog against the full sample, then drop leading rows when the
+    # exog lags reach further back than the lagged differences do.
+    exog_arr: NDArray[np.float64] | None = None
+    exog_coint_arr: NDArray[np.float64] | None = None
+    if exog is not None:
+        exog_arr = _validate_exog(exog, name="exog", n_obs=arr.shape[0])
+    if exog_coint is not None:
+        exog_coint_arr = _validate_exog(exog_coint, name="exog_coint", n_obs=arr.shape[0])
+    start = max(0, exog_lags - k_ar_diff - 1) if exog_arr is not None else 0
+    if start >= arr.shape[0] - 1:
+        raise ValueError(
+            "exog_lags leaves no usable rows; "
+            f"got exog_lags={exog_lags}, k_ar_diff={k_ar_diff}, T={arr.shape[0]}"
+        )
+    arr = arr[start:]
+    if exog_coint_arr is not None:
+        exog_coint_arr = exog_coint_arr[start:]
 
     n_obs = arr.shape[0]
     if k_ar_diff >= n_obs - 1:
@@ -208,15 +239,16 @@ def cointegration_design(
     # T-1, 0-based in original endog indexing, which equals rows k_ar_diff .. T-2
     # in the first-difference array — but we slice from the original arr directly:
     # usable t starts at k_ar_diff+1, so exog[k_ar_diff+1:] gives T_eff rows).
+    # With exog_lags = L, lag l of exog for usable row t is exog[t - l]. Row
+    # indices refer to the untrimmed exog, hence the `start` offset.
     exog_aligned: NDArray[np.float64] | None = None
-    if exog is not None:
-        exog_arr = _validate_exog(exog, name="exog", n_obs=n_obs)
+    if exog_arr is not None:
+        rows = np.arange(start + k_ar_diff + 1, start + n_obs)
         exog_aligned = np.ascontiguousarray(
-            exog_arr[k_ar_diff + 1 :].astype(np.float64)
-        )  # (T_eff, m)
+            np.concatenate([exog_arr[rows - lag] for lag in range(exog_lags + 1)], axis=1)
+        )  # (T_eff, m * (L + 1))
 
-    if exog_coint is not None:
-        exog_coint_arr = _validate_exog(exog_coint, name="exog_coint", n_obs=n_obs)
+    if exog_coint_arr is not None:
         exog_coint_aligned = np.ascontiguousarray(
             exog_coint_arr[k_ar_diff + 1 :].astype(np.float64)
         )  # (T_eff, m_c)

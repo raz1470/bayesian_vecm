@@ -86,7 +86,15 @@ model = BayesianVECM(
 model.fit(endog, exog=exog, target_accept=0.90)
 ```
 
-`exog` enters in the same week only, through the coefficient matrix `B`.
+`exog` enters in the same week by default, through the coefficient matrix `B`. If the delay table in step 1 shows that a driver acts late, add its past values with `exog_lags`:
+
+```python
+model = BayesianVECM(k_ar_diff=1, coint_rank=2, deterministic="co", exog_lags=1)
+```
+
+- `B` then has one block per lag. Read the effect summed over lags from `exog_irf()` or the exog table of `granger_causality()`.
+- Lags of a flighted driver are highly correlated, so the split between lags is noisy. Keep `exog_lags` at 1 or 2.
+- Monthly data usually needs `exog_lags=1`. Spend late in a month moves next month's average.
 
 ### 4. Inspect the posterior
 
@@ -100,7 +108,7 @@ model.summary(var_names=["alpha", "beta"])
 
 ```python
 irf = model.irf(steps=52, method="girf")  # shocks to the brand metrics
-response = model.exog_irf(steps=260)      # a one-week, one-unit rise in each driver
+response = model.exog_irf(steps=260)  # a one-week, one-unit rise in each driver
 ```
 
 Both are `xarray.DataArray`s over `(chain, draw, horizon, response_variable, ...)`. The last dimension is `shock_variable` for `irf` and `exog_variable` for `exog_irf`. A GIRF for one shock equals the Cholesky IRF with that series ordered first. With log `endog`, the responses are log changes.

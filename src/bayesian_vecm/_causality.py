@@ -15,8 +15,9 @@ Four tables, all read from the fitted posterior:
     its whole row of :math:`\\alpha`. A variable that does not adjust drives
     the system without being pulled back by it.
 ``exog``
-    Does an exogenous variable help predict Y? The quantity is one entry of
-    :math:`B`. Present only when the model was fitted with ``exog``.
+    Does an exogenous variable help predict Y? The quantity is its entry of
+    :math:`B`, or its entries across all lags when the model has
+    ``exog_lags``. Present only when the model was fitted with ``exog``.
 
 The evidence measure
 --------------------
@@ -162,6 +163,7 @@ def compute_causality(
     *,
     variable_names: list[str] | None = None,
     exog_names: list[str] | None = None,
+    exog_lags: int = 0,
     threshold: float = 0.95,
     ci_prob: float = 0.89,
     gamma_prior: str = "Normal",
@@ -178,6 +180,10 @@ def compute_causality(
         Labels for the endogenous variables. Defaults to ``y0, y1, ...``.
     exog_names
         Labels for the exogenous variables. Defaults to ``x0, x1, ...``.
+    exog_lags
+        Number of past periods of each driver in ``B``. The exog table
+        tests all lags of a driver together and sums them for the effect,
+        as the short-run table does for :math:`\\Gamma`.
     threshold
         Evidence at or above this counts as a link. Sets
         ``weakly_exogenous`` and the wording of the printed summary.
@@ -249,11 +255,12 @@ def compute_causality(
 
     exog_table = None
     if "B" in posterior:
-        b = _stack(posterior["B"].values)  # (N, K, m)
-        x_names = exog_names or [f"x{i}" for i in range(b.shape[2])]
+        b = _stack(posterior["B"].values)  # (N, K, m * (L + 1)), lag-major
+        n_exog = b.shape[2] // (exog_lags + 1)
+        x_names = exog_names or [f"x{i}" for i in range(n_exog)]
         exog_rows = [
-            effect_row(x_names[x], names[effect], b[:, effect, x, np.newaxis])
-            for x in range(b.shape[2])
+            effect_row(x_names[x], names[effect], b[:, effect, x::n_exog])
+            for x in range(n_exog)
             for effect in range(n_vars)
         ]
         exog_table = pd.DataFrame(exog_rows, columns=columns)
