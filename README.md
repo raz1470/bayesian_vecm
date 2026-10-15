@@ -12,6 +12,7 @@ The primary motivation is **brand marketing**. Brand metrics and sales move toge
 
 | | |
 |---|---|
+| 📚 [Documentation](https://raz1470.github.io/bayesian_vecm/) | User guide, API reference and model details |
 | 📖 [Walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html) | How long does brand last? The method, the tests and the results on simulated brand data |
 | 📓 [Practitioner Walkthrough](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/01_brand_vecm_walkthrough.ipynb) | End-to-end notebook: synthetic brand data → rank selection → fit → GIRF fan charts → counterfactual ROI |
 | 🧭 [Choosing the rank and the lags](docs/choosing_rank_and_lags.md) | Which tests to use and how often they find the truth on simulated data |
