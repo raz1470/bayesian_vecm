@@ -46,7 +46,7 @@ _VALID_REGRESSION: frozenset[str] = frozenset({"c", "ct", "n"})
 
 _VERDICTS: dict[str, str] = {
     "I(0)": "stationary: use as exog",
-    "I(1)": "trending: use as endog",
+    "I(1)": "trending: endog, or exog after .diff()",
     "I(2)": "still trending after one difference: difference it first",
 }
 

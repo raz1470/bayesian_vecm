@@ -163,9 +163,10 @@ The default Normal(0, 0.5) prior on `Gamma` applies when `priors` is omitted. Wi
 | Trending brand metrics and sales (organic sales, awareness, consideration) | `endog` | Log levels |
 | Brand channels (spend, reach) | `exog` | Deviation from the average, in round units such as £1,000s or 100,000 people |
 | Stationary drivers (interest rate, consumer confidence) | `exog` | Deviation from the average |
+| Trending drivers from outside the brand (a policy interest rate) | `exog` | Weekly change: `x.diff()` |
 | Launches and events | `exog` | 0/1 dummies |
 
-- Use `check_stationarity` to sort the series: trending (I(1)) series go in `endog`, stationary (I(0)) ones in `exog`.
+- Use `check_stationarity` to sort the series: trending (I(1)) series go in `endog`, stationary (I(0)) ones in `exog`. A trending driver the brand cannot move and that does not trend with the brand goes in `exog` as its change. `simulate_brand_data(exog_unit_root=("interest_rate",))` simulates one.
 - Logs make the entries of `beta` elasticities and turn forecast gaps into percentage uplifts.
 - The model is linear in the drivers, so it shows no diminishing returns. Its returns are marginal returns near current spend.
 - A driver must not respond to the brand metrics. If budgets follow last month's sales, spend is not exogenous and its effect absorbs that feedback.

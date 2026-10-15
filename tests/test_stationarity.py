@@ -61,7 +61,7 @@ def test_endog_and_exog_lists(result: StationarityResult) -> None:
 def test_printed_summary(result: StationarityResult) -> None:
     text = str(result)
     assert "ADF test, 5% level" in text
-    assert "trending: use as endog" in text
+    assert "trending: endog, or exog after .diff()" in text
     assert "stationary: use as exog" in text
     assert "difference it first" in text
     assert "double_walk" in text
