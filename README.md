@@ -16,6 +16,7 @@ The primary motivation is **brand marketing**. Brand metrics and sales move toge
 | 📓 [Practitioner Walkthrough](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/01_brand_vecm_walkthrough.ipynb) | End-to-end notebook: synthetic brand data → rank selection → fit → GIRF fan charts → counterfactual ROI |
 | 🧭 [Choosing the rank and the lags](docs/choosing_rank_and_lags.md) | Which tests to use and how often they find the truth on simulated data |
 | 🔎 [The Granger pretest](docs/granger_pretest.md) | What helps predict what before fitting: drivers, delays, links and feedback |
+| 🗺️ [Future work](docs/future_work.md) | What was tested and left out of the first release, and what to check first |
 
 ---
 
