@@ -19,6 +19,20 @@ Ideas that were tested or scoped and left out of the first release, with the rea
 
 **Check first.** Run the 2SLS check on 60 months. Monthly instruments may be too weak. If the first-stage F is below about 10, ship only the "not identified / weak instruments" diagnostics and the docs section.
 
+**Then estimate the links in the model.** The test only says whether a link exists. To use it, `BayesianVECM` needs a `contemporaneous=` option that estimates the same-week links:
+
+```
+A0 Δy_t = α β' y_{t-1} + Γ Δy_{t-1} + B X_t + u_t,    u_t ~ N(0, D), D diagonal
+```
+
+- `A0` has ones on the diagonal and the same-week links off it, for example awareness → consideration.
+- **Identification** uses the same exclusions as the test: each link needs a driver set to zero in the effect's equation of `B`. Without one, `A0` is not identified and the posterior returns the prior. The test's "not identified" result is the check to run before fitting.
+- **Likelihood:** the change of variables adds `log|det A0|`. For a recursive funnel (awareness, then consideration, then sales) `A0` is triangular and the term is zero.
+- **Output:** structural impulse responses from `A0⁻¹`, with the same-week links estimated instead of assumed by a GIRF or Cholesky order.
+- **Simulator:** the same-week link option above gives a non-zero `A0` to recover.
+
+The test comes first because it is cheap, needs no change to the model, and shows which links the data can identify.
+
 ## Structure on lagged driver effects
 
 `exog_lags` gives every driver and lag its own coefficient. With more lags and drivers, most of these are zero, and two ways to use that were considered.
