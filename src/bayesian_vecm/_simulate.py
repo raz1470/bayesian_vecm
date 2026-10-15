@@ -39,6 +39,13 @@ what" diagnostic run on this data:
   only (``brand_spend`` > ``pr_reach`` > ``sponsorship_reach``); the two macro
   variables act on consideration only.
 
+**Trending drivers.** ``exog_unit_root=("interest_rate",)`` makes the named
+drivers random walks (I(1)). Their effect then runs through the change,
+``b`` times :math:`\\Delta x_t`, while ``exog`` holds the level. Fit them as
+``exog.diff()``: a trending level cannot explain stationary growth, so a
+levels fit gives a meaningless coefficient. The default keeps all five
+drivers stationary.
+
 The constant ``c`` gives the system an upward drift (sales double over 260
 weeks on average) and fixes the level of the two cointegrating relations. It
 is an unrestricted constant, so ``deterministic="co"`` is the matching
@@ -163,6 +170,10 @@ class BrandTruth:
         Coefficients on the exogenous variables one period back. Zero unless
         ``exog_lag_share`` is set. The long-run effect of a driver depends on
         ``b + b_lag`` only.
+    differenced : tuple of str
+        Drivers simulated as random walks (``exog_unit_root``). For these,
+        ``b`` and ``b_lag`` act on the change :math:`\\Delta x_t`, not the
+        level. Empty by default.
     """
 
     alpha: NDArray[np.float64]
@@ -174,6 +185,7 @@ class BrandTruth:
     loading: NDArray[np.float64]
     growth: NDArray[np.float64]
     b_lag: NDArray[np.float64]
+    differenced: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -188,7 +200,8 @@ class BrandData:
     exog : pandas.DataFrame, shape (n_obs, 5)
         ``brand_spend``, ``pr_reach``, ``sponsorship_reach``, ``interest_rate``
         and ``consumer_confidence``, as stationary deviations from their
-        long-run averages.
+        long-run averages. A driver named in ``exog_unit_root`` is a random
+        walk instead, starting near zero.
     truth : BrandTruth
         The generating parameters.
     """
@@ -204,6 +217,7 @@ def simulate_brand_data(
     seed: int = 14,
     start_levels: tuple[float, float, float] = _START_LEVELS,
     exog_lag_share: float = 0.0,
+    exog_unit_root: tuple[str, ...] = (),
 ) -> BrandData:
     """Simulate weekly brand data from a VECM with known parameters.
 
@@ -223,6 +237,12 @@ def simulate_brand_data(
         0 and 1. ``0`` (default) puts the whole effect in the same week. The
         same-week coefficients become ``(1 - share) * b`` and the lagged ones
         ``share * b``, so the long-run effect of each driver is unchanged.
+    exog_unit_root
+        Names of drivers to simulate as random walks (I(1)), for example
+        ``("interest_rate",)``. Their weekly changes have the same
+        innovations as the stationary version, and their effect acts
+        through the change, so ``exog[name].diff()`` is the right regressor.
+        Empty (default) keeps every driver stationary.
 
     Returns
     -------
@@ -232,8 +252,9 @@ def simulate_brand_data(
     Raises
     ------
     ValueError
-        If ``n_obs`` is less than 3, any starting level is not positive, or
-        ``exog_lag_share`` is outside ``[0, 1]``.
+        If ``n_obs`` is less than 3, any starting level is not positive,
+        ``exog_lag_share`` is outside ``[0, 1]``, or ``exog_unit_root`` names
+        an unknown driver.
     """
     import pandas as pd
 
@@ -244,11 +265,18 @@ def simulate_brand_data(
         raise ValueError("start_levels must be three positive numbers")
     if not 0.0 <= exog_lag_share <= 1.0:
         raise ValueError(f"exog_lag_share must be between 0 and 1; got {exog_lag_share}")
+    unit_root = tuple(exog_unit_root)
+    unknown = sorted(set(unit_root) - set(EXOG_NAMES))
+    if unknown:
+        raise ValueError(
+            f"unknown exog_unit_root name(s) {unknown}; choose from {list(EXOG_NAMES)}"
+        )
+    ur_mask = np.array([name in unit_root for name in EXOG_NAMES])
     b_now = (1.0 - exog_lag_share) * _B
     b_lag = exog_lag_share * _B
 
     rng = np.random.default_rng(seed)
-    x = _simulate_exog(n_obs, rng)
+    x, x_reg = _simulate_exog(n_obs, rng, ur_mask)
     eps = rng.multivariate_normal(np.zeros(3), _SIGMA, size=n_obs)
 
     y = np.zeros((n_obs, 3))
@@ -257,7 +285,8 @@ def simulate_brand_data(
     pi = _ALPHA @ _BETA.T
     dy_prev = np.zeros(3)
     for t in range(1, n_obs):
-        dy = const + pi @ y[t - 1] + _GAMMA @ dy_prev + b_now @ x[t] + b_lag @ x[t - 1] + eps[t]
+        exog_term = b_now @ x_reg[t] + b_lag @ x_reg[t - 1]
+        dy = const + pi @ y[t - 1] + _GAMMA @ dy_prev + exog_term + eps[t]
         y[t] = y[t - 1] + dy
         dy_prev = dy
 
@@ -272,6 +301,7 @@ def simulate_brand_data(
         loading=_LOADING.copy(),
         growth=_SALES_GROWTH * _LOADING,
         b_lag=b_lag,
+        differenced=tuple(n for n in EXOG_NAMES if n in unit_root),
     )
     return BrandData(
         endog=pd.DataFrame(y, index=dates, columns=list(ENDOG_NAMES)),
@@ -294,8 +324,16 @@ def _constant(y0: NDArray[np.float64]) -> NDArray[np.float64]:
     return drift - _ALPHA @ (_BETA.T @ y0)
 
 
-def _simulate_exog(n_obs: int, rng: np.random.Generator) -> NDArray[np.float64]:
-    """Five mean-zero AR(1) series; the first three have correlated innovations."""
+def _simulate_exog(
+    n_obs: int, rng: np.random.Generator, unit_root: NDArray[np.bool_] | None = None
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Five mean-zero AR(1) series; the first three have correlated innovations.
+
+    Columns flagged in ``unit_root`` are random walks built from the same
+    innovations, starting at their first innovation. Returns the series and
+    the regressors the DGP uses: the series itself, or its change for the
+    random walks. The random draws do not depend on ``unit_root``.
+    """
     n_total = n_obs + _EXOG_BURN_IN
     corr = np.full((3, 3), _CHANNEL_CORR)
     np.fill_diagonal(corr, 1.0)
@@ -307,4 +345,12 @@ def _simulate_exog(n_obs: int, rng: np.random.Generator) -> NDArray[np.float64]:
     x = np.zeros((n_total, 5))
     for t in range(1, n_total):
         x[t] = _EXOG_RHO * x[t - 1] + innov[t]
-    return x[_EXOG_BURN_IN:]
+    x = x[_EXOG_BURN_IN:]
+    if unit_root is None or not unit_root.any():
+        return x, x
+    step = innov[_EXOG_BURN_IN:, unit_root]
+    x = x.copy()
+    x[:, unit_root] = np.cumsum(step, axis=0)
+    x_reg = x.copy()
+    x_reg[:, unit_root] = step
+    return x, x_reg
