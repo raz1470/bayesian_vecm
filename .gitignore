@@ -86,3 +86,7 @@ SCOPE.md
 
 # Local-only working journal (per dagshop/PREFERENCES.md convention)
 NOTES.md
+
+# Sphinx build output and the notebook copied in at build time
+docs/_build/
+docs/guide/practitioner_walkthrough.ipynb
