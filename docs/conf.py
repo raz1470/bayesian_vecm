@@ -37,11 +37,15 @@ extensions = [
 exclude_patterns = ["_build", "**.ipynb_checkpoints", "walkthrough.html"]
 html_extra_path = ["walkthrough.html"]
 
-# The practitioner notebook lives in notebooks/guides. Copy it in at build
-# time and render its saved outputs; executing it would take minutes.
-_GUIDE = ROOT / "notebooks" / "guides" / "01_brand_vecm_walkthrough.ipynb"
+# The guide notebooks live in notebooks/guides. Copy them in at build time
+# and render their saved outputs; executing them would take minutes.
+_GUIDES = {
+    "01_brand_vecm_walkthrough.ipynb": "practitioner_walkthrough.ipynb",
+    "02_statsmodels_comparison.ipynb": "statsmodels_comparison.ipynb",
+}
 (DOCS / "guide").mkdir(exist_ok=True)
-shutil.copyfile(_GUIDE, DOCS / "guide" / "practitioner_walkthrough.ipynb")
+for _source, _target in _GUIDES.items():
+    shutil.copyfile(ROOT / "notebooks" / "guides" / _source, DOCS / "guide" / _target)
 nb_execution_mode = "off"
 
 myst_enable_extensions = ["dollarmath", "colon_fence"]
