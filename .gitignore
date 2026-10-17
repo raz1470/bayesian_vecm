@@ -90,3 +90,4 @@ NOTES.md
 # Sphinx build output and the notebooks copied in at build time
 docs/_build/
 docs/guide/
+docs/build_notebooks/

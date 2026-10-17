@@ -25,6 +25,7 @@ irf = model.irf(steps=52, method="girf")
 - **[The user guide](user_guide.md)**: the practitioner notebook and pages on choosing the rank and lags, the Granger pretest and future work.
 - **[The practitioner guide](guide/practitioner_walkthrough.ipynb)**: the full workflow in a notebook, from data to return per channel.
 - **[API reference](api/index.md)**: every public function and class.
+- **[How it was built](how_it_was_built.md)**: one notebook per feature, in the order they were built.
 
 ```{toctree}
 :hidden:
@@ -32,4 +33,5 @@ irf = model.irf(steps=52, method="girf")
 user_guide
 api/index
 model_details
+how_it_was_built
 ```
