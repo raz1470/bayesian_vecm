@@ -164,6 +164,7 @@ def compute_causality(
     variable_names: list[str] | None = None,
     exog_names: list[str] | None = None,
     exog_lags: int = 0,
+    adstock: tuple[int, ...] = (),
     threshold: float = 0.95,
     ci_prob: float = 0.89,
     gamma_prior: str = "Normal",
@@ -184,6 +185,9 @@ def compute_causality(
         Number of past periods of each driver in ``B``. The exog table
         tests all lags of a driver together and sums them for the effect,
         as the short-run table does for :math:`\\Gamma`.
+    adstock
+        Positions of the adstocked drivers. Their lags are tied to one total
+        effect, ``B_total``, so the evidence is computed on that total.
     threshold
         Evidence at or above this counts as a link. Sets
         ``weakly_exogenous`` and the wording of the printed summary.
@@ -258,11 +262,17 @@ def compute_causality(
         b = _stack(posterior["B"].values)  # (N, K, m * (L + 1)), lag-major
         n_exog = b.shape[2] // (exog_lags + 1)
         x_names = exog_names or [f"x{i}" for i in range(n_exog)]
-        exog_rows = [
-            effect_row(x_names[x], names[effect], b[:, effect, x::n_exog])
-            for x in range(n_exog)
-            for effect in range(n_vars)
-        ]
+        b_total = _stack(posterior["B_total"].values) if adstock else None
+        exog_rows = []
+        for x in range(n_exog):
+            for effect in range(n_vars):
+                row = effect_row(x_names[x], names[effect], b[:, effect, x::n_exog])
+                if b_total is not None and x in adstock:
+                    # Lags of an adstocked driver lie on a curve set by one
+                    # total and one decay; test the total, which equals the sum.
+                    total = b_total[:, effect, adstock.index(x)]
+                    row["evidence"] = evidence_against_zero(total)
+                exog_rows.append(row)
         exog_table = pd.DataFrame(exog_rows, columns=columns)
 
     return CausalityResult(

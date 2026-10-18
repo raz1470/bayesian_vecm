@@ -54,7 +54,7 @@ specification when fitting.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -156,7 +156,8 @@ class BrandTruth:
     gamma : np.ndarray, shape (K, K)
         Coefficients on :math:`\\Delta y_{t-1}`.
     b : np.ndarray, shape (K, m)
-        Coefficients on the same-period exogenous variables.
+        Coefficients on the same-period exogenous variables. With adstock
+        this is the same-week share ``(1 - w) * b_total``.
     sigma : np.ndarray, shape (K, K)
         Innovation covariance.
     const : np.ndarray, shape (K,)
@@ -174,6 +175,10 @@ class BrandTruth:
         Drivers simulated as random walks (``exog_unit_root``). For these,
         ``b`` and ``b_lag`` act on the change :math:`\\Delta x_t`, not the
         level. Empty by default.
+    adstock : np.ndarray, shape (m,)
+        Geometric adstock decay :math:`w` of each driver (``exog_adstock``).
+        The effect at lag :math:`l` is ``b_total * (1 - w) * w**l``. Zero
+        (no carryover) by default.
     """
 
     alpha: NDArray[np.float64]
@@ -186,6 +191,12 @@ class BrandTruth:
     growth: NDArray[np.float64]
     b_lag: NDArray[np.float64]
     differenced: tuple[str, ...] = ()
+    adstock: NDArray[np.float64] = field(default_factory=lambda: np.zeros(len(EXOG_NAMES)))
+
+    @property
+    def b_total(self) -> NDArray[np.float64]:
+        """Total (long-run summed) effect of each driver, shape ``(K, m)``."""
+        return (self.b + self.b_lag) / (1.0 - self.adstock)
 
 
 @dataclass(frozen=True)
@@ -218,6 +229,7 @@ def simulate_brand_data(
     start_levels: tuple[float, float, float] = _START_LEVELS,
     exog_lag_share: float = 0.0,
     exog_unit_root: tuple[str, ...] = (),
+    exog_adstock: dict[str, float] | None = None,
 ) -> BrandData:
     """Simulate weekly brand data from a VECM with known parameters.
 
@@ -243,6 +255,13 @@ def simulate_brand_data(
         innovations as the stationary version, and their effect acts
         through the change, so ``exog[name].diff()`` is the right regressor.
         Empty (default) keeps every driver stationary.
+    exog_adstock
+        Geometric adstock decay per driver, for example
+        ``{"brand_spend": 0.5}``. The driver acts through
+        :math:`a_t = (1 - w) x_t + w a_{t-1}`, so its effect at lag
+        :math:`l` is :math:`b (1 - w) w^l` and the total effect is unchanged.
+        Decays must be in ``[0, 1)``. Cannot be combined with
+        ``exog_lag_share``. ``None`` (default) means no carryover.
 
     Returns
     -------
@@ -253,8 +272,9 @@ def simulate_brand_data(
     ------
     ValueError
         If ``n_obs`` is less than 3, any starting level is not positive,
-        ``exog_lag_share`` is outside ``[0, 1]``, or ``exog_unit_root`` names
-        an unknown driver.
+        ``exog_lag_share`` is outside ``[0, 1]``, ``exog_unit_root`` or
+        ``exog_adstock`` names an unknown driver, an adstock decay is outside
+        ``[0, 1)``, or ``exog_adstock`` is combined with ``exog_lag_share``.
     """
     import pandas as pd
 
@@ -272,11 +292,30 @@ def simulate_brand_data(
             f"unknown exog_unit_root name(s) {unknown}; choose from {list(EXOG_NAMES)}"
         )
     ur_mask = np.array([name in unit_root for name in EXOG_NAMES])
+    decay = np.zeros(len(EXOG_NAMES))
+    if exog_adstock:
+        unknown = sorted(set(exog_adstock) - set(EXOG_NAMES))
+        if unknown:
+            raise ValueError(
+                f"unknown exog_adstock name(s) {unknown}; choose from {list(EXOG_NAMES)}"
+            )
+        if exog_lag_share:
+            raise ValueError("exog_adstock cannot be combined with exog_lag_share")
+        for name, w in exog_adstock.items():
+            if not 0.0 <= w < 1.0:
+                raise ValueError(f"adstock decay for {name!r} must be in [0, 1); got {w}")
+            decay[EXOG_NAMES.index(name)] = w
     b_now = (1.0 - exog_lag_share) * _B
     b_lag = exog_lag_share * _B
 
     rng = np.random.default_rng(seed)
     x, x_reg = _simulate_exog(n_obs, rng, ur_mask)
+    if decay.any():
+        # Adstock state a_t = (1 - w) x_t + w a_{t-1}, started at x_0.
+        stock = x_reg.copy()
+        for t in range(1, n_obs):
+            stock[t] = (1.0 - decay) * x_reg[t] + decay * stock[t - 1]
+        x_reg = stock
     eps = rng.multivariate_normal(np.zeros(3), _SIGMA, size=n_obs)
 
     y = np.zeros((n_obs, 3))
@@ -295,13 +334,14 @@ def simulate_brand_data(
         alpha=_ALPHA.copy(),
         beta=_BETA.copy(),
         gamma=_GAMMA.copy(),
-        b=b_now,
+        b=b_now * (1.0 - decay),
         sigma=_SIGMA.copy(),
         const=const,
         loading=_LOADING.copy(),
         growth=_SALES_GROWTH * _LOADING,
         b_lag=b_lag,
         differenced=tuple(n for n in EXOG_NAMES if n in unit_root),
+        adstock=decay,
     )
     return BrandData(
         endog=pd.DataFrame(y, index=dates, columns=list(ENDOG_NAMES)),

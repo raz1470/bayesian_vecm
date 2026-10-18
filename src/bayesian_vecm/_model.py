@@ -128,7 +128,9 @@ class BayesianVECM:
         Compound codes (Johansen cases 4 and 5) are not supported.
     priors
         Optional mapping from parameter name to distribution spec. Keys
-        recognised: ``"alpha"``, ``"beta"``, ``"Gamma"``, ``"Sigma"``, ``"B"``.
+        recognised: ``"alpha"``, ``"beta"``, ``"Gamma"``, ``"Sigma"``, ``"B"``,
+        ``"adstock_alpha"``. With ``adstock``, ``"B"`` sets the prior on the
+        total effects ``B_total`` (and on the free lags of other drivers).
         Each value is a dict of the form ``{"dist": "<DistName>", **kwargs}``
         — for example ``{"dist": "Normal", "mu": 0.0, "sigma": 1.0}``. Any
         parameter omitted from the dict falls back to a weakly-informative
@@ -142,12 +144,30 @@ class BayesianVECM:
         flighted driver are highly correlated, so read the effect summed
         over lags (:meth:`exog_irf`, :meth:`granger_causality`) rather than
         each lag on its own.
+    adstock
+        Drivers whose effect carries over with geometric decay (adstock),
+        given as ``exog`` column names or positions. For each, the lag-:math:`l`
+        coefficient is :math:`b \\, w^l / \\sum_{i=0}^{L_a} w^i`: ``B_total``
+        (:math:`b`, prior ``Normal(0, 1)``) is the total effect on each
+        series and ``adstock_alpha`` (:math:`w`, prior ``Beta(1, 1)``, flat) is one
+        decay per driver, shared across series. ``B`` keeps its usual layout,
+        so :meth:`exog_irf`, forecasts and :meth:`granger_causality` read it
+        as before. Drivers not listed keep free coefficients on lags
+        ``0..exog_lags``. ``None`` (default) means no adstock.
+    adstock_max_lag
+        Length of the adstock window, :math:`L_a`. Defaults to ``8``, which
+        suits weekly data with decays up to about 0.7 (at 0.9, lag 8 still
+        carries 43% of the same-week weight). The first
+        ``max(exog_lags, adstock_max_lag) - k_ar_diff - 1`` rows are dropped
+        so every lag exists. Ignored without ``adstock``.
 
     Raises
     ------
     ValueError
         If ``k_ar_diff`` or ``exog_lags`` is negative, ``coint_rank`` is less
-        than ``1``, or ``deterministic`` is not one of the recognised codes.
+        than ``1``, ``deterministic`` is not one of the recognised codes,
+        ``adstock_max_lag`` is below ``1``, or ``adstock`` is empty or has
+        duplicates.
     TypeError
         If ``priors`` is not ``None`` and not a ``dict``.
 
@@ -175,6 +195,8 @@ class BayesianVECM:
         deterministic: str = "n",
         priors: dict[str, Any] | None = None,
         exog_lags: int = 0,
+        adstock: Sequence[str | int] | None = None,
+        adstock_max_lag: int = 8,
     ) -> None:
         """Configure the model. See the class docstring for parameter details.
 
@@ -191,6 +213,20 @@ class BayesianVECM:
 
         if exog_lags < 0:
             raise ValueError(f"exog_lags must be non-negative; got exog_lags={exog_lags}")
+
+        if adstock_max_lag < 1:
+            raise ValueError(
+                f"adstock_max_lag must be at least 1; got adstock_max_lag={adstock_max_lag}"
+            )
+
+        if adstock is not None:
+            if isinstance(adstock, (str, int)):
+                adstock = [adstock]
+            adstock = list(adstock)
+            if not adstock:
+                raise ValueError("adstock must name at least one driver, or be None")
+            if len(set(adstock)) != len(adstock):
+                raise ValueError(f"adstock has duplicate entries: {adstock}")
 
         if deterministic not in VALID_DETERMINISTIC:
             valid = sorted(VALID_DETERMINISTIC)
@@ -209,6 +245,8 @@ class BayesianVECM:
         self.deterministic = deterministic
         self.priors = priors
         self.exog_lags = exog_lags
+        self.adstock = adstock
+        self.adstock_max_lag = adstock_max_lag
 
     def fit(
         self,
@@ -275,13 +313,16 @@ class BayesianVECM:
 
         endog_arr = validate_endog(endog)
 
+        adstock_idx = self._resolve_adstock(exog)
+        window = self._window_for(adstock_idx)
+
         design = cointegration_design(
             endog_arr,
             k_ar_diff=self.k_ar_diff,
             deterministic=self.deterministic,
             exog=exog,
             exog_coint=exog_coint,
-            exog_lags=self.exog_lags,
+            exog_lags=window,
         )
 
         model = build_pymc_model(
@@ -291,6 +332,8 @@ class BayesianVECM:
             deterministic=self.deterministic,
             priors=self.priors,
             exog_lags=self.exog_lags,
+            adstock=adstock_idx,
+            adstock_max_lag=self.adstock_max_lag,
         )
 
         with model:
@@ -332,14 +375,16 @@ class BayesianVECM:
         self.idata_ = idata
         self.variable_names_ = variable_names
         self.exog_names_ = [str(c) for c in exog.columns] if hasattr(exog, "columns") else None
-        self.exog_ = design.exog  # (T_eff, m * (exog_lags + 1)) or None
-        # The last exog_lags rows of the raw drivers seed the lags in a forecast.
+        self.exog_ = design.exog  # (T_eff, m * (window + 1)) or None
+        self.adstock_idx_ = adstock_idx
+        self.exog_window_ = window
+        # The last `window` rows of the raw drivers seed the lags in a forecast.
         self.exog_tail_ = None
         if exog is not None:
             exog_raw = np.asarray(
                 exog.to_numpy() if hasattr(exog, "to_numpy") else exog, dtype=np.float64
             )
-            self.exog_tail_ = exog_raw[exog_raw.shape[0] - self.exog_lags :]
+            self.exog_tail_ = exog_raw[exog_raw.shape[0] - window :]
         self.exog_coint_ = (
             None
             if exog_coint is None
@@ -349,6 +394,41 @@ class BayesianVECM:
             )
         )
         return self
+
+    def _resolve_adstock(self, exog: Any) -> tuple[int, ...]:
+        """Map ``self.adstock`` names or positions to ``exog`` column indices."""
+        adstock = getattr(self, "adstock", None)
+        if adstock is None:
+            return ()
+        if exog is None:
+            raise ValueError("adstock needs exog: pass the drivers to fit(exog=...)")
+        n_cols = np.shape(exog)[1] if np.ndim(exog) == 2 else None
+        names = [str(c) for c in exog.columns] if hasattr(exog, "columns") else None
+        idx = []
+        for item in adstock:
+            if isinstance(item, str):
+                if names is None or item not in names:
+                    raise ValueError(
+                        f"adstock driver {item!r} is not an exog column; columns are {names}"
+                    )
+                idx.append(names.index(item))
+            else:
+                if n_cols is None or not 0 <= int(item) < n_cols:
+                    raise ValueError(f"adstock position {item} is out of range for exog")
+                idx.append(int(item))
+        if len(set(idx)) != len(idx):
+            raise ValueError(f"adstock names the same driver twice: {adstock}")
+        return tuple(idx)
+
+    def _window_for(self, adstock_idx: tuple[int, ...]) -> int:
+        """Number of past periods of ``exog`` in the design."""
+        if adstock_idx:
+            return max(self.exog_lags, self.adstock_max_lag)
+        return self.exog_lags
+
+    def _exog_window(self) -> int:
+        """Lag window of a fitted model (falls back for older pickles)."""
+        return getattr(self, "exog_window_", self.__dict__.get("exog_lags", 0))
 
     @property
     def idata(self) -> az.InferenceData:
@@ -401,6 +481,8 @@ class BayesianVECM:
             if getattr(self, "exog_", None) is not None:
                 # Append B after Gamma (or after beta if no Gamma) but before Sigma.
                 var_names.insert(-1, "B")
+            if getattr(self, "adstock_idx_", ()):
+                var_names[-1:-1] = ["B_total", "adstock_alpha"]
             summary_kwargs["var_names"] = var_names
 
         return az.summary(self.idata_, **summary_kwargs)
@@ -669,7 +751,7 @@ class BayesianVECM:
             steps=steps,
             variable_names=self.variable_names_,
             exog_names=getattr(self, "exog_names_", None),
-            exog_lags=getattr(self, "exog_lags", 0),
+            exog_lags=self._exog_window(),
         )
 
     def fevd(
@@ -774,7 +856,8 @@ class BayesianVECM:
             self.k_ar_diff,
             variable_names=self.variable_names_,
             exog_names=getattr(self, "exog_names_", None),
-            exog_lags=getattr(self, "exog_lags", 0),
+            exog_lags=self._exog_window(),
+            adstock=tuple(getattr(self, "adstock_idx_", ())),
             threshold=threshold,
             ci_prob=ci_prob,
             gamma_prior=str(gamma_spec.get("dist", "Normal")),
@@ -885,7 +968,7 @@ class BayesianVECM:
                     f"exog_future must have {steps} rows (one per forecast step); "
                     f"got {exog_future_arr.shape[0]}"
                 )
-            n_lags = getattr(self, "exog_lags", 0) + 1
+            n_lags = self._exog_window() + 1
             m_fit = self.exog_.shape[1] // n_lags  # type: ignore[union-attr]
             if exog_future_arr.shape[1] != m_fit:
                 raise ValueError(
