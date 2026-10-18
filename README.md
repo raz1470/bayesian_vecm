@@ -100,6 +100,22 @@ model = BayesianVECM(k_ar_diff=1, coint_rank=2, deterministic="co", exog_lags=1)
 - Lags of a flighted driver are highly correlated, so the split between lags is noisy. Keep `exog_lags` at 1 or 2.
 - Monthly data usually needs `exog_lags=1`. Spend late in a month moves next month's average.
 
+If a channel's effect carries over for weeks (adstock), use `adstock` instead of many free lags:
+
+```python
+model = BayesianVECM(
+    k_ar_diff=1,
+    coint_rank=2,
+    deterministic="co",
+    adstock=["brand_spend", "pr_reach", "sponsorship_reach"],
+    adstock_max_lag=8,
+)
+```
+
+- Each listed channel gets a total effect per series (`B_total`) and one geometric decay (`adstock_alpha`, flat prior), shared across series. `B` keeps its usual layout, so `exog_irf()`, forecasts and `granger_causality()` work as before.
+- Drivers not listed (here the macro variables) keep `exog_lags`.
+- On simulated weekly data with carryover, ignoring it missed about half of each channel's total effect. Adstock and `exog_lags=8` both got the totals roughly right, with adstock's intervals about 40% narrower. With no carryover in the data, adstock estimated decays near zero at no cost. `tools/adstock_check.py` has the details.
+
 ### 4. Inspect the posterior
 
 ```python

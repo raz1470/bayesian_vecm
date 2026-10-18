@@ -182,6 +182,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
@@ -192,7 +193,10 @@ from bayesian_vecm._design import CointegrationDesign
 #: ``{"dist": ..., **kwargs}`` pattern used for the other three.
 #: ``B`` is the exogenous-regressor coefficient matrix; it is only added to
 #: the graph when ``design.exog`` is not ``None``.
-_VALID_PRIOR_KEYS: frozenset[str] = frozenset({"alpha", "beta", "Gamma", "Sigma", "B"})
+#: ``adstock_alpha`` is the geometric decay of each adstocked driver.
+_VALID_PRIOR_KEYS: frozenset[str] = frozenset(
+    {"alpha", "beta", "Gamma", "Sigma", "B", "adstock_alpha"}
+)
 
 #: Recognised override keys for the Sigma prior in v0.
 _VALID_SIGMA_KEYS: frozenset[str] = frozenset({"eta", "sd_sigma"})
@@ -217,6 +221,8 @@ def build_pymc_model(
     deterministic: str,
     priors: dict[str, Any] | None = None,
     exog_lags: int = 0,
+    adstock: tuple[int, ...] = (),
+    adstock_max_lag: int = 8,
 ) -> pm.Model:
     """Build the PyMC model graph for a v0 BayesianVECM fit.
 
@@ -246,7 +252,20 @@ def build_pymc_model(
         Number of past periods of ``exog`` in the design, :math:`L`. ``B``
         then has ``m * (L + 1)`` columns, lag-major. The default prior on
         each entry is ``Normal(0, 1 / sqrt(L + 1))``, so the prior on the
-        sum over lags stays ``Normal(0, 1)``.
+        sum over lags stays ``Normal(0, 1)``. With ``adstock`` this is the
+        number of free lags of the drivers that are not adstocked.
+    adstock
+        Column indices (into the ``m`` raw drivers) of the drivers with
+        geometric adstock. For each, the lag-:math:`l` coefficient is
+        :math:`b \\, w^l / \\sum_{i=0}^{L_a} w^i`, where :math:`b`
+        (``B_total``, prior ``Normal(0, 1)``) is the total effect and
+        :math:`w` (``adstock_alpha``, prior ``Beta(1, 1)``, flat) is one decay per
+        driver shared across equations. ``B`` is then a deterministic with
+        the same layout as without adstock. Empty (default) means no adstock.
+    adstock_max_lag
+        Number of past periods in the adstock window, :math:`L_a`. The
+        design must have been built with
+        ``max(exog_lags, adstock_max_lag)`` lags. Ignored without ``adstock``.
 
     Returns
     -------
@@ -393,7 +412,16 @@ def build_pymc_model(
         # Only added when exog is present. The default prior is Normal(0, 1)
         # with no exog lags. With L lags each entry gets sd 1 / sqrt(L + 1),
         # so the summed effect of a driver keeps a Normal(0, 1) prior.
-        if exog is not None:
+        if exog is not None and adstock:
+            b_mat = _build_adstock_b(
+                n_vars=n_vars,
+                n_cols=exog.shape[1],
+                exog_lags=exog_lags,
+                adstock=adstock,
+                adstock_max_lag=adstock_max_lag,
+                user_priors=user_priors,
+            )
+        elif exog is not None:
             n_exog = exog.shape[1]
             b_sd = 1.0 / (exog_lags + 1) ** 0.5
             b_mat = _resolve_dist(
@@ -424,6 +452,70 @@ def build_pymc_model(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _build_adstock_b(
+    *,
+    n_vars: int,
+    n_cols: int,
+    exog_lags: int,
+    adstock: tuple[int, ...],
+    adstock_max_lag: int,
+    user_priors: dict[str, Any],
+) -> Any:
+    """Build ``B`` as a deterministic from adstock decays and total effects.
+
+    The design has ``window + 1`` lag blocks of ``m`` drivers each, with
+    ``window = max(exog_lags, adstock_max_lag)``. Adstocked drivers spread a
+    total effect ``B_total`` over lags ``0..adstock_max_lag`` with normalised
+    geometric weights. Other drivers keep free coefficients on lags
+    ``0..exog_lags``. Every other entry of ``B`` is zero.
+    """
+    window = max(exog_lags, adstock_max_lag)
+    n_exog = n_cols // (window + 1)
+    ad = list(adstock)
+    other = [j for j in range(n_exog) if j not in set(ad)]
+
+    w = _resolve_dist(
+        name="adstock_alpha",
+        user_spec=user_priors.get("adstock_alpha"),
+        default_spec={"dist": "Beta", "alpha": 1.0, "beta": 1.0},
+        shape=(len(ad),),
+    )
+    b_total = _resolve_dist(
+        name="B_total",
+        user_spec=user_priors.get("B"),
+        default_spec={"dist": "Normal", "mu": 0.0, "sigma": 1.0},
+        shape=(n_vars, len(ad)),
+    )
+    powers = np.arange(adstock_max_lag + 1, dtype=np.float64)
+    raw = w[:, None] ** powers[None, :]  # (m_ad, L_a + 1)
+    weights = raw / raw.sum(axis=1, keepdims=True)
+    blocks = b_total[:, :, None] * weights[None, :, :]  # (K, m_ad, L_a + 1)
+    if window > adstock_max_lag:
+        blocks = pt.concatenate(
+            [blocks, pt.zeros((n_vars, len(ad), window - adstock_max_lag))], axis=2
+        )
+
+    if other:
+        free = _resolve_dist(
+            name="B_free",
+            user_spec=user_priors.get("B"),
+            default_spec={"dist": "Normal", "mu": 0.0, "sigma": 1.0 / (exog_lags + 1) ** 0.5},
+            shape=(n_vars, len(other), exog_lags + 1),
+        )
+        if window > exog_lags:
+            free = pt.concatenate(
+                [free, pt.zeros((n_vars, len(other), window - exog_lags))], axis=2
+            )
+        blocks = pt.concatenate([blocks, free], axis=1)
+
+    # Back to the original driver order, then lag-major columns l * m + j.
+    order = ad + other
+    inverse = np.argsort(order)
+    full = blocks[:, inverse, :]  # (K, m, window + 1)
+    b_mat = full.transpose(0, 2, 1).reshape((n_vars, (window + 1) * n_exog))
+    return pm.Deterministic("B", b_mat)
 
 
 def _validate_priors_dict(priors: dict[str, Any] | None) -> dict[str, Any]:

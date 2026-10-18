@@ -48,10 +48,9 @@ The test comes first because it is cheap, needs no change to the model, and show
 
 It finds the zeros, but it also shrinks small real lag effects, so the total effect of a driver, the number users report, is biased down. The default Normal prior already gets the total right.
 
-**Options if this is picked up:**
+**Adstock (built).** The preferred option was implemented as `adstock=`: `B_l = b * w^l / sum(w^i)`, so `b` (`B_total`) is the total effect, with one decay per driver shared across the equations. A flat `Beta(1, 1)` prior on the decay replaced the pymc-marketing default `Beta(1, 3)`, which pulled the decays and totals down by about 10%. See `tools/adstock_check.py` and the README.
 
-1. **Adstock-style lags (preferred).** `B_l = b * w_l(theta)`, with geometric weights that sum to one, so `b` is the total effect and gets its own prior. One decay rate per driver, shared across the equations. `B` keeps its shape, so `exog_irf`, `granger_causality` and forecasting need no change. Check first: when a driver has no effect, `theta` is not identified and may cause divergences.
-2. **A horseshoe grouped by driver.** All lags of a driver share one local scale, so a whole driver can be dropped without zeroing its lags one by one.
+**Still open: a horseshoe grouped by driver.** All lags of a driver share one local scale, so a whole driver can be dropped without zeroing its lags one by one. Only worth it if many drivers with free lags become common.
 
 ## A PyMC prior-sampling bug
 
