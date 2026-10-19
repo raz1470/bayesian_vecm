@@ -194,9 +194,15 @@ from bayesian_vecm._design import CointegrationDesign
 #: ``B`` is the exogenous-regressor coefficient matrix; it is only added to
 #: the graph when ``design.exog`` is not ``None``.
 #: ``adstock_alpha`` is the geometric decay of each adstocked driver.
+#: ``saturation_lam`` is the logistic saturation rate of each saturated driver.
 _VALID_PRIOR_KEYS: frozenset[str] = frozenset(
-    {"alpha", "beta", "Gamma", "Sigma", "B", "adstock_alpha"}
+    {"alpha", "beta", "Gamma", "Sigma", "B", "adstock_alpha", "saturation_lam"}
 )
+
+#: Default prior on the saturation rate: mean 6.7, 90% of its mass between
+#: about 1 and 16. Broad enough for spend that sits anywhere from the
+#: near-linear part of the curve to well into saturation.
+_DEFAULT_SATURATION_LAM: dict[str, Any] = {"dist": "Gamma", "alpha": 2.0, "beta": 0.3}
 
 #: Recognised override keys for the Sigma prior in v0.
 _VALID_SIGMA_KEYS: frozenset[str] = frozenset({"eta", "sd_sigma"})
@@ -223,6 +229,9 @@ def build_pymc_model(
     exog_lags: int = 0,
     adstock: tuple[int, ...] = (),
     adstock_max_lag: int = 8,
+    saturation: tuple[int, ...] = (),
+    saturation_scale: Any = None,
+    saturation_level: Any = None,
 ) -> pm.Model:
     """Build the PyMC model graph for a v0 BayesianVECM fit.
 
@@ -266,6 +275,19 @@ def build_pymc_model(
         Number of past periods in the adstock window, :math:`L_a`. The
         design must have been built with
         ``max(exog_lags, adstock_max_lag)`` lags. Ignored without ``adstock``.
+    saturation
+        Column indices of the drivers with logistic saturation. Their
+        columns in ``design.exog`` must be raw, non-negative spend. Each acts
+        through :math:`b \\, [f(a_t / s) - \\bar f]`, where :math:`a_t` is
+        spend after adstock (same-week spend without it), :math:`s` is
+        ``saturation_scale``, :math:`f(u) = \\tanh(\\lambda u / 2)` and
+        :math:`\\bar f` its in-sample mean. :math:`\\lambda` is
+        ``saturation_lam``. ``B_total`` is the total effect of one more unit
+        at ``saturation_level`` and :math:`b` (``B_saturation``, the effect
+        at full saturation) is derived from it. Empty (default) means none.
+    saturation_scale, saturation_level
+        Per saturated driver: the spend scale :math:`s` (in-sample maximum)
+        and the spend level at which ``B`` is linearised (in-sample mean).
 
     Returns
     -------
@@ -412,13 +434,17 @@ def build_pymc_model(
         # Only added when exog is present. The default prior is Normal(0, 1)
         # with no exog lags. With L lags each entry gets sd 1 / sqrt(L + 1),
         # so the summed effect of a driver keeps a Normal(0, 1) prior.
-        if exog is not None and adstock:
-            b_mat = _build_adstock_b(
+        sat_term = None
+        if exog is not None and (adstock or saturation):
+            b_mat, sat_term = _build_structured_b(
+                exog=exog,
                 n_vars=n_vars,
-                n_cols=exog.shape[1],
                 exog_lags=exog_lags,
                 adstock=adstock,
                 adstock_max_lag=adstock_max_lag,
+                saturation=saturation,
+                saturation_scale=saturation_scale,
+                saturation_level=saturation_level,
                 user_priors=user_priors,
             )
         elif exog is not None:
@@ -440,6 +466,8 @@ def build_pymc_model(
         mu = ec_term + pm.math.dot(delta_x, gamma.T) if delta_x_cols > 0 else ec_term
         if exog is not None:
             mu = mu + pm.math.dot(exog, b_mat.T)
+        if sat_term is not None:
+            mu = mu + sat_term
 
         # --- Likelihood: row-wise MvNormal with shared Sigma ----------------
         # Using chol directly (rather than cov=Sigma) avoids redundant
@@ -454,48 +482,112 @@ def build_pymc_model(
 # ---------------------------------------------------------------------------
 
 
-def _build_adstock_b(
+def _build_structured_b(
     *,
+    exog: np.ndarray,
     n_vars: int,
-    n_cols: int,
     exog_lags: int,
     adstock: tuple[int, ...],
     adstock_max_lag: int,
+    saturation: tuple[int, ...],
+    saturation_scale: Any,
+    saturation_level: Any,
     user_priors: dict[str, Any],
-) -> Any:
-    """Build ``B`` as a deterministic from adstock decays and total effects.
+) -> tuple[Any, Any]:
+    """Build the exogenous terms when some drivers have adstock or saturation.
 
     The design has ``window + 1`` lag blocks of ``m`` drivers each, with
-    ``window = max(exog_lags, adstock_max_lag)``. Adstocked drivers spread a
-    total effect ``B_total`` over lags ``0..adstock_max_lag`` with normalised
-    geometric weights. Other drivers keep free coefficients on lags
-    ``0..exog_lags``. Every other entry of ``B`` is zero.
-    """
-    window = max(exog_lags, adstock_max_lag)
-    n_exog = n_cols // (window + 1)
-    ad = list(adstock)
-    other = [j for j in range(n_exog) if j not in set(ad)]
+    ``window = max(exog_lags, adstock_max_lag)`` under adstock and
+    ``exog_lags`` otherwise. Structured drivers (adstocked, saturated or
+    both) have one total effect ``B_total`` spread over the lags by weights:
+    normalised geometric weights over ``0..adstock_max_lag`` when adstocked,
+    all on lag 0 otherwise. Other drivers keep free coefficients on lags
+    ``0..exog_lags``.
 
-    w = _resolve_dist(
-        name="adstock_alpha",
-        user_spec=user_priors.get("adstock_alpha"),
-        default_spec={"dist": "Beta", "alpha": 1.0, "beta": 1.0},
-        shape=(len(ad),),
-    )
+    For a saturated driver ``B_total`` is the total effect of one more unit
+    at ``saturation_level`` and ``B_saturation`` (the effect at full
+    saturation) is derived from it.
+
+    Returns ``(b_lin, sat_term)``. ``b_lin`` multiplies the design's lag
+    columns and is zero for saturated drivers. ``sat_term`` is the
+    ``(T_eff, K)`` saturated contribution, or ``None``. The deterministic
+    ``B`` spreads every ``B_total`` over its lags, so for a saturated driver
+    readers of ``B`` get the marginal effect at ``saturation_level``.
+    """
+    window = max(exog_lags, adstock_max_lag) if adstock else exog_lags
+    n_lags = window + 1
+    n_exog = exog.shape[1] // n_lags
+    ad = list(adstock)
+    sat_only = [j for j in saturation if j not in set(ad)]
+    struct = ad + sat_only
+    other = [j for j in range(n_exog) if j not in set(struct)]
+
+    # Lag weights of the structured drivers, (m_struct, window + 1).
+    weight_rows = []
+    if ad:
+        w = _resolve_dist(
+            name="adstock_alpha",
+            user_spec=user_priors.get("adstock_alpha"),
+            default_spec={"dist": "Beta", "alpha": 1.0, "beta": 1.0},
+            shape=(len(ad),),
+        )
+        powers = np.arange(adstock_max_lag + 1, dtype=np.float64)
+        raw = w[:, None] ** powers[None, :]  # (m_ad, L_a + 1)
+        ad_weights = raw / raw.sum(axis=1, keepdims=True)
+        if window > adstock_max_lag:
+            ad_weights = pt.concatenate(
+                [ad_weights, pt.zeros((len(ad), window - adstock_max_lag))], axis=1
+            )
+        weight_rows.append(ad_weights)
+    if sat_only:
+        same_week = np.zeros((len(sat_only), n_lags))
+        same_week[:, 0] = 1.0
+        weight_rows.append(pt.as_tensor(same_week))
+    weights = pt.concatenate(weight_rows, axis=0) if len(weight_rows) > 1 else weight_rows[0]
     b_total = _resolve_dist(
         name="B_total",
         user_spec=user_priors.get("B"),
         default_spec={"dist": "Normal", "mu": 0.0, "sigma": 1.0},
-        shape=(n_vars, len(ad)),
+        shape=(n_vars, len(struct)),
     )
-    powers = np.arange(adstock_max_lag + 1, dtype=np.float64)
-    raw = w[:, None] ** powers[None, :]  # (m_ad, L_a + 1)
-    weights = raw / raw.sum(axis=1, keepdims=True)
-    blocks = b_total[:, :, None] * weights[None, :, :]  # (K, m_ad, L_a + 1)
-    if window > adstock_max_lag:
-        blocks = pt.concatenate(
-            [blocks, pt.zeros((n_vars, len(ad), window - adstock_max_lag))], axis=2
+
+    # Gain per structured driver on its linear lag blocks: 1 for linear
+    # drivers, 0 in the likelihood for saturated ones. For a saturated driver
+    # B_total is the total effect of one more unit at the reference spend
+    # level (the slope the data pin down best), so the stored B keeps gain 1.
+    # The effect at full saturation is derived from it: b = B_total / slope.
+    # Sampling b directly puts the posterior on a ridge between b and lambda.
+    gain_lin = np.ones(len(struct))
+    sat_term = None
+    if saturation:
+        sat_pos = [struct.index(j) for j in saturation]
+        gain_lin[sat_pos] = 0.0
+        scale = np.asarray(saturation_scale, dtype=np.float64)
+        level = np.asarray(saturation_level, dtype=np.float64)
+        lam = _resolve_dist(
+            name="saturation_lam",
+            user_spec=user_priors.get("saturation_lam"),
+            default_spec=_DEFAULT_SATURATION_LAM,
+            shape=(len(saturation),),
         )
+        sat_weights = pm.Deterministic("saturation_weights", weights[sat_pos])  # (m_sat, n_lags)
+        lagged = exog.reshape(exog.shape[0], n_lags, n_exog)[:, :, list(saturation)]
+        stock = (lagged * sat_weights.T[None, :, :]).sum(axis=1) / scale  # (T_eff, m_sat)
+        f = pt.tanh(lam * stock / 2.0)
+        f_mean = pm.Deterministic("saturation_mean", f.mean(axis=0))
+        f_level = pt.tanh(lam * level / scale / 2.0)
+        slope = lam / 2.0 * (1.0 - f_level**2) / scale  # (m_sat,)
+        b_sat = pm.Deterministic("B_saturation", b_total[:, sat_pos] / slope)  # (K, m_sat)
+        sat_term = pt.dot(f - f_mean, b_sat.T)  # (T_eff, K)
+
+    def assemble(gain: Any) -> Any:
+        blocks = b_total[:, :, None] * (gain[:, None] * weights)[None, :, :]  # (K, m_s, n_lags)
+        if other:
+            blocks = pt.concatenate([blocks, free], axis=1)
+        # Back to the original driver order, then lag-major columns l * m + j.
+        inverse = np.argsort(struct + other)
+        full = blocks[:, inverse, :]  # (K, m, n_lags)
+        return full.transpose(0, 2, 1).reshape((n_vars, n_lags * n_exog))
 
     if other:
         free = _resolve_dist(
@@ -508,14 +600,12 @@ def _build_adstock_b(
             free = pt.concatenate(
                 [free, pt.zeros((n_vars, len(other), window - exog_lags))], axis=2
             )
-        blocks = pt.concatenate([blocks, free], axis=1)
 
-    # Back to the original driver order, then lag-major columns l * m + j.
-    order = ad + other
-    inverse = np.argsort(order)
-    full = blocks[:, inverse, :]  # (K, m, window + 1)
-    b_mat = full.transpose(0, 2, 1).reshape((n_vars, (window + 1) * n_exog))
-    return pm.Deterministic("B", b_mat)
+    b_lin = assemble(pt.as_tensor(gain_lin))
+    if not saturation:
+        return pm.Deterministic("B", b_lin), None
+    pm.Deterministic("B", assemble(pt.as_tensor(np.ones(len(struct)))))
+    return b_lin, sat_term
 
 
 def _validate_priors_dict(priors: dict[str, Any] | None) -> dict[str, Any]:

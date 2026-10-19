@@ -80,6 +80,36 @@ from bayesian_vecm._pymc import build_pymc_model
 # conditionally when ``k_ar_diff > 0``.
 _SUMMARY_VAR_NAMES_BASE = ("alpha", "beta", "Sigma")
 
+
+def _driver_list(items: Any, label: str) -> list | None:
+    """Normalise an ``adstock`` / ``saturation`` argument to a list or ``None``."""
+    if items is None:
+        return None
+    if isinstance(items, (str, int)):
+        items = [items]
+    items = list(items)
+    if not items:
+        raise ValueError(f"{label} must name at least one driver, or be None")
+    if len(set(items)) != len(items):
+        raise ValueError(f"{label} has duplicate entries: {items}")
+    return items
+
+
+def _saturation_scale(exog: Any, idx: tuple[int, ...]) -> tuple[np.ndarray, np.ndarray]:
+    """In-sample maximum and mean of each saturated driver's raw spend."""
+    arr = np.asarray(exog.to_numpy() if hasattr(exog, "to_numpy") else exog, dtype=np.float64)
+    cols = arr[:, list(idx)]
+    if (cols < 0).any():
+        raise ValueError(
+            "saturated drivers must be raw, non-negative spend; "
+            "found negative values (pass the raw series, not deviations from the average)"
+        )
+    scale = cols.max(axis=0)
+    if (scale <= 0).any():
+        raise ValueError("every saturated driver needs some positive spend")
+    return scale, cols.mean(axis=0)
+
+
 _NOT_FITTED_MSG = "BayesianVECM has not been fitted yet; call .fit(endog) first."
 
 
@@ -129,8 +159,9 @@ class BayesianVECM:
     priors
         Optional mapping from parameter name to distribution spec. Keys
         recognised: ``"alpha"``, ``"beta"``, ``"Gamma"``, ``"Sigma"``, ``"B"``,
-        ``"adstock_alpha"``. With ``adstock``, ``"B"`` sets the prior on the
-        total effects ``B_total`` (and on the free lags of other drivers).
+        ``"adstock_alpha"``, ``"saturation_lam"``. With ``adstock`` or
+        ``saturation``, ``"B"`` sets the prior on the total effects
+        ``B_total`` (and on the free lags of other drivers).
         Each value is a dict of the form ``{"dist": "<DistName>", **kwargs}``
         — for example ``{"dist": "Normal", "mu": 0.0, "sigma": 1.0}``. Any
         parameter omitted from the dict falls back to a weakly-informative
@@ -160,14 +191,32 @@ class BayesianVECM:
         carries 43% of the same-week weight). The first
         ``max(exog_lags, adstock_max_lag) - k_ar_diff - 1`` rows are dropped
         so every lag exists. Ignored without ``adstock``.
+    saturation
+        Drivers whose effect flattens as spend grows (logistic saturation),
+        given as ``exog`` column names or positions. Their ``exog`` columns
+        must be **raw, non-negative spend**, not deviations from the
+        average; other columns are unchanged. Each acts through
+        :math:`b \\, [f(a_t / s) - \\bar f]`, with :math:`a_t` the spend after
+        adstock (same-week spend if not adstocked), :math:`s` the in-sample
+        maximum of spend, :math:`f(u) = \\tanh(\\lambda u / 2)` and
+        :math:`\\bar f` its in-sample mean. ``saturation_lam``
+        (:math:`\\lambda`, prior ``Gamma(2, 0.3)``) sets how fast it bends.
+        ``B_total`` (prior ``Normal(0, 1)``) is the total effect of one more
+        unit at mean spend, the quantity the data pin down best, and
+        ``B_saturation`` (:math:`b`, the effect at full saturation) is
+        derived from it. The return on one more unit depends on the spend
+        level: ``B``, :meth:`exog_irf` and :meth:`granger_causality` give it
+        at mean spend, ``exog_irf(at=...)`` at another level and
+        :meth:`saturation_curve` across levels. Forecasts use the exact
+        curve. ``None`` (default) means no saturation.
 
     Raises
     ------
     ValueError
         If ``k_ar_diff`` or ``exog_lags`` is negative, ``coint_rank`` is less
         than ``1``, ``deterministic`` is not one of the recognised codes,
-        ``adstock_max_lag`` is below ``1``, or ``adstock`` is empty or has
-        duplicates.
+        ``adstock_max_lag`` is below ``1``, or ``adstock`` or ``saturation``
+        is empty or has duplicates.
     TypeError
         If ``priors`` is not ``None`` and not a ``dict``.
 
@@ -197,6 +246,7 @@ class BayesianVECM:
         exog_lags: int = 0,
         adstock: Sequence[str | int] | None = None,
         adstock_max_lag: int = 8,
+        saturation: Sequence[str | int] | None = None,
     ) -> None:
         """Configure the model. See the class docstring for parameter details.
 
@@ -219,14 +269,8 @@ class BayesianVECM:
                 f"adstock_max_lag must be at least 1; got adstock_max_lag={adstock_max_lag}"
             )
 
-        if adstock is not None:
-            if isinstance(adstock, (str, int)):
-                adstock = [adstock]
-            adstock = list(adstock)
-            if not adstock:
-                raise ValueError("adstock must name at least one driver, or be None")
-            if len(set(adstock)) != len(adstock):
-                raise ValueError(f"adstock has duplicate entries: {adstock}")
+        adstock = _driver_list(adstock, "adstock")
+        saturation = _driver_list(saturation, "saturation")
 
         if deterministic not in VALID_DETERMINISTIC:
             valid = sorted(VALID_DETERMINISTIC)
@@ -247,6 +291,7 @@ class BayesianVECM:
         self.exog_lags = exog_lags
         self.adstock = adstock
         self.adstock_max_lag = adstock_max_lag
+        self.saturation = saturation
 
     def fit(
         self,
@@ -313,8 +358,14 @@ class BayesianVECM:
 
         endog_arr = validate_endog(endog)
 
-        adstock_idx = self._resolve_adstock(exog)
+        adstock_idx = self._resolve_drivers(getattr(self, "adstock", None), exog, "adstock")
+        saturation_idx = self._resolve_drivers(
+            getattr(self, "saturation", None), exog, "saturation"
+        )
         window = self._window_for(adstock_idx)
+        sat_scale = sat_level = None
+        if saturation_idx:
+            sat_scale, sat_level = _saturation_scale(exog, saturation_idx)
 
         design = cointegration_design(
             endog_arr,
@@ -334,6 +385,9 @@ class BayesianVECM:
             exog_lags=self.exog_lags,
             adstock=adstock_idx,
             adstock_max_lag=self.adstock_max_lag,
+            saturation=saturation_idx,
+            saturation_scale=sat_scale,
+            saturation_level=sat_level,
         )
 
         with model:
@@ -360,6 +414,13 @@ class BayesianVECM:
             idata.constant_data["exog"] = xr.DataArray(
                 design.exog, dims=("time_eff", "exog_variable")
             )
+        if saturation_idx:
+            idata.constant_data["saturation_idx"] = xr.DataArray(
+                np.array(saturation_idx), dims=("saturation_variable",)
+            )
+            idata.constant_data["saturation_scale"] = xr.DataArray(
+                sat_scale, dims=("saturation_variable",)
+            )
         if exog_coint is not None:
             # Store the raw (T, m_c) array — aligned slice is embedded in y_lag1.
             exog_coint_arr = np.asarray(
@@ -377,6 +438,11 @@ class BayesianVECM:
         self.exog_names_ = [str(c) for c in exog.columns] if hasattr(exog, "columns") else None
         self.exog_ = design.exog  # (T_eff, m * (window + 1)) or None
         self.adstock_idx_ = adstock_idx
+        self.saturation_idx_ = saturation_idx
+        # Drivers with a B_total column, in its order.
+        self.total_idx_ = adstock_idx + tuple(j for j in saturation_idx if j not in adstock_idx)
+        self.saturation_scale_ = sat_scale
+        self.saturation_level_ = sat_level
         self.exog_window_ = window
         # The last `window` rows of the raw drivers seed the lags in a forecast.
         self.exog_tail_ = None
@@ -385,6 +451,7 @@ class BayesianVECM:
                 exog.to_numpy() if hasattr(exog, "to_numpy") else exog, dtype=np.float64
             )
             self.exog_tail_ = exog_raw[exog_raw.shape[0] - window :]
+            self._exog_recent = exog_raw[-13:].mean(axis=0)
         self.exog_coint_ = (
             None
             if exog_coint is None
@@ -395,29 +462,29 @@ class BayesianVECM:
         )
         return self
 
-    def _resolve_adstock(self, exog: Any) -> tuple[int, ...]:
-        """Map ``self.adstock`` names or positions to ``exog`` column indices."""
-        adstock = getattr(self, "adstock", None)
-        if adstock is None:
+    @staticmethod
+    def _resolve_drivers(items: list | None, exog: Any, label: str) -> tuple[int, ...]:
+        """Map driver names or positions to ``exog`` column indices."""
+        if items is None:
             return ()
         if exog is None:
-            raise ValueError("adstock needs exog: pass the drivers to fit(exog=...)")
+            raise ValueError(f"{label} needs exog: pass the drivers to fit(exog=...)")
         n_cols = np.shape(exog)[1] if np.ndim(exog) == 2 else None
         names = [str(c) for c in exog.columns] if hasattr(exog, "columns") else None
         idx = []
-        for item in adstock:
+        for item in items:
             if isinstance(item, str):
                 if names is None or item not in names:
                     raise ValueError(
-                        f"adstock driver {item!r} is not an exog column; columns are {names}"
+                        f"{label} driver {item!r} is not an exog column; columns are {names}"
                     )
                 idx.append(names.index(item))
             else:
                 if n_cols is None or not 0 <= int(item) < n_cols:
-                    raise ValueError(f"adstock position {item} is out of range for exog")
+                    raise ValueError(f"{label} position {item} is out of range for exog")
                 idx.append(int(item))
         if len(set(idx)) != len(idx):
-            raise ValueError(f"adstock names the same driver twice: {adstock}")
+            raise ValueError(f"{label} names the same driver twice: {items}")
         return tuple(idx)
 
     def _window_for(self, adstock_idx: tuple[int, ...]) -> int:
@@ -481,8 +548,14 @@ class BayesianVECM:
             if getattr(self, "exog_", None) is not None:
                 # Append B after Gamma (or after beta if no Gamma) but before Sigma.
                 var_names.insert(-1, "B")
+            extra = []
+            if getattr(self, "total_idx_", getattr(self, "adstock_idx_", ())):
+                extra.append("B_total")
             if getattr(self, "adstock_idx_", ()):
-                var_names[-1:-1] = ["B_total", "adstock_alpha"]
+                extra.append("adstock_alpha")
+            if getattr(self, "saturation_idx_", ()):
+                extra.append("saturation_lam")
+            var_names[-1:-1] = extra
             summary_kwargs["var_names"] = var_names
 
         return az.summary(self.idata_, **summary_kwargs)
@@ -693,7 +766,7 @@ class BayesianVECM:
             order=order,
         )
 
-    def exog_irf(self, steps: int) -> xr.DataArray:
+    def exog_irf(self, steps: int, *, at: Any = "mean") -> xr.DataArray:
         """Posterior response of the levels to a one-period rise in each exogenous driver.
 
         Each exogenous variable is raised by one unit for one period, with
@@ -715,8 +788,12 @@ class BayesianVECM:
         :math:`C \\sum_l B_l`. The result has one column per driver, with
         all lags included.
 
-        The model is linear in the drivers. The result is a marginal
-        effect near the levels seen in the data and shows no saturation.
+        Without ``saturation`` the model is linear in the drivers, so the
+        result is the same at every spend level. A saturated driver's return
+        on one more unit depends on how much is already spent: the result
+        is its slope at the level set by ``at``, carried through the same
+        lags. For a change larger than a few units, or to see the whole
+        curve, use :meth:`saturation_curve` or a forecast.
 
         Only ``exog`` is covered. Variables passed as ``exog_coint`` enter
         the cointegrating relation and have no response here.
@@ -726,6 +803,12 @@ class BayesianVECM:
         steps
             Number of periods ahead. ``steps + 1`` horizons are returned,
             from ``0`` (impact) to ``steps``.
+        at
+            Spend level at which saturated drivers are valued. ``"mean"``
+            (default) is the in-sample mean, ``"recent"`` the mean of the
+            last 13 periods, and a dict maps driver names (or positions) to
+            levels in raw units, with the mean for any left out. Ignored
+            without ``saturation``.
 
         Returns
         -------
@@ -745,14 +828,118 @@ class BayesianVECM:
 
         from bayesian_vecm._irf import compute_exog_irf
 
+        idata = self.idata_
+        if getattr(self, "saturation_idx_", ()) and not (isinstance(at, str) and at == "mean"):
+            from types import SimpleNamespace
+
+            from bayesian_vecm._saturation import linearised_b
+
+            b = linearised_b(idata, self._saturation_levels(at))
+            posterior = idata.posterior
+            posterior = (
+                posterior.to_dataset() if hasattr(posterior, "to_dataset") else posterior
+            ).copy()
+            posterior["B"] = (posterior["B"].dims, b)
+            idata = SimpleNamespace(posterior=posterior)
         return compute_exog_irf(
-            idata=self.idata_,
+            idata=idata,
             k_ar_diff=self.k_ar_diff,
             steps=steps,
             variable_names=self.variable_names_,
             exog_names=getattr(self, "exog_names_", None),
             exog_lags=self._exog_window(),
         )
+
+    def saturation_curve(
+        self,
+        driver: str | int,
+        levels: Any,
+        *,
+        marginal: bool = False,
+    ) -> xr.DataArray:
+        """Posterior response curve of a saturated driver.
+
+        The total effect on each series' weekly growth of holding the driver
+        at each spend level for good, against its in-sample average
+        contribution. Adstock does not change a level held for ever. The
+        effect then passes through the rest of the system as any other
+        shift in growth would; use a forecast for its path in the levels.
+
+        Parameters
+        ----------
+        driver
+            Name or position of a saturated driver.
+        levels
+            Spend levels in raw units.
+        marginal
+            Return the slope per unit at each level (the return on one more
+            unit) instead of the effect.
+
+        Returns
+        -------
+        xarray.DataArray
+            Shape ``(chain, draw, level, response_variable)``.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`fit` has not been called.
+        ValueError
+            If ``driver`` is not saturated or a level is negative.
+        """
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+        from bayesian_vecm._saturation import response_curve
+
+        j = self._saturated_position(driver)
+        levels_arr = np.atleast_1d(np.asarray(levels, dtype=np.float64))
+        if (levels_arr < 0).any():
+            raise ValueError("spend levels must be non-negative")
+        curve = response_curve(self.idata_, j, levels_arr, marginal=marginal)
+        coords: dict[str, Any] = {
+            "chain": self.idata_.posterior.coords["chain"].values,
+            "draw": self.idata_.posterior.coords["draw"].values,
+            "level": levels_arr,
+        }
+        if self.variable_names_ is not None:
+            coords["response_variable"] = self.variable_names_
+        return xr.DataArray(
+            curve, dims=["chain", "draw", "level", "response_variable"], coords=coords
+        )
+
+    def _saturated_position(self, driver: str | int) -> int:
+        """Position in ``exog`` of a saturated driver given by name or position."""
+        sat = tuple(getattr(self, "saturation_idx_", ()))
+        names = getattr(self, "exog_names_", None)
+        if isinstance(driver, str):
+            if names is None or driver not in names:
+                raise ValueError(f"{driver!r} is not an exog column")
+            j = names.index(driver)
+        else:
+            j = int(driver)
+        if j not in sat:
+            raise ValueError(f"driver {driver!r} is not saturated")
+        return j
+
+    def _saturation_levels(self, at: Any) -> np.ndarray:
+        """Spend level per saturated driver for ``exog_irf(at=...)``."""
+        sat = list(self.saturation_idx_)
+        levels = np.array(self.saturation_level_, dtype=np.float64)
+        if isinstance(at, str):
+            if at == "mean":
+                return levels
+            if at == "recent":
+                recent = self._exog_recent
+                return np.array([recent[j] for j in sat])
+            raise ValueError(f'at must be "mean", "recent" or a dict; got {at!r}')
+        if not isinstance(at, dict):
+            raise ValueError(f'at must be "mean", "recent" or a dict; got {at!r}')
+        for key, value in at.items():
+            j = self._saturated_position(key)
+            if value < 0:
+                raise ValueError("spend levels must be non-negative")
+            levels[sat.index(j)] = float(value)
+        return levels
 
     def fevd(
         self,
@@ -857,7 +1044,7 @@ class BayesianVECM:
             variable_names=self.variable_names_,
             exog_names=getattr(self, "exog_names_", None),
             exog_lags=self._exog_window(),
-            adstock=tuple(getattr(self, "adstock_idx_", ())),
+            adstock=tuple(getattr(self, "total_idx_", getattr(self, "adstock_idx_", ()))),
             threshold=threshold,
             ci_prob=ci_prob,
             gamma_prior=str(gamma_spec.get("dist", "Normal")),
@@ -975,6 +1162,9 @@ class BayesianVECM:
                     f"exog_future has {exog_future_arr.shape[1]} columns but the model "
                     f"was fitted with {m_fit} exog column(s)"
                 )
+            sat_cols = list(getattr(self, "saturation_idx_", ()))
+            if sat_cols and (exog_future_arr[:, sat_cols] < 0).any():
+                raise ValueError("exog_future has negative values in a saturated driver")
             if n_lags > 1:
                 # Row h stacks [X_{T+h}, X_{T+h-1}, ..., X_{T+h-L}], lag-major
                 # as in the fit. Early lags come from the end of the fit sample.

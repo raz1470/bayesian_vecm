@@ -52,6 +52,13 @@ import numpy as np
 import xarray as xr
 from numpy.typing import NDArray
 
+from bayesian_vecm._saturation import (
+    has_saturation,
+    saturation_info,
+    saturation_term,
+    zero_saturated_columns,
+)
+
 
 def forecast_posterior(
     idata: xr.DataTree,
@@ -147,8 +154,15 @@ def forecast_posterior(
         # Slice to K*k_ar_diff dynamic columns — strips any outside
         # deterministic column appended by cointegration_design.
         gamma = gamma_draws.reshape(n_total, n_vars, -1)[:, :, : n_vars * k_ar_diff]  # (D, K, K*k)
+    sat_extra = None
     if has_exog:
         b_mat = b_draws.reshape(n_total, n_vars, -1)  # (D, K, m)
+        if has_saturation(idata):
+            # Saturated drivers: exact curve instead of their slope in B.
+            idx, _ = saturation_info(idata)
+            n_exog = b_mat.shape[-1] // posterior["saturation_weights"].shape[-1]
+            b_mat = zero_saturated_columns(b_mat, idx, n_exog)
+            sat_extra = saturation_term(idata, exog_future)  # (D, steps, K)
 
     # --- Deterministic terms ------------------------------------------------
     # Outside terms are the column of Gamma after the K * k lag columns.
@@ -221,6 +235,8 @@ def forecast_posterior(
         if has_exog:
             x_h = exog_future[h]  # (m,)
             mu = mu + np.einsum("dkm,m->dk", b_mat, x_h)  # (D, K)
+            if sat_extra is not None:
+                mu = mu + sat_extra[:, h]
 
         # Innovation: eps ~ MvNormal(0, Sigma) via pre-computed Cholesky
         z = rng.standard_normal((n_total, n_vars))  # (D, K)

@@ -116,6 +116,25 @@ model = BayesianVECM(
 - Drivers not listed (here the macro variables) keep `exog_lags`.
 - On simulated weekly data with carryover, ignoring it missed about half of each channel's total effect. Adstock and `exog_lags=8` both got the totals roughly right, with adstock's intervals about 40% narrower. With no carryover in the data, adstock estimated decays near zero at no cost. `tools/adstock_check.py` has the details.
 
+If one more unit of a channel buys less as spend grows (saturation), add `saturation`. The listed columns of `exog` must be **raw, non-negative spend**, not deviations from the average:
+
+```python
+model = BayesianVECM(
+    k_ar_diff=1,
+    coint_rank=2,
+    deterministic="co",
+    adstock=["brand_spend", "pr_reach", "sponsorship_reach"],
+    saturation=["brand_spend", "pr_reach", "sponsorship_reach"],
+)
+model.fit(endog, exog=exog_raw_spend)
+curve = model.saturation_curve("brand_spend", [0, 500, 1_000, 2_000])
+```
+
+- Each listed channel acts through logistic saturation `tanh(lam * a / 2)` of its spend after adstock, scaled by its in-sample maximum. `saturation_lam` sets how fast it bends.
+- `B_total` is the effect of one more unit at mean spend. `exog_irf()` and `granger_causality()` report that; `exog_irf(at=...)` values another spend level and `saturation_curve()` the whole curve. Forecasts use the exact curve.
+- On simulated weekly data with saturation (18 seeds), a linear fit was close at mean spend but understated the loss from switching brand spend off by 60% and overstated the gain from doubling it by 120%. The saturation fit got both within about 10%, with 0 divergences.
+- With no saturation in the data, the prior still bends the curve, so effects far from current spend are overstated by up to 30% for brand spend. `tools/saturation_check.py` has the details.
+
 ### 4. Inspect the posterior
 
 ```python
