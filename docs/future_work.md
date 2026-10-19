@@ -50,6 +50,10 @@ It finds the zeros, but it also shrinks small real lag effects, so the total eff
 
 **Adstock (built).** The preferred option was implemented as `adstock=`: `B_l = b * w^l / sum(w^i)`, so `b` (`B_total`) is the total effect, with one decay per driver shared across the equations. A flat `Beta(1, 1)` prior on the decay replaced the pymc-marketing default `Beta(1, 3)`, which pulled the decays and totals down by about 10%. See `tools/adstock_check.py` and the README.
 
+**Logistic saturation (built).** `saturation=` applies `tanh(lam * a / 2)` after adstock to raw spend scaled by its maximum. Sampling the effect at full saturation put the posterior on a ridge with `lam`, so `B_total` is sampled as the effect of one more unit at mean spend and the full-saturation effect is derived. The default prior on `lam` is `Gamma(2, 0.3)`: the pymc-marketing default `Gamma(3, 1)` pulled `lam` down by 17% to 41% and flattened the curve. See `tools/saturation_check.py`.
+
+**Still open: a prior that allows no saturation.** With linear truth the `Gamma(2, 0.3)` prior keeps `lam` near 2, so the fit bends a straight line. Effects far from current spend come out up to 30% too large for brand spend and about 55% for sponsorship. A prior with more mass near zero, or a check of whether the curve is needed, would fix this.
+
 **Still open: a horseshoe grouped by driver.** All lags of a driver share one local scale, so a whole driver can be dropped without zeroing its lags one by one. Only worth it if many drivers with free lags become common.
 
 ## A PyMC prior-sampling bug

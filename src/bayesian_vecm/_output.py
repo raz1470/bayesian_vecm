@@ -51,6 +51,13 @@ import numpy as np
 import xarray as xr
 from numpy.typing import NDArray
 
+from bayesian_vecm._saturation import (
+    has_saturation,
+    saturation_info,
+    saturation_term,
+    zero_saturated_columns,
+)
+
 
 def compute_fittedvalues(
     idata: xr.DataTree,
@@ -107,6 +114,12 @@ def compute_fittedvalues(
         exog_vals: NDArray[np.floating] = const_data["exog"].values  # (T_eff, m)
         b_draws: NDArray[np.floating] = posterior["B"].values  # (C, D, K, m)
         b_mat = b_draws.reshape(n_total, n_vars, -1)  # (D, K, m)
+        if has_saturation(idata):
+            # Saturated drivers: exact curve instead of their slope in B.
+            idx, _ = saturation_info(idata)
+            n_exog = b_mat.shape[-1] // posterior["saturation_weights"].shape[-1]
+            b_mat = zero_saturated_columns(b_mat, idx, n_exog)
+            mu = mu + saturation_term(idata, exog_vals)
         # exog_contrib[d, t, k] = sum_i exog[t,i] * B[d,k,i]
         mu = mu + np.einsum("ti,dki->dtk", exog_vals, b_mat)  # (D, T_eff, K)
 

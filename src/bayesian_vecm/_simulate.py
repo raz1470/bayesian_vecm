@@ -46,6 +46,15 @@ drivers random walks (I(1)). Their effect then runs through the change,
 levels fit gives a meaningless coefficient. The default keeps all five
 drivers stationary.
 
+**Saturating channels.** ``exog_saturation={"brand_spend": 5.0}`` returns
+the named channels as raw, non-negative spend (mean 1, log-normal) and makes
+their effect bend: the driver acts through
+:math:`b_s \\, [f(a_t / s) - \\bar f]`, where :math:`a_t` is spend after any
+adstock, :math:`s` is the in-sample maximum of raw spend and :math:`f` is
+logistic saturation with the given :math:`\\lambda`. :math:`b_s` is set so
+the marginal effect of one unit at mean spend equals the linear ``b``, which
+keeps a linear fit's local target unchanged.
+
 The constant ``c`` gives the system an upward drift (sales double over 260
 weeks on average) and fixes the level of the two cointegrating relations. It
 is an unrestricted constant, so ``deterministic="co"`` is the matching
@@ -58,7 +67,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
+
+from bayesian_vecm._transform import logistic_saturation, logistic_saturation_slope
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -179,6 +190,21 @@ class BrandTruth:
         Geometric adstock decay :math:`w` of each driver (``exog_adstock``).
         The effect at lag :math:`l` is ``b_total * (1 - w) * w**l``. Zero
         (no carryover) by default.
+    saturation : np.ndarray, shape (m,)
+        Logistic saturation :math:`\\lambda` of each driver
+        (``exog_saturation``). Zero (linear) by default. For a saturated
+        driver ``b`` and ``b_total`` are the marginal effects of one unit at
+        mean spend (1.0).
+    spend_scale : np.ndarray, shape (m,)
+        In-sample maximum of raw spend for saturated drivers, the scale
+        :math:`s` in :math:`f(a_t / s)`. One for the others.
+    b_saturation : np.ndarray, shape (K, m)
+        Coefficient on the saturated, centred regressor
+        :math:`f(a_t / s) - \\bar f`: the effect at full saturation. Zero for
+        linear drivers.
+    saturation_mean : np.ndarray, shape (m,)
+        In-sample mean :math:`\\bar f` of the saturated regressor. Zero for
+        linear drivers.
     """
 
     alpha: NDArray[np.float64]
@@ -192,11 +218,53 @@ class BrandTruth:
     b_lag: NDArray[np.float64]
     differenced: tuple[str, ...] = ()
     adstock: NDArray[np.float64] = field(default_factory=lambda: np.zeros(len(EXOG_NAMES)))
+    saturation: NDArray[np.float64] = field(default_factory=lambda: np.zeros(len(EXOG_NAMES)))
+    spend_scale: NDArray[np.float64] = field(default_factory=lambda: np.ones(len(EXOG_NAMES)))
+    b_saturation: NDArray[np.float64] = field(
+        default_factory=lambda: np.zeros((len(ENDOG_NAMES), len(EXOG_NAMES)))
+    )
+    saturation_mean: NDArray[np.float64] = field(default_factory=lambda: np.zeros(len(EXOG_NAMES)))
 
     @property
     def b_total(self) -> NDArray[np.float64]:
-        """Total (long-run summed) effect of each driver, shape ``(K, m)``."""
+        """Total (long-run summed) effect of each driver, shape ``(K, m)``.
+
+        For a saturated driver this is the marginal effect of one unit at
+        mean spend.
+        """
         return (self.b + self.b_lag) / (1.0 - self.adstock)
+
+    def response(self, driver: str, level: ArrayLike) -> NDArray[np.float64]:
+        """Total effect on each series' growth of holding ``driver`` at ``level``.
+
+        Relative to the driver's in-sample average contribution, so a linear
+        driver held at 0 (its average) gives zero. Adstock does not change a
+        level held for ever.
+
+        Returns shape ``level.shape + (K,)``.
+        """
+        j = EXOG_NAMES.index(driver)
+        level = np.asarray(level, dtype=np.float64)[..., None]
+        lam = self.saturation[j]
+        if lam == 0.0:
+            return level * self.b_total[:, j]
+        f = logistic_saturation(level / self.spend_scale[j], lam)
+        return (f - self.saturation_mean[j]) * self.b_saturation[:, j]
+
+    def marginal_effect(self, driver: str, level: ArrayLike) -> NDArray[np.float64]:
+        """Total effect of one more unit of ``driver`` held at ``level``.
+
+        The slope of :meth:`response`. Constant for a linear driver.
+        Returns shape ``level.shape + (K,)``.
+        """
+        j = EXOG_NAMES.index(driver)
+        level = np.asarray(level, dtype=np.float64)
+        lam = self.saturation[j]
+        if lam == 0.0:
+            return np.broadcast_to(self.b_total[:, j], (*level.shape, self.b.shape[0])).copy()
+        scale = self.spend_scale[j]
+        slope = logistic_saturation_slope(level / scale, lam) / scale
+        return slope[..., None] * self.b_saturation[:, j]
 
 
 @dataclass(frozen=True)
@@ -212,7 +280,8 @@ class BrandData:
         ``brand_spend``, ``pr_reach``, ``sponsorship_reach``, ``interest_rate``
         and ``consumer_confidence``, as stationary deviations from their
         long-run averages. A driver named in ``exog_unit_root`` is a random
-        walk instead, starting near zero.
+        walk instead, starting near zero. A channel named in
+        ``exog_saturation`` is raw, non-negative spend with mean 1.
     truth : BrandTruth
         The generating parameters.
     """
@@ -230,6 +299,8 @@ def simulate_brand_data(
     exog_lag_share: float = 0.0,
     exog_unit_root: tuple[str, ...] = (),
     exog_adstock: dict[str, float] | None = None,
+    exog_saturation: dict[str, float] | None = None,
+    spend_log_sd: float = 0.30,
 ) -> BrandData:
     """Simulate weekly brand data from a VECM with known parameters.
 
@@ -262,6 +333,20 @@ def simulate_brand_data(
         :math:`l` is :math:`b (1 - w) w^l` and the total effect is unchanged.
         Decays must be in ``[0, 1)``. Cannot be combined with
         ``exog_lag_share``. ``None`` (default) means no carryover.
+    exog_saturation
+        Logistic saturation :math:`\\lambda` per marketing channel, for
+        example ``{"brand_spend": 5.0}``. The channel is returned as raw
+        spend, ``exp(d - spend_log_sd**2 / 2)`` for the stationary deviation
+        ``d``, so its mean is 1. It acts through
+        :math:`b_s [f(a_t / s) - \\bar f]` after any adstock, with :math:`s`
+        the in-sample maximum of spend. :math:`b_s` is set so one more unit
+        at mean spend has the linear effect. Only the three channels can
+        saturate. ``None`` (default) keeps every driver linear.
+    spend_log_sd
+        Standard deviation of log spend for saturated channels. Defaults to
+        ``0.30`` (spend mostly between half and twice its mean). Larger
+        values spread spend over more of the curve. Ignored without
+        ``exog_saturation``.
 
     Returns
     -------
@@ -274,7 +359,10 @@ def simulate_brand_data(
         If ``n_obs`` is less than 3, any starting level is not positive,
         ``exog_lag_share`` is outside ``[0, 1]``, ``exog_unit_root`` or
         ``exog_adstock`` names an unknown driver, an adstock decay is outside
-        ``[0, 1)``, or ``exog_adstock`` is combined with ``exog_lag_share``.
+        ``[0, 1)``, ``exog_adstock`` or ``exog_saturation`` is combined with
+        ``exog_lag_share``, ``exog_saturation`` names anything but a channel
+        or a channel in ``exog_unit_root``, a saturation value is not
+        positive, or ``spend_log_sd`` is not positive.
     """
     import pandas as pd
 
@@ -305,17 +393,38 @@ def simulate_brand_data(
             if not 0.0 <= w < 1.0:
                 raise ValueError(f"adstock decay for {name!r} must be in [0, 1); got {w}")
             decay[EXOG_NAMES.index(name)] = w
+    lam = _saturation_values(exog_saturation, exog_lag_share, unit_root, spend_log_sd)
+    sat = lam > 0.0
     b_now = (1.0 - exog_lag_share) * _B
     b_lag = exog_lag_share * _B
 
     rng = np.random.default_rng(seed)
     x, x_reg = _simulate_exog(n_obs, rng, ur_mask)
+    if sat.any():
+        # Raw spend: log-normal with mean 1, from the same draws.
+        log_dev = x[:, sat] * (spend_log_sd / _CHANNEL_SD)
+        x[:, sat] = np.exp(log_dev - spend_log_sd**2 / 2.0)
+        x_reg[:, sat] = x[:, sat]
     if decay.any():
         # Adstock state a_t = (1 - w) x_t + w a_{t-1}, started at x_0.
         stock = x_reg.copy()
         for t in range(1, n_obs):
             stock[t] = (1.0 - decay) * x_reg[t] + decay * stock[t - 1]
         x_reg = stock
+    scale = np.ones(len(EXOG_NAMES))
+    b_sat = np.zeros_like(_B)
+    f_mean = np.zeros(len(EXOG_NAMES))
+    b_eff = b_now.copy()
+    if sat.any():
+        # f(a / s) - mean, with b_s set so the slope per unit at spend 1 is b.
+        scale[sat] = x[:, sat].max(axis=0)
+        f = logistic_saturation(x_reg[:, sat] / scale[sat], lam[sat])
+        f_mean[sat] = f.mean(axis=0)
+        x_reg = x_reg.copy()
+        x_reg[:, sat] = f - f_mean[sat]
+        slope = logistic_saturation_slope(1.0 / scale[sat], lam[sat]) / scale[sat]
+        b_sat[:, sat] = _B[:, sat] / slope
+        b_eff[:, sat] = b_sat[:, sat]
     eps = rng.multivariate_normal(np.zeros(3), _SIGMA, size=n_obs)
 
     y = np.zeros((n_obs, 3))
@@ -324,7 +433,7 @@ def simulate_brand_data(
     pi = _ALPHA @ _BETA.T
     dy_prev = np.zeros(3)
     for t in range(1, n_obs):
-        exog_term = b_now @ x_reg[t] + b_lag @ x_reg[t - 1]
+        exog_term = b_eff @ x_reg[t] + b_lag @ x_reg[t - 1]
         dy = const + pi @ y[t - 1] + _GAMMA @ dy_prev + exog_term + eps[t]
         y[t] = y[t - 1] + dy
         dy_prev = dy
@@ -342,12 +451,44 @@ def simulate_brand_data(
         b_lag=b_lag,
         differenced=tuple(n for n in EXOG_NAMES if n in unit_root),
         adstock=decay,
+        saturation=lam,
+        spend_scale=scale,
+        b_saturation=b_sat,
+        saturation_mean=f_mean,
     )
     return BrandData(
         endog=pd.DataFrame(y, index=dates, columns=list(ENDOG_NAMES)),
         exog=pd.DataFrame(x, index=dates, columns=list(EXOG_NAMES)),
         truth=truth,
     )
+
+
+def _saturation_values(
+    exog_saturation: dict[str, float] | None,
+    exog_lag_share: float,
+    unit_root: tuple[str, ...],
+    spend_log_sd: float,
+) -> NDArray[np.float64]:
+    """Validate ``exog_saturation`` and return lambda per driver (0 = linear)."""
+    lam = np.zeros(len(EXOG_NAMES))
+    if not exog_saturation:
+        return lam
+    channels = EXOG_NAMES[:3]
+    bad = sorted(set(exog_saturation) - set(channels))
+    if bad:
+        raise ValueError(f"exog_saturation can only name channels {list(channels)}; got {bad}")
+    if exog_lag_share:
+        raise ValueError("exog_saturation cannot be combined with exog_lag_share")
+    both = sorted(set(exog_saturation) & set(unit_root))
+    if both:
+        raise ValueError(f"saturated channels cannot be in exog_unit_root: {both}")
+    if not spend_log_sd > 0.0:
+        raise ValueError(f"spend_log_sd must be positive; got {spend_log_sd}")
+    for name, value in exog_saturation.items():
+        if not value > 0.0:
+            raise ValueError(f"saturation for {name!r} must be positive; got {value}")
+        lam[EXOG_NAMES.index(name)] = value
+    return lam
 
 
 def _constant(y0: NDArray[np.float64]) -> NDArray[np.float64]:
