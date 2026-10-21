@@ -59,6 +59,14 @@ The constant ``c`` gives the system an upward drift (sales double over 260
 weeks on average) and fixes the level of the two cointegrating relations. It
 is an unrestricted constant, so ``deterministic="co"`` is the matching
 specification when fitting.
+
+**Same-week links.** ``contemporaneous={"brand_consideration":
+{"brand_awareness": 0.2}}`` adds a same-week effect of awareness growth on
+consideration growth. The drivers act through the structural form
+:math:`A_0 \\Delta y_t = \\dots + B_s x_t`, so the reduced form has
+:math:`B = A_0^{-1} B_s`: the channels now reach consideration in the same
+week through awareness. :math:`\\alpha`, :math:`\\Gamma`, :math:`\\Sigma` and
+the constant are reduced-form and unchanged. The default has no links.
 """
 
 from __future__ import annotations
@@ -205,6 +213,14 @@ class BrandTruth:
     saturation_mean : np.ndarray, shape (m,)
         In-sample mean :math:`\\bar f` of the saturated regressor. Zero for
         linear drivers.
+    a0 : np.ndarray, shape (K, K)
+        Same-week structure :math:`A_0`: ones on the diagonal and minus each
+        same-week link off it, so ``a0[i, j] = -0.2`` means growth in ``j``
+        raises growth in ``i`` by 0.2 in the same week. The identity unless
+        ``contemporaneous`` is set.
+    b_structural : np.ndarray, shape (K, m)
+        Direct same-week effects :math:`B_s`, before the links pass them on.
+        ``b`` is ``inv(a0) @ b_structural``. Equal to ``b`` without links.
     """
 
     alpha: NDArray[np.float64]
@@ -224,6 +240,18 @@ class BrandTruth:
         default_factory=lambda: np.zeros((len(ENDOG_NAMES), len(EXOG_NAMES)))
     )
     saturation_mean: NDArray[np.float64] = field(default_factory=lambda: np.zeros(len(EXOG_NAMES)))
+    a0: NDArray[np.float64] = field(default_factory=lambda: np.eye(len(ENDOG_NAMES)))
+    b_structural: NDArray[np.float64] = field(
+        default_factory=lambda: np.zeros((len(ENDOG_NAMES), len(EXOG_NAMES)))
+    )
+
+    @property
+    def links(self) -> NDArray[np.float64]:
+        """Same-week links, ``links[i, j]`` = effect of growth in ``j`` on ``i``.
+
+        ``I - a0``. Zero without ``contemporaneous``.
+        """
+        return np.eye(self.a0.shape[0]) - self.a0
 
     @property
     def b_total(self) -> NDArray[np.float64]:
@@ -301,6 +329,7 @@ def simulate_brand_data(
     exog_adstock: dict[str, float] | None = None,
     exog_saturation: dict[str, float] | None = None,
     spend_log_sd: float = 0.30,
+    contemporaneous: dict[str, dict[str, float]] | None = None,
 ) -> BrandData:
     """Simulate weekly brand data from a VECM with known parameters.
 
@@ -347,6 +376,14 @@ def simulate_brand_data(
         ``0.30`` (spend mostly between half and twice its mean). Larger
         values spread spend over more of the curve. Ignored without
         ``exog_saturation``.
+    contemporaneous
+        Same-week links between the brand metrics, as
+        ``{effect: {cause: coefficient}}``. For example
+        ``{"brand_consideration": {"brand_awareness": 0.2}}`` makes 1% more
+        awareness growth add 0.2% to consideration growth in the same week.
+        The links must not form a cycle. Every driver effect at every lag
+        passes through them: the reduced-form ``b`` is
+        ``inv(a0) @ b_structural``. ``None`` (default) means no links.
 
     Returns
     -------
@@ -362,7 +399,8 @@ def simulate_brand_data(
         ``[0, 1)``, ``exog_adstock`` or ``exog_saturation`` is combined with
         ``exog_lag_share``, ``exog_saturation`` names anything but a channel
         or a channel in ``exog_unit_root``, a saturation value is not
-        positive, or ``spend_log_sd`` is not positive.
+        positive, ``spend_log_sd`` is not positive, or ``contemporaneous``
+        names an unknown series, links a series to itself or has a cycle.
     """
     import pandas as pd
 
@@ -395,6 +433,8 @@ def simulate_brand_data(
             decay[EXOG_NAMES.index(name)] = w
     lam = _saturation_values(exog_saturation, exog_lag_share, unit_root, spend_log_sd)
     sat = lam > 0.0
+    a0 = _a0_matrix(contemporaneous)
+    a0_inv = np.linalg.inv(a0)
     b_now = (1.0 - exog_lag_share) * _B
     b_lag = exog_lag_share * _B
 
@@ -425,6 +465,10 @@ def simulate_brand_data(
         slope = logistic_saturation_slope(1.0 / scale[sat], lam[sat]) / scale[sat]
         b_sat[:, sat] = _B[:, sat] / slope
         b_eff[:, sat] = b_sat[:, sat]
+    # Reduced form: the same-week links pass every driver effect on.
+    b_eff = a0_inv @ b_eff
+    b_lag = a0_inv @ b_lag
+    b_sat = a0_inv @ b_sat
     eps = rng.multivariate_normal(np.zeros(3), _SIGMA, size=n_obs)
 
     y = np.zeros((n_obs, 3))
@@ -443,7 +487,7 @@ def simulate_brand_data(
         alpha=_ALPHA.copy(),
         beta=_BETA.copy(),
         gamma=_GAMMA.copy(),
-        b=b_now * (1.0 - decay),
+        b=a0_inv @ (b_now * (1.0 - decay)),
         sigma=_SIGMA.copy(),
         const=const,
         loading=_LOADING.copy(),
@@ -455,12 +499,35 @@ def simulate_brand_data(
         spend_scale=scale,
         b_saturation=b_sat,
         saturation_mean=f_mean,
+        a0=a0,
+        b_structural=b_now * (1.0 - decay),
     )
     return BrandData(
         endog=pd.DataFrame(y, index=dates, columns=list(ENDOG_NAMES)),
         exog=pd.DataFrame(x, index=dates, columns=list(EXOG_NAMES)),
         truth=truth,
     )
+
+
+def _a0_matrix(contemporaneous: dict[str, dict[str, float]] | None) -> NDArray[np.float64]:
+    """Validate ``contemporaneous`` and return :math:`A_0 = I - L`."""
+    k = len(ENDOG_NAMES)
+    links = np.zeros((k, k))
+    for effect, causes in (contemporaneous or {}).items():
+        for name in (effect, *causes):
+            if name not in ENDOG_NAMES:
+                raise ValueError(
+                    f"unknown contemporaneous series {name!r}; choose from {list(ENDOG_NAMES)}"
+                )
+        for cause, value in causes.items():
+            if cause == effect:
+                raise ValueError(f"a series cannot have a same-week link to itself: {effect!r}")
+            links[ENDOG_NAMES.index(effect), ENDOG_NAMES.index(cause)] = value
+    # The links are acyclic if and only if their pattern is nilpotent.
+    pattern = (links != 0).astype(np.float64)
+    if np.linalg.matrix_power(pattern, k).any():
+        raise ValueError("contemporaneous links must not form a cycle")
+    return np.eye(k) - links
 
 
 def _saturation_values(
