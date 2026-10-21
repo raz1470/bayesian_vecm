@@ -42,6 +42,27 @@ in the month of the spend. The ``same_period`` table shows the correlation
 of the VAR residuals for each pair. It says the two series move together
 within the period. It cannot say which way.
 
+The ``same_week`` table can. Name the links to test in ``contemporaneous``
+and, for each effect, the drivers that do not act on it directly in
+``excluded``. Those drivers instrument the cause by two-stage least squares
+(2SLS). The same two arguments go to
+:class:`~bayesian_vecm.BayesianVECM` to estimate the links in the model.
+
+.. code-block:: python
+
+    result = granger_pretest(
+        data.endog,
+        data.exog,
+        contemporaneous={"brand_consideration": ["brand_awareness"]},
+        excluded={"brand_consideration": ["brand_spend", "pr_reach", "sponsorship_reach"]},
+    )
+    result.same_week
+
+Each link needs at least as many excluded drivers as causes in its equation.
+A first-stage F below 10 means the instruments are weak and the estimate is
+unreliable. The exclusions themselves cannot be tested. With more
+instruments than causes the Sargan test checks that they agree.
+
 A driver can matter in the model without passing the Granger test. ``B`` in
 :class:`~bayesian_vecm.BayesianVECM` estimates the same-period effect.
 
@@ -61,6 +82,7 @@ from numpy.typing import NDArray
 from scipy import stats
 
 from bayesian_vecm._data import validate_endog
+from bayesian_vecm._same_week import resolve_same_week, two_stage_least_squares, verdict
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -105,6 +127,16 @@ class GrangerPretestResult:
         Tests with ``p_value`` below this are reported as links.
     seasonal : int or None
         Period of the seasonal dummies, if any.
+    same_week : pandas.DataFrame or None
+        One row per same-week link in ``contemporaneous``. Columns
+        ``cause``, ``effect``, ``ols``, ``estimate`` (2SLS), ``std_err``,
+        ``p_value``, ``first_stage_f``, ``n_instruments``, ``sargan``,
+        ``sargan_p`` and ``verdict``. The verdict is one of
+        ``"same-week link"``, ``"no clear evidence"``,
+        ``"weak instruments"`` (first-stage F below 10),
+        ``"instruments disagree"`` (Sargan rejects) or ``"not identified"``
+        (fewer excluded drivers than causes). ``None`` without
+        ``contemporaneous``.
     """
 
     tests: pd.DataFrame
@@ -115,6 +147,7 @@ class GrangerPretestResult:
     n_obs: int
     alpha: float
     seasonal: int | None
+    same_week: pd.DataFrame | None = None
 
     def __repr__(self) -> str:
         return (
@@ -152,6 +185,18 @@ class GrangerPretestResult:
                 pair = f"{row.variable_1} ~ {row.variable_2}"
                 verdict = "move together" if row.p_value < self.alpha else "no clear evidence"
                 lines.append(f"  {pair:<46}{row.corr:>8.2f}{row.p_value:>10.3f}  {verdict}")
+        if self.same_week is not None and len(self.same_week):
+            lines += ["", "Same week: does X move the brand metric in the same period? (2SLS)"]
+            lines.append(
+                f"  {'cause -> effect':<46}{'OLS':>8}{'2SLS':>8}{'p-value':>10}{'F':>8}  verdict"
+            )
+            lines.append("  " + "-" * 88)
+            for row in self.same_week.itertuples(index=False):
+                pair = f"{row.cause} -> {row.effect}"
+                lines.append(
+                    f"  {pair:<46}{row.ols:>8.3f}{row.estimate:>8.3f}{row.p_value:>10.3f}"
+                    f"{row.first_stage_f:>8.1f}  {row.verdict}"
+                )
         return "\n".join(lines)
 
 
@@ -164,6 +209,8 @@ def granger_pretest(
     extra_lags: int = 1,
     seasonal: int | None = None,
     alpha: float = 0.05,
+    contemporaneous: dict[str, list[str]] | None = None,
+    excluded: dict[str, list[str]] | None = None,
 ) -> GrangerPretestResult:
     """Test which series help predict which, before choosing the rank.
 
@@ -190,6 +237,15 @@ def granger_pretest(
         ``None`` for no dummies.
     alpha
         Significance level used in the printed verdicts.
+    contemporaneous
+        Same-week links to test, as ``{effect: [causes]}`` with brand
+        metric names, for example
+        ``{"brand_consideration": ["brand_awareness"]}``. ``None`` skips the
+        ``same_week`` table.
+    excluded
+        Drivers with no direct same-week effect on a brand metric, as
+        ``{effect: [drivers]}``. They are the instruments for that effect's
+        links. An effect needs at least as many as it has causes.
 
     Returns
     -------
@@ -198,8 +254,8 @@ def granger_pretest(
     Raises
     ------
     ValueError
-        If the inputs fail validation or the VAR has too few degrees of
-        freedom.
+        If the inputs fail validation, ``contemporaneous`` or ``excluded``
+        name an unknown series, or the VAR has too few degrees of freedom.
     """
     import pandas as pd
 
@@ -225,6 +281,8 @@ def granger_pretest(
         raise ValueError(f"alpha must be between 0 and 1; got {alpha}")
     if seasonal is not None and seasonal < 2:
         raise ValueError(f"seasonal must be at least 2; got {seasonal}")
+
+    spec = resolve_same_week(contemporaneous, excluded, names[:k], names[k:], require_dag=False)
 
     det = _deterministic(data.shape[0], seasonal)
     if lags is None:
@@ -292,6 +350,10 @@ def granger_pretest(
                 }
             )
 
+    same_week = None
+    if contemporaneous is not None:
+        same_week = _same_week_tests(spec, target, design, data[n_lags:, k:], names, k, alpha)
+
     return GrangerPretestResult(
         tests=pd.DataFrame(rows),
         delay=delay,
@@ -301,7 +363,85 @@ def granger_pretest(
         n_obs=int(n_obs),
         alpha=alpha,
         seasonal=seasonal,
+        same_week=same_week,
     )
+
+
+_SAME_WEEK_COLUMNS = (
+    "cause",
+    "effect",
+    "ols",
+    "estimate",
+    "std_err",
+    "p_value",
+    "first_stage_f",
+    "n_instruments",
+    "sargan",
+    "sargan_p",
+    "verdict",
+)
+
+
+def _same_week_tests(
+    spec: Any,
+    target: NDArray[np.float64],
+    design: NDArray[np.float64],
+    current: NDArray[np.float64],
+    names: list[str],
+    k: int,
+    alpha: float,
+) -> pd.DataFrame:
+    """2SLS of each effect on its same-week causes, instrumented by excluded drivers.
+
+    The equation is the effect's VAR equation in levels plus the current
+    causes and the current drivers that are not excluded. With the lagged
+    levels in the equation, the coefficient on a cause's current level is
+    its same-week effect on growth.
+    """
+    import pandas as pd
+
+    rows = []
+    for effect, causes in spec.links.items():
+        drivers = spec.excluded.get(effect, ())
+        identified = spec.identified(effect)
+        res = None
+        if identified:
+            kept = [j for j in range(current.shape[1]) if j not in drivers]
+            included = np.column_stack([design, current[:, kept]])
+            res = two_stage_least_squares(
+                target[:, effect], target[:, list(causes)], included, current[:, list(drivers)]
+            )
+        for i, cause in enumerate(causes):
+            nan = float("nan")
+            row = {
+                "cause": names[cause],
+                "effect": names[effect],
+                "ols": nan,
+                "estimate": nan,
+                "std_err": nan,
+                "p_value": nan,
+                "first_stage_f": nan,
+                "n_instruments": len(drivers),
+                "sargan": nan,
+                "sargan_p": nan,
+                "verdict": "not identified",
+            }
+            if res is not None:
+                sargan_p = res.sargan_p
+                row.update(
+                    ols=float(res.ols[i]),
+                    estimate=float(res.estimate[i]),
+                    std_err=float(res.std_err[i]),
+                    p_value=float(res.p_value[i]),
+                    first_stage_f=float(res.first_stage_f[i]),
+                    sargan=nan if res.sargan is None else res.sargan,
+                    sargan_p=nan if sargan_p is None else sargan_p,
+                    verdict=verdict(
+                        True, float(res.first_stage_f[i]), sargan_p, float(res.p_value[i]), alpha
+                    ),
+                )
+            rows.append(row)
+    return pd.DataFrame(rows, columns=list(_SAME_WEEK_COLUMNS))
 
 
 def _f_test(

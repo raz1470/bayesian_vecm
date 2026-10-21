@@ -10,28 +10,27 @@ Ideas that were tested or scoped and left out of the first release, with the rea
 
 **What works.** Two-stage least squares, with a driver that moves the cause but reaches the effect only through it as the instrument. On the same data the marketing channels instrument awareness: 2SLS gives 0.002 (-0.12 to 0.12), with a mean first-stage F of 83.
 
-**The plan.** An instrumental-variable table in `granger_pretest`:
+**The test (built).** `granger_pretest(contemporaneous=..., excluded=...)` adds a `same_week` table: per link OLS, 2SLS, first-stage F, Sargan and a verdict ("same-week link", "no clear evidence", "weak instruments", "instruments disagree" or "not identified"). `simulate_brand_data(contemporaneous=...)` gives a non-zero truth. On 200 seeds of 260 weeks:
 
-- an `excluded=` argument naming, for each link, the drivers that do not act on the effect directly;
-- per link: OLS, 2SLS, first-stage F and a Sargan test, or "not identified" when no driver is excluded;
-- a same-week link option in `simulate_brand_data`, so the test has a non-zero truth to find;
-- hit rates on weekly and monthly data, and a docs section with the three conditions an instrument must meet: it moves the cause, it is not set in response to the same week's shock, and it reaches the effect only through the cause.
+| | Link 0 | Link 0.2 |
+|---|---|---|
+| Weekly, awareness → consideration: 2SLS mean | 0.00 | 0.20 |
+| Weekly: reported as a link | 5% | 70% |
+| Monthly (58 months): 2SLS mean | 0.33 | 0.49 |
+| Monthly: first-stage F mean | 15 | 15 |
 
-**Check first.** Run the 2SLS check on 60 months. Monthly instruments may be too weak. If the first-stage F is below about 10, ship only the "not identified / weak instruments" diagnostics and the docs section.
+A monthly link is not zero even when the weekly one is. The weekly lagged effect of awareness lands inside the month. Consideration → sales on monthly data has weak instruments in 31% to 44% of seeds. See `tools/same_week_pretest_check.py`.
 
 **Then estimate the links in the model.** The test only says whether a link exists. To use it, `BayesianVECM` needs a `contemporaneous=` option that estimates the same-week links:
 
 ```
-A0 Δy_t = α β' y_{t-1} + Γ Δy_{t-1} + B X_t + u_t,    u_t ~ N(0, D), D diagonal
+A0 Δy_t = α β' y_{t-1} + Γ Δy_{t-1} + B_s X_t + u_t,    u_t ~ N(0, Σ_u), Σ_u full
 ```
 
 - `A0` has ones on the diagonal and the same-week links off it, for example awareness → consideration.
-- **Identification** uses the same exclusions as the test: each link needs a driver set to zero in the effect's equation of `B`. Without one, `A0` is not identified and the posterior returns the prior. The test's "not identified" result is the check to run before fitting.
-- **Likelihood:** the change of variables adds `log|det A0|`. For a recursive funnel (awareness, then consideration, then sales) `A0` is triangular and the term is zero.
-- **Output:** structural impulse responses from `A0⁻¹`, with the same-week links estimated instead of assumed by a GIRF or Cholesky order.
-- **Simulator:** the same-week link option above gives a non-zero `A0` to recover.
-
-The test comes first because it is cheap, needs no change to the model, and shows which links the data can identify.
+- `Σ_u` stays a full covariance. A diagonal one would turn the shared shocks into a link, as Cholesky does.
+- With `Σ_u` full, the model is the reduced form with `B = A0⁻¹ B_s`. The links are identified only by the exclusions (zeros in `B_s`), the same ones the test uses. No `log|det A0|` term is needed.
+- **Output:** the links with a posterior, and each driver's same-week effect split into direct and through the links. Shock impulse responses still need GIRF or Cholesky.
 
 ## Structure on lagged driver effects
 
