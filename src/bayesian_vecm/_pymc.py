@@ -196,7 +196,7 @@ from bayesian_vecm._design import CointegrationDesign
 #: ``adstock_alpha`` is the geometric decay of each adstocked driver.
 #: ``saturation_lam`` is the logistic saturation rate of each saturated driver.
 _VALID_PRIOR_KEYS: frozenset[str] = frozenset(
-    {"alpha", "beta", "Gamma", "Sigma", "B", "adstock_alpha", "saturation_lam"}
+    {"alpha", "beta", "Gamma", "Sigma", "B", "adstock_alpha", "saturation_lam", "A0"}
 )
 
 #: Default prior on the saturation rate: mean 6.7, 90% of its mass between
@@ -232,6 +232,8 @@ def build_pymc_model(
     saturation: tuple[int, ...] = (),
     saturation_scale: Any = None,
     saturation_level: Any = None,
+    links: tuple[tuple[int, int], ...] = (),
+    b_mask: Any = None,
 ) -> pm.Model:
     """Build the PyMC model graph for a v0 BayesianVECM fit.
 
@@ -288,6 +290,18 @@ def build_pymc_model(
     saturation_scale, saturation_level
         Per saturated driver: the spend scale :math:`s` (in-sample maximum)
         and the spend level at which ``B`` is linearised (in-sample mean).
+    links
+        Same-week links as ``(effect, cause)`` pairs of endogenous indices,
+        acyclic. Each gets a coefficient in ``A0_links`` (prior
+        ``Normal(0, 0.5)``, key ``"A0"``). With
+        :math:`A_0 = I - L` the drivers act through
+        :math:`B = A_0^{-1} B_s`: ``B``, ``B_total`` and ``B_saturation``
+        are reduced form (what the rest of the package reads) and
+        ``B_structural`` holds :math:`B_s`. ``Sigma`` stays a full
+        covariance, so the links are identified only by ``b_mask``.
+    b_mask
+        ``(K, m)`` array, zero where a driver has no direct effect on a
+        series (the same at every lag). ``None`` means no exclusions.
 
     Returns
     -------
@@ -430,6 +444,33 @@ def build_pymc_model(
         chol = _build_sigma(n_vars=n_vars, user_spec=user_priors.get("Sigma"))
         pm.Deterministic("Sigma", chol @ chol.T)
 
+        # --- Same-week links and exclusions ----------------------------------
+        # In structural mode the sampled effects are B_s (masked by b_mask)
+        # and the likelihood uses B = A0^{-1} B_s. With Sigma full this is a
+        # reparameterisation of the reduced form, identified by the zeros.
+        structural = exog is not None and (bool(links) or b_mask is not None)
+        mask = None if b_mask is None else np.asarray(b_mask, dtype=np.float64)
+        a0_inv = None
+        if links:
+            link_coef = _resolve_dist(
+                name="A0_links",
+                user_spec=user_priors.get("A0"),
+                default_spec={"dist": "Normal", "mu": 0.0, "sigma": 0.5},
+                shape=(len(links),),
+            )
+            rows = np.array([e for e, _ in links])
+            cols = np.array([c for _, c in links])
+            lower = pt.zeros((n_vars, n_vars))
+            lower = pt.set_subtensor(lower[rows, cols], link_coef)
+            pm.Deterministic("A0", pt.eye(n_vars) - lower)
+            # The links are acyclic, so L is nilpotent and the inverse of
+            # I - L is the finite sum I + L + ... + L^(K-1).
+            a0_inv = pt.eye(n_vars)
+            power = pt.eye(n_vars)
+            for _ in range(n_vars - 1):
+                power = pt.dot(power, lower)
+                a0_inv = a0_inv + power
+
         # --- B: (K, m * (L + 1)) exogenous coefficients, lag-major ---------
         # Only added when exog is present. The default prior is Normal(0, 1)
         # with no exog lags. With L lags each entry gets sd 1 / sqrt(L + 1),
@@ -446,16 +487,31 @@ def build_pymc_model(
                 saturation_scale=saturation_scale,
                 saturation_level=saturation_level,
                 user_priors=user_priors,
+                mask=mask,
+                structural=structural,
             )
         elif exog is not None:
             n_exog = exog.shape[1]
             b_sd = 1.0 / (exog_lags + 1) ** 0.5
             b_mat = _resolve_dist(
-                name="B",
+                name="B_raw" if structural else "B",
                 user_spec=user_priors.get("B"),
                 default_spec={"dist": "Normal", "mu": 0.0, "sigma": b_sd},
                 shape=(n_vars, n_exog),
             )
+            if mask is not None:
+                b_mat = b_mat * np.tile(mask, (1, n_exog // mask.shape[1]))
+            if structural:
+                b_mat = pm.Deterministic("B_structural", b_mat)
+
+        if structural:
+            # Reduced-form effects, which every reader of the posterior uses.
+            inv = pt.eye(n_vars) if a0_inv is None else a0_inv
+            b_struct = b_mat if sat_term is None else model["B_structural"]
+            pm.Deterministic("B", pt.dot(inv, b_struct))
+            for name in ("B_total", "B_saturation"):
+                if f"{name}_structural" in model.named_vars:
+                    pm.Deterministic(name, pt.dot(inv, model[f"{name}_structural"]))
 
         # --- Mean ------------------------------------------------------------
         # mu_t = alpha beta' y_{t-1} + Gamma Delta_x_t [+ B X_t], matrix form:
@@ -465,9 +521,12 @@ def build_pymc_model(
         ec_term = pm.math.dot(pm.math.dot(y_lag1, beta), alpha.T)
         mu = ec_term + pm.math.dot(delta_x, gamma.T) if delta_x_cols > 0 else ec_term
         if exog is not None:
-            mu = mu + pm.math.dot(exog, b_mat.T)
-        if sat_term is not None:
-            mu = mu + sat_term
+            exog_term = pm.math.dot(exog, b_mat.T)
+            if sat_term is not None:
+                exog_term = exog_term + sat_term
+            if a0_inv is not None:
+                exog_term = pm.math.dot(exog_term, a0_inv.T)
+            mu = mu + exog_term
 
         # --- Likelihood: row-wise MvNormal with shared Sigma ----------------
         # Using chol directly (rather than cov=Sigma) avoids redundant
@@ -493,6 +552,8 @@ def _build_structured_b(
     saturation_scale: Any,
     saturation_level: Any,
     user_priors: dict[str, Any],
+    mask: Any = None,
+    structural: bool = False,
 ) -> tuple[Any, Any]:
     """Build the exogenous terms when some drivers have adstock or saturation.
 
@@ -513,7 +574,14 @@ def _build_structured_b(
     ``(T_eff, K)`` saturated contribution, or ``None``. The deterministic
     ``B`` spreads every ``B_total`` over its lags, so for a saturated driver
     readers of ``B`` get the marginal effect at ``saturation_level``.
+
+    With ``structural`` the sampled variables are named ``B_total_raw`` and
+    ``B_free_raw`` and the deterministics get a ``_structural`` suffix; the
+    caller maps them to reduced form. ``mask`` (``(K, m)``) zeros the
+    excluded effects at every lag.
     """
+    rv_suffix = "_raw" if structural else ""
+    det_suffix = "_structural" if structural else ""
     window = max(exog_lags, adstock_max_lag) if adstock else exog_lags
     n_lags = window + 1
     n_exog = exog.shape[1] // n_lags
@@ -545,11 +613,15 @@ def _build_structured_b(
         weight_rows.append(pt.as_tensor(same_week))
     weights = pt.concatenate(weight_rows, axis=0) if len(weight_rows) > 1 else weight_rows[0]
     b_total = _resolve_dist(
-        name="B_total",
+        name=f"B_total{rv_suffix}",
         user_spec=user_priors.get("B"),
         default_spec={"dist": "Normal", "mu": 0.0, "sigma": 1.0},
         shape=(n_vars, len(struct)),
     )
+    if mask is not None:
+        b_total = b_total * mask[:, struct]
+    if structural:
+        b_total = pm.Deterministic("B_total_structural", b_total)
 
     # Gain per structured driver on its linear lag blocks: 1 for linear
     # drivers, 0 in the likelihood for saturated ones. For a saturated driver
@@ -577,7 +649,9 @@ def _build_structured_b(
         f_mean = pm.Deterministic("saturation_mean", f.mean(axis=0))
         f_level = pt.tanh(lam * level / scale / 2.0)
         slope = lam / 2.0 * (1.0 - f_level**2) / scale  # (m_sat,)
-        b_sat = pm.Deterministic("B_saturation", b_total[:, sat_pos] / slope)  # (K, m_sat)
+        b_sat = pm.Deterministic(
+            f"B_saturation{det_suffix}", b_total[:, sat_pos] / slope
+        )  # (K, m_sat)
         sat_term = pt.dot(f - f_mean, b_sat.T)  # (T_eff, K)
 
     def assemble(gain: Any) -> Any:
@@ -591,11 +665,13 @@ def _build_structured_b(
 
     if other:
         free = _resolve_dist(
-            name="B_free",
+            name=f"B_free{rv_suffix}",
             user_spec=user_priors.get("B"),
             default_spec={"dist": "Normal", "mu": 0.0, "sigma": 1.0 / (exog_lags + 1) ** 0.5},
             shape=(n_vars, len(other), exog_lags + 1),
         )
+        if mask is not None:
+            free = free * mask[:, other, None]
         if window > exog_lags:
             free = pt.concatenate(
                 [free, pt.zeros((n_vars, len(other), window - exog_lags))], axis=2
@@ -603,8 +679,8 @@ def _build_structured_b(
 
     b_lin = assemble(pt.as_tensor(gain_lin))
     if not saturation:
-        return pm.Deterministic("B", b_lin), None
-    pm.Deterministic("B", assemble(pt.as_tensor(np.ones(len(struct)))))
+        return pm.Deterministic(f"B{det_suffix}", b_lin), None
+    pm.Deterministic(f"B{det_suffix}", assemble(pt.as_tensor(np.ones(len(struct)))))
     return b_lin, sat_term
 
 

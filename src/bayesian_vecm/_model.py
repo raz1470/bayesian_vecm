@@ -209,6 +209,25 @@ class BayesianVECM:
         at mean spend, ``exog_irf(at=...)`` at another level and
         :meth:`saturation_curve` across levels. Forecasts use the exact
         curve. ``None`` (default) means no saturation.
+    contemporaneous
+        Same-week links between the brand metrics to estimate, as
+        ``{effect: [causes]}`` with ``endog`` column names, for example
+        ``{"brand_consideration": ["brand_awareness"]}``. The drivers then
+        act through the structural form :math:`A_0 \\Delta y_t = \\dots +
+        B_s x_t` with :math:`A_0 = I - L` and :math:`L` holding the links
+        (``A0_links``, prior ``Normal(0, 0.5)``). ``B``, ``B_total`` and
+        ``B_saturation`` stay reduced form, :math:`A_0^{-1} B_s`, so every
+        other method reads them as before. ``B_structural`` holds the
+        direct effects. :math:`\\Sigma` stays a full covariance: the links
+        are identified only by ``excluded``. Links must not form a cycle.
+        Run :func:`~bayesian_vecm.granger_pretest` with the same arguments
+        first. ``None`` (default) means no links.
+    excluded
+        Drivers with no direct same-week effect on a brand metric, as
+        ``{effect: [drivers]}`` with ``endog`` and ``exog`` column names.
+        Their entries of :math:`B_s` are zero at every lag. Each effect in
+        ``contemporaneous`` needs at least as many excluded drivers as
+        causes. Can be used without ``contemporaneous`` to drop effects.
 
     Raises
     ------
@@ -216,7 +235,9 @@ class BayesianVECM:
         If ``k_ar_diff`` or ``exog_lags`` is negative, ``coint_rank`` is less
         than ``1``, ``deterministic`` is not one of the recognised codes,
         ``adstock_max_lag`` is below ``1``, or ``adstock`` or ``saturation``
-        is empty or has duplicates.
+        is empty or has duplicates. At fit time, if ``contemporaneous`` or
+        ``excluded`` names an unknown column, the links form a cycle or a
+        link is not identified.
     TypeError
         If ``priors`` is not ``None`` and not a ``dict``.
 
@@ -247,6 +268,8 @@ class BayesianVECM:
         adstock: Sequence[str | int] | None = None,
         adstock_max_lag: int = 8,
         saturation: Sequence[str | int] | None = None,
+        contemporaneous: dict[str, list[str]] | None = None,
+        excluded: dict[str, list[str]] | None = None,
     ) -> None:
         """Configure the model. See the class docstring for parameter details.
 
@@ -292,6 +315,8 @@ class BayesianVECM:
         self.adstock = adstock
         self.adstock_max_lag = adstock_max_lag
         self.saturation = saturation
+        self.contemporaneous = contemporaneous
+        self.excluded = excluded
 
     def fit(
         self,
@@ -367,6 +392,8 @@ class BayesianVECM:
         if saturation_idx:
             sat_scale, sat_level = _saturation_scale(exog, saturation_idx)
 
+        links, b_mask = self._resolve_same_week(variable_names, endog_arr.shape[1], exog)
+
         design = cointegration_design(
             endog_arr,
             k_ar_diff=self.k_ar_diff,
@@ -388,6 +415,8 @@ class BayesianVECM:
             saturation=saturation_idx,
             saturation_scale=sat_scale,
             saturation_level=sat_level,
+            links=links,
+            b_mask=b_mask,
         )
 
         with model:
@@ -444,6 +473,7 @@ class BayesianVECM:
         self.saturation_scale_ = sat_scale
         self.saturation_level_ = sat_level
         self.exog_window_ = window
+        self.links_ = links
         # The last `window` rows of the raw drivers seed the lags in a forecast.
         self.exog_tail_ = None
         if exog is not None:
@@ -461,6 +491,101 @@ class BayesianVECM:
             )
         )
         return self
+
+    def _resolve_same_week(
+        self, variable_names: list[str] | None, n_vars: int, exog: Any
+    ) -> tuple[tuple[tuple[int, int], ...], np.ndarray | None]:
+        """Turn ``contemporaneous`` and ``excluded`` into links and a ``B`` mask."""
+        links_arg = getattr(self, "contemporaneous", None)
+        excl_arg = getattr(self, "excluded", None)
+        if not links_arg and not excl_arg:
+            return (), None
+        if exog is None:
+            raise ValueError(
+                "contemporaneous and excluded need exog: the links are identified "
+                "by drivers excluded from an equation"
+            )
+        from bayesian_vecm._same_week import resolve_same_week
+
+        names = variable_names or [f"y{i}" for i in range(n_vars)]
+        n_exog = np.shape(exog)[1]
+        exog_names = (
+            [str(c) for c in exog.columns]
+            if hasattr(exog, "columns")
+            else [f"x{j}" for j in range(n_exog)]
+        )
+        spec = resolve_same_week(links_arg, excl_arg, names, exog_names, require_dag=True)
+        for effect, causes in spec.links.items():
+            if not spec.identified(effect):
+                n_excl = len(spec.excluded.get(effect, ()))
+                raise ValueError(
+                    f"same-week links into {names[effect]!r} are not identified: "
+                    f"{len(causes)} cause(s) need at least as many drivers in "
+                    f"excluded[{names[effect]!r}]; got {n_excl}"
+                )
+        mask = np.ones((n_vars, n_exog))
+        for effect, drivers in spec.excluded.items():
+            mask[effect, list(drivers)] = 0.0
+        links = tuple(
+            (effect, cause) for effect, causes in sorted(spec.links.items()) for cause in causes
+        )
+        return links, mask
+
+    def same_week_links(self, *, threshold: float = 0.95, ci_prob: float = 0.89) -> pd.DataFrame:
+        """Posterior of each same-week link in ``contemporaneous``.
+
+        Parameters
+        ----------
+        threshold
+            Evidence at or above this is reported as a link.
+        ci_prob
+            Probability mass of the equal-tailed interval.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per link. Columns ``cause``, ``effect``, ``mean``,
+            ``lower``, ``upper``, ``evidence`` and ``link``. ``evidence`` is
+            as in :meth:`granger_causality`: for one coefficient,
+            ``1 - 2 * min(P(> 0), P(< 0))``.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`fit` has not been called.
+        ValueError
+            If the model has no ``contemporaneous`` links.
+        """
+        if not hasattr(self, "idata_"):
+            raise RuntimeError(_NOT_FITTED_MSG)
+        links = getattr(self, "links_", ())
+        if not links:
+            raise ValueError("the model has no same-week links; set contemporaneous=")
+        import pandas as pd
+
+        from bayesian_vecm._causality import evidence_against_zero
+
+        draws = np.asarray(self.idata_.posterior["A0_links"].values, dtype=np.float64)
+        draws = draws.reshape(-1, draws.shape[-1])
+        names = self.variable_names_ or [f"y{i}" for i in range(self.endog_.shape[1])]
+        tail = (1.0 - ci_prob) / 2.0
+        rows = []
+        for i, (effect, cause) in enumerate(links):
+            d = draws[:, i]
+            lower, upper = np.quantile(d, [tail, 1.0 - tail])
+            evidence = evidence_against_zero(d)
+            rows.append(
+                {
+                    "cause": names[cause],
+                    "effect": names[effect],
+                    "mean": float(d.mean()),
+                    "lower": float(lower),
+                    "upper": float(upper),
+                    "evidence": evidence,
+                    "link": evidence >= threshold,
+                }
+            )
+        return pd.DataFrame(rows)
 
     @staticmethod
     def _resolve_drivers(items: list | None, exog: Any, label: str) -> tuple[int, ...]:
@@ -555,6 +680,8 @@ class BayesianVECM:
                 extra.append("adstock_alpha")
             if getattr(self, "saturation_idx_", ()):
                 extra.append("saturation_lam")
+            if getattr(self, "links_", ()):
+                extra.append("A0_links")
             var_names[-1:-1] = extra
             summary_kwargs["var_names"] = var_names
 
