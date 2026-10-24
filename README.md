@@ -16,6 +16,9 @@ The primary motivation is **brand marketing**. Brand metrics and sales move toge
 | 📖 [Walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html) | How long does brand last? The method, the tests and the results on simulated brand data |
 | 📓 [Practitioner Walkthrough](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/01_brand_vecm_walkthrough.ipynb) | End-to-end notebook: synthetic brand data → rank selection → fit → GIRF fan charts → counterfactual ROI |
 | ⚖️ [Comparison with statsmodels](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/02_statsmodels_comparison.ipynb) | Same estimates as statsmodels' VECM, interval coverage on 30 seeds, and the return per £ with intervals |
+| 📈 [Carryover and saturation](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/03_carryover_and_saturation.ipynb) | `adstock=` and `saturation=` against a linear same-week fit: effect by week, response curves, switching spend off and doubling it |
+| 🔗 [Same-week links](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/04_same_week_links.ipynb) | Does awareness move consideration within the week? Why regression fails, the instruments, the test, the model and when it goes wrong |
+| 🧩 [Putting it together](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/05_putting_it_together.ipynb) | One model with adstock, saturation and a same-week link: the response curve for brand spend in £ and the marginal return per £ |
 | 🔧 [How it was built](https://raz1470.github.io/bayesian_vecm/how_it_was_built.html) | One notebook per feature, in build order, each checked on data with a known answer |
 | 🧭 [Choosing the rank and the lags](docs/choosing_rank_and_lags.md) | Which tests to use and how often they find the truth on simulated data |
 | 🔎 [The Granger pretest](docs/granger_pretest.md) | What helps predict what before fitting: drivers, delays, links and feedback |
@@ -134,6 +137,25 @@ curve = model.saturation_curve("brand_spend", [0, 500, 1_000, 2_000])
 - `B_total` is the effect of one more unit at mean spend. `exog_irf()` and `granger_causality()` report that; `exog_irf(at=...)` values another spend level and `saturation_curve()` the whole curve. Forecasts use the exact curve.
 - On simulated weekly data with saturation (18 seeds), a linear fit was close at mean spend but understated the loss from switching brand spend off by 60% and overstated the gain from doubling it by 120%. The saturation fit got both within about 10%, with 0 divergences.
 - With no saturation in the data, the prior still bends the curve, so effects far from current spend are overstated by up to 30% for brand spend. `tools/saturation_check.py` has the details.
+
+If one brand metric may move another within the same week, estimate the link with `contemporaneous` and identify it with `excluded`. Run the same arguments through `granger_pretest` first:
+
+```python
+links = {"brand_consideration": ["brand_awareness"]}
+excluded = {"brand_consideration": ["brand_spend", "pr_reach", "sponsorship_reach"]}
+
+granger_pretest(endog, exog, contemporaneous=links, excluded=excluded).same_week
+model = BayesianVECM(
+    k_ar_diff=1, coint_rank=2, deterministic="co", contemporaneous=links, excluded=excluded
+)
+model.fit(endog, exog=exog)
+model.same_week_links()
+```
+
+- `excluded` names the drivers that reach an effect only through its causes. They act as instruments: the link is the ratio of a driver's effect on the effect to its effect on the cause. Least squares cannot do this because the brand metrics share shocks. With no link in the data it reports about 0.3.
+- The shocks keep a full covariance, so the model is the usual one with `B = A0⁻¹ B_s`. `B`, `exog_irf()` and forecasts keep their meaning. Shock impulse responses still need GIRF or Cholesky.
+- On 20 simulated weekly data sets per truth the posterior tracked 2SLS (correlation 0.96 to 0.99) with 0 divergences. Tying a driver's effects together through the link halved the interval on brand spend's same-week effect on consideration.
+- **A wrong exclusion biases the result.** With brand spend acting on consideration directly, the link came out at 0.33 against 0.2 and Sargan caught it in only 10% of data sets. On monthly data a same-month link also holds the lagged weekly effects inside the month, and the instruments are often weak. `tools/same_week_check.py` and the [same-week guide](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/04_same_week_links.ipynb) have the details.
 
 ### 4. Inspect the posterior
 
