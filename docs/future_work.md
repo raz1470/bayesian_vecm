@@ -21,16 +21,21 @@ Ideas that were tested or scoped and left out of the first release, with the rea
 
 A monthly link is not zero even when the weekly one is. The weekly lagged effect of awareness lands inside the month. Consideration → sales on monthly data has weak instruments in 31% to 44% of seeds. See `tools/same_week_pretest_check.py`.
 
-**Then estimate the links in the model.** The test only says whether a link exists. To use it, `BayesianVECM` needs a `contemporaneous=` option that estimates the same-week links:
+**The model (built).** `BayesianVECM(contemporaneous=..., excluded=...)` estimates the links:
 
 ```
 A0 Δy_t = α β' y_{t-1} + Γ Δy_{t-1} + B_s X_t + u_t,    u_t ~ N(0, Σ_u), Σ_u full
 ```
 
-- `A0` has ones on the diagonal and the same-week links off it, for example awareness → consideration.
-- `Σ_u` stays a full covariance. A diagonal one would turn the shared shocks into a link, as Cholesky does.
-- With `Σ_u` full, the model is the reduced form with `B = A0⁻¹ B_s`. The links are identified only by the exclusions (zeros in `B_s`), the same ones the test uses. No `log|det A0|` term is needed.
-- **Output:** the links with a posterior, and each driver's same-week effect split into direct and through the links. Shock impulse responses still need GIRF or Cholesky.
+- `A0` has ones on the diagonal and minus each link off it. `Σ_u` stays full: a diagonal one would turn the shared shocks into a link, as Cholesky does.
+- With `Σ_u` full the model is the reduced form with `B = A0⁻¹ B_s`. The links are identified only by the zeros in `B_s`. No `log|det A0|` term is needed.
+- `tools/same_week_check.py` (160 fits, 0 divergences): the posterior mean tracks 2SLS with a correlation of 0.96 to 0.99 on weekly data. A wrong exclusion biased the link from 0.2 to 0.33 and Sargan caught it in 10% of data sets. Weak monthly instruments left the posterior close to the prior.
+
+**Still open.**
+
+- Cycles between links (awareness and consideration moving each other in the same week). They need `log|det A0|` and more exclusions.
+- A drivers table that splits each same-week effect into direct and via the links. `B_structural` holds the direct part.
+- A weak-instrument warning at fit time, using the pretest's first-stage F.
 
 ## Structure on lagged driver effects
 
