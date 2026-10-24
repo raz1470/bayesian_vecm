@@ -16,6 +16,8 @@ The primary motivation is **brand marketing**. Brand metrics and sales move toge
 | 📖 [Walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html) | How long does brand last? The method, the tests and the results on simulated brand data |
 | 📓 [Practitioner Walkthrough](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/01_brand_vecm_walkthrough.ipynb) | End-to-end notebook: synthetic brand data → rank selection → fit → GIRF fan charts → counterfactual ROI |
 | ⚖️ [Comparison with statsmodels](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/02_statsmodels_comparison.ipynb) | Same estimates as statsmodels' VECM, interval coverage on 30 seeds, and the return per £ with intervals |
+| 📈 [Carryover and saturation](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/03_carryover_and_saturation.ipynb) | `adstock=` and `saturation=` against a linear same-week fit: effect by week, response curves, switching spend off and doubling it |
+| 🔗 [Same-week links](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/04_same_week_links.ipynb) | Does awareness move consideration within the week? Why regression fails, the instruments, the test, the model and when it goes wrong |
 | 🔧 [How it was built](https://raz1470.github.io/bayesian_vecm/how_it_was_built.html) | One notebook per feature, in build order, each checked on data with a known answer |
 | 🧭 [Choosing the rank and the lags](docs/choosing_rank_and_lags.md) | Which tests to use and how often they find the truth on simulated data |
 | 🔎 [The Granger pretest](docs/granger_pretest.md) | What helps predict what before fitting: drivers, delays, links and feedback |

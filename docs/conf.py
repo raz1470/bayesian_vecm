@@ -42,6 +42,8 @@ html_extra_path = ["walkthrough.html"]
 _GUIDES = {
     "01_brand_vecm_walkthrough.ipynb": "practitioner_walkthrough.ipynb",
     "02_statsmodels_comparison.ipynb": "statsmodels_comparison.ipynb",
+    "03_carryover_and_saturation.ipynb": "carryover_and_saturation.ipynb",
+    "04_same_week_links.ipynb": "same_week_links.ipynb",
 }
 (DOCS / "guide").mkdir(exist_ok=True)
 for _source, _target in _GUIDES.items():
