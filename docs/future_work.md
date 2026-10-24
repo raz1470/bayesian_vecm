@@ -31,11 +31,9 @@ A0 Δy_t = α β' y_{t-1} + Γ Δy_{t-1} + B_s X_t + u_t,    u_t ~ N(0, Σ_u), �
 - With `Σ_u` full the model is the reduced form with `B = A0⁻¹ B_s`. The links are identified only by the zeros in `B_s`. No `log|det A0|` term is needed.
 - `tools/same_week_check.py` (160 fits, 0 divergences): the posterior mean tracks 2SLS with a correlation of 0.96 to 0.99 on weekly data. A wrong exclusion biased the link from 0.2 to 0.33 and Sargan caught it in 10% of data sets. Weak monthly instruments left the posterior close to the prior.
 
-**Still open.**
+- **Built since:** `fit()` reruns the instrument check and warns on weak instruments (first-stage F below 10) or disagreeing ones (Sargan p below 0.05). `same_week_links()` reports both numbers. The drivers table of `granger_causality()` splits each effect into `direct` and `via_links`.
 
-- Cycles between links (awareness and consideration moving each other in the same week). They need `log|det A0|` and more exclusions.
-- A drivers table that splits each same-week effect into direct and via the links. `B_structural` holds the direct part.
-- A weak-instrument warning at fit time, using the pretest's first-stage F.
+**Still open.** Cycles between links (awareness and consideration moving each other in the same week). They need `log|det A0|` and more exclusions.
 
 ## Structure on lagged driver effects
 
