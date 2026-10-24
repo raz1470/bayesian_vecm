@@ -19,6 +19,7 @@ The primary motivation is **brand marketing**. Brand metrics and sales move toge
 | 📈 [Carryover and saturation](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/03_carryover_and_saturation.ipynb) | `adstock=` and `saturation=` against a linear same-week fit: effect by week, response curves, switching spend off and doubling it |
 | 🔗 [Same-week links](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/04_same_week_links.ipynb) | Does awareness move consideration within the week? Why regression fails, the instruments, the test, the model and when it goes wrong |
 | 🧩 [Putting it together](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/05_putting_it_together.ipynb) | One model with adstock, saturation and a same-week link: the response curve for brand spend in £ and the marginal return per £ |
+| 🤖 [Agent skill](skills/README.md) | Instructions for an AI agent to run the analysis with an analyst who has never used a VECM: workflow, theory, base sales, checks and a funnel-metric research protocol |
 | 🔧 [How it was built](https://raz1470.github.io/bayesian_vecm/how_it_was_built.html) | One notebook per feature, in build order, each checked on data with a known answer |
 | 🧭 [Choosing the rank and the lags](docs/choosing_rank_and_lags.md) | Which tests to use and how often they find the truth on simulated data |
 | 🔎 [The Granger pretest](docs/granger_pretest.md) | What helps predict what before fitting: drivers, delays, links and feedback |
