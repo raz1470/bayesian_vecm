@@ -67,12 +67,35 @@ consideration growth. The drivers act through the structural form
 :math:`B = A_0^{-1} B_s`: the channels now reach consideration in the same
 week through awareness. :math:`\\alpha`, :math:`\\Gamma`, :math:`\\Sigma` and
 the constant are reduced-form and unchanged. The default has no links.
+
+**Total sales.** ``total_sales=True`` adds the series an analyst actually
+sees: weekly sales in £ that add up, week by week, as
+
+.. math::
+
+    S_t = \\underbrace{e^{y_{1t}}}_{\\text{base}}
+          + \\text{brand}_t + \\text{search}_t + \\text{social}_t
+          + \\text{promo}_t + \\text{season}_t + u_t .
+
+The base is ``exp(organic_sales)``, the brand system above. On top of it sit
+short-term effects that the brand system never sees: a same-week hit from
+brand spend (centred on its average), two performance channels
+``paid_search`` and ``paid_social`` (raw spend with mean 1, no effect on the
+brand metrics), a promotion flag on about 8% of weeks, annual seasonality,
+and weekly noise :math:`u_t` with standard deviation ``sales_noise`` times
+the reference level. By default every short-term effect is linear and in
+the same week, which a UCM with regressors can fit exactly.
+``sales_adstock`` and ``sales_saturation`` add geometric carryover and
+logistic saturation to them. Sizes are set
+against a reference level of ``1.44 * start_levels[0]``, the average of a
+level that doubles. The extra series use their own random numbers, so
+``endog``, ``exog`` and ``truth`` are unchanged by the option.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -157,6 +180,31 @@ _EXOG_BURN_IN = 100
 
 _START_LEVELS = (1000.0, 20.0, 10.0)  # sales, awareness %, consideration %
 
+# Total sales: short-term parts in £, sized against a reference level of
+# 1.44 * starting sales (the average of a level that doubles).
+SALES_DRIVER_NAMES: tuple[str, ...] = ("paid_search", "paid_social", "promo")
+SALES_PART_NAMES: tuple[str, ...] = (
+    "base",
+    "brand_spend",
+    "paid_search",
+    "paid_social",
+    "promo",
+    "seasonality",
+    "noise",
+)
+_SALES_REF_MULT = 1.44
+# Share of the reference level each part adds at mean spend (paid channels),
+# per unit of brand spend above its average, or in a promo week.
+_SALES_SHARE = {"brand_spend": 0.06, "paid_search": 0.08, "paid_social": 0.05, "promo": 0.10}
+_SALES_ADSTOCK_NAMES = ("brand_spend", "paid_search", "paid_social")
+_SALES_SATURATION_NAMES = ("paid_search", "paid_social")
+_PAID_RHO = 0.5
+_PAID_LOG_SD = 0.40
+_PROMO_RATE = 0.08
+# Annual seasonality: two harmonics, peak-to-trough about 16% of the reference.
+_SEASON_AMPLITUDE = (0.07, 0.025)
+_WEEKS_PER_YEAR = 365.25 / 7.0
+
 
 @dataclass(frozen=True)
 class BrandTruth:
@@ -221,6 +269,15 @@ class BrandTruth:
     b_structural : np.ndarray, shape (K, m)
         Direct same-week effects :math:`B_s`, before the links pass them on.
         ``b`` is ``inv(a0) @ b_structural``. Equal to ``b`` without links.
+    sales_parts : pandas.DataFrame or None
+        With ``total_sales=True``: each part of total sales in £ per week,
+        columns :data:`SALES_PART_NAMES`. They sum to
+        ``BrandData.sales["total_sales"]``. ``None`` otherwise.
+    sales_short_term : dict or None
+        With ``total_sales=True``: the short-term settings, keys
+        ``"reference"`` (£), ``"adstock"``, ``"saturation"``,
+        ``"spend_scale"`` and ``"coef"`` (£ per unit of the transformed
+        driver). ``None`` otherwise.
     """
 
     alpha: NDArray[np.float64]
@@ -244,6 +301,8 @@ class BrandTruth:
     b_structural: NDArray[np.float64] = field(
         default_factory=lambda: np.zeros((len(ENDOG_NAMES), len(EXOG_NAMES)))
     )
+    sales_parts: pd.DataFrame | None = None
+    sales_short_term: dict[str, Any] | None = None
 
     @property
     def links(self) -> NDArray[np.float64]:
@@ -312,11 +371,20 @@ class BrandData:
         ``exog_saturation`` is raw, non-negative spend with mean 1.
     truth : BrandTruth
         The generating parameters.
+    sales : pandas.DataFrame or None
+        With ``total_sales=True``: one column, ``total_sales``, weekly sales
+        in £ (not logs). ``None`` otherwise.
+    sales_drivers : pandas.DataFrame or None
+        With ``total_sales=True``: ``paid_search`` and ``paid_social`` (raw
+        spend, mean 1) and ``promo`` (0 or 1). These drive total sales only.
+        ``None`` otherwise.
     """
 
     endog: pd.DataFrame
     exog: pd.DataFrame
     truth: BrandTruth
+    sales: pd.DataFrame | None = None
+    sales_drivers: pd.DataFrame | None = None
 
 
 def simulate_brand_data(
@@ -330,6 +398,10 @@ def simulate_brand_data(
     exog_saturation: dict[str, float] | None = None,
     spend_log_sd: float = 0.30,
     contemporaneous: dict[str, dict[str, float]] | None = None,
+    total_sales: bool = False,
+    sales_noise: float = 0.0,
+    sales_adstock: dict[str, float] | None = None,
+    sales_saturation: dict[str, float] | None = None,
 ) -> BrandData:
     """Simulate weekly brand data from a VECM with known parameters.
 
@@ -384,6 +456,28 @@ def simulate_brand_data(
         The links must not form a cycle. Every driver effect at every lag
         passes through them: the reduced-form ``b`` is
         ``inv(a0) @ b_structural``. ``None`` (default) means no links.
+    total_sales
+        Also return total sales in £ (``sales``), the drivers that act on it
+        only (``sales_drivers``) and its parts (``truth.sales_parts``). The
+        base is ``exp(organic_sales)``. ``False`` (default) leaves them
+        ``None``.
+    sales_noise
+        Standard deviation of the weekly noise in total sales that is not
+        part of the brand system, as a share of the reference level (for
+        example ``0.02`` for 2%). Defaults to ``0.0``. Needs
+        ``total_sales=True``.
+    sales_adstock
+        Geometric adstock decay of the short-term effects on total sales,
+        for example ``{"paid_search": 0.3}``. Keys from ``brand_spend``,
+        ``paid_search`` and ``paid_social``; decays in ``[0, 1)``. Separate
+        from ``exog_adstock``, which acts on the brand metrics. ``None``
+        (default) keeps every short-term effect in the same week. Needs
+        ``total_sales=True``.
+    sales_saturation
+        Logistic saturation :math:`\\lambda` of the performance channels'
+        effect on total sales, for example ``{"paid_search": 3.0}``. The
+        coefficient is set so the effect at mean spend is unchanged.
+        ``None`` (default) keeps them linear. Needs ``total_sales=True``.
 
     Returns
     -------
@@ -400,9 +494,14 @@ def simulate_brand_data(
         ``exog_lag_share``, ``exog_saturation`` names anything but a channel
         or a channel in ``exog_unit_root``, a saturation value is not
         positive, ``spend_log_sd`` is not positive, or ``contemporaneous``
-        names an unknown series, links a series to itself or has a cycle.
+        names an unknown series, links a series to itself or has a cycle,
+        ``sales_noise`` is negative, ``sales_adstock`` or ``sales_saturation``
+        names an unknown driver or has an invalid value, or any of the three
+        is set without ``total_sales``.
     """
     import pandas as pd
+
+    sales_w, sales_lam = _sales_options(total_sales, sales_noise, sales_adstock, sales_saturation)
 
     if n_obs < 3:
         raise ValueError(f"n_obs must be at least 3; got n_obs={n_obs}")
@@ -502,11 +601,132 @@ def simulate_brand_data(
         a0=a0,
         b_structural=b_now * (1.0 - decay),
     )
-    return BrandData(
-        endog=pd.DataFrame(y, index=dates, columns=list(ENDOG_NAMES)),
-        exog=pd.DataFrame(x, index=dates, columns=list(EXOG_NAMES)),
-        truth=truth,
+    endog = pd.DataFrame(y, index=dates, columns=list(ENDOG_NAMES))
+    exog = pd.DataFrame(x, index=dates, columns=list(EXOG_NAMES))
+    if not total_sales:
+        return BrandData(endog=endog, exog=exog, truth=truth)
+    parts, drivers, settings = _simulate_total_sales(
+        np.exp(y[:, 0]), x[:, 0], dates, seed, float(start[0]), sales_noise, sales_w, sales_lam
     )
+    truth = replace(truth, sales_parts=parts, sales_short_term=settings)
+    sales = parts.sum(axis=1).to_frame("total_sales")
+    return BrandData(endog=endog, exog=exog, truth=truth, sales=sales, sales_drivers=drivers)
+
+
+def _sales_options(
+    total_sales: bool,
+    noise: float,
+    adstock: dict[str, float] | None,
+    saturation: dict[str, float] | None,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Validate the total sales options; return decay and lambda per driver."""
+    if noise < 0.0:
+        raise ValueError(f"sales_noise must not be negative; got {noise}")
+    for name, value in (("sales_noise", noise), ("sales_adstock", adstock)):
+        if value and not total_sales:
+            raise ValueError(f"{name} needs total_sales=True")
+    if saturation and not total_sales:
+        raise ValueError("sales_saturation needs total_sales=True")
+    w = dict.fromkeys(_SALES_ADSTOCK_NAMES, 0.0)
+    for name, value in (adstock or {}).items():
+        if name not in _SALES_ADSTOCK_NAMES:
+            raise ValueError(
+                f"unknown sales_adstock name {name!r}; choose from {list(_SALES_ADSTOCK_NAMES)}"
+            )
+        if not 0.0 <= value < 1.0:
+            raise ValueError(f"sales_adstock decay for {name!r} must be in [0, 1); got {value}")
+        w[name] = float(value)
+    lam = dict.fromkeys(_SALES_SATURATION_NAMES, 0.0)
+    for name, value in (saturation or {}).items():
+        if name not in _SALES_SATURATION_NAMES:
+            raise ValueError(
+                f"unknown sales_saturation name {name!r}; "
+                f"choose from {list(_SALES_SATURATION_NAMES)}"
+            )
+        if not value > 0.0:
+            raise ValueError(f"sales_saturation for {name!r} must be positive; got {value}")
+        lam[name] = float(value)
+    return w, lam
+
+
+def _adstock(x: NDArray[np.float64], w: float) -> NDArray[np.float64]:
+    """Geometric adstock :math:`a_t = (1 - w) x_t + w a_{t-1}`, started at ``x_0``."""
+    a = np.array(x, dtype=np.float64)
+    for t in range(1, len(a)):
+        a[t] = (1.0 - w) * x[t] + w * a[t - 1]
+    return a
+
+
+def _simulate_total_sales(
+    base: NDArray[np.float64],
+    brand_spend: NDArray[np.float64],
+    dates: pd.DatetimeIndex,
+    seed: int,
+    start_sales: float,
+    noise_sd: float,
+    decay: dict[str, float],
+    lam: dict[str, float],
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    """Total sales parts in £, the sales-only drivers and the settings.
+
+    Uses its own generator, seeded from ``seed``, so the brand system's
+    draws are untouched.
+    """
+    import pandas as pd
+
+    n_obs = len(base)
+    rng = np.random.default_rng([seed, 1])
+    ref = _SALES_REF_MULT * start_sales
+
+    # Paid channels: log-normal AR(1) spend with mean 1.
+    n_total = n_obs + _EXOG_BURN_IN
+    innov_sd = _PAID_LOG_SD * np.sqrt(1.0 - _PAID_RHO**2)
+    d = np.zeros((n_total, 2))
+    e = rng.normal(size=(n_total, 2)) * innov_sd
+    for t in range(1, n_total):
+        d[t] = _PAID_RHO * d[t - 1] + e[t]
+    paid = np.exp(d[_EXOG_BURN_IN:] - _PAID_LOG_SD**2 / 2.0)
+    promo = (rng.random(n_obs) < _PROMO_RATE).astype(np.float64)
+    noise = rng.normal(size=n_obs) * noise_sd * ref
+
+    coef: dict[str, float] = {}
+    scale: dict[str, float] = {}
+    parts = {"base": base}
+    # Brand spend's short-term hit, centred so it adds nothing on average.
+    stock = _adstock(brand_spend, decay["brand_spend"])
+    coef["brand_spend"] = _SALES_SHARE["brand_spend"] * ref
+    parts["brand_spend"] = coef["brand_spend"] * (stock - stock.mean())
+    for k, name in enumerate(("paid_search", "paid_social")):
+        stock = _adstock(paid[:, k], decay[name])
+        scale[name] = float(paid[:, k].max())
+        if lam[name] == 0.0:
+            # Linear: the contribution at mean spend (1.0) is the target share.
+            coef[name] = _SALES_SHARE[name] * ref
+            parts[name] = coef[name] * stock
+            continue
+        f = logistic_saturation(stock / scale[name], lam[name])
+        at_mean = logistic_saturation(1.0 / scale[name], lam[name])
+        coef[name] = float(_SALES_SHARE[name] * ref / at_mean)
+        parts[name] = coef[name] * f
+    coef["promo"] = _SALES_SHARE["promo"] * ref
+    parts["promo"] = coef["promo"] * promo
+    angle = 2.0 * np.pi * np.arange(n_obs) / _WEEKS_PER_YEAR
+    parts["seasonality"] = ref * sum(
+        a * np.sin((h + 1) * angle) for h, a in enumerate(_SEASON_AMPLITUDE)
+    )
+    parts["noise"] = noise
+
+    settings = {
+        "reference": ref,
+        "adstock": decay,
+        "saturation": lam,
+        "spend_scale": scale,
+        "coef": coef,
+    }
+    drivers = pd.DataFrame(
+        {"paid_search": paid[:, 0], "paid_social": paid[:, 1], "promo": promo}, index=dates
+    )
+    return pd.DataFrame(parts, index=dates)[list(SALES_PART_NAMES)], drivers, settings
 
 
 def _a0_matrix(contemporaneous: dict[str, dict[str, float]] | None) -> NDArray[np.float64]:

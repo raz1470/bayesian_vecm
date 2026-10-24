@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from bayesian_vecm import BrandData, BrandTruth, select_coint_rank, simulate_brand_data
+from bayesian_vecm._transform import logistic_saturation
 
 ENDOG = ["organic_sales", "brand_awareness", "brand_consideration"]
 EXOG = ["brand_spend", "pr_reach", "sponsorship_reach", "interest_rate", "consumer_confidence"]
@@ -214,3 +215,160 @@ def test_most_seeds_recover_rank_two() -> None:
     pytest.importorskip("statsmodels", reason="statsmodels not installed")
     ranks = [select_coint_rank(simulate_brand_data(seed=s).endog).rank for s in range(40)]
     assert np.mean(np.array(ranks) == 2) >= 0.65
+
+
+# ---------------------------------------------------------------------------
+# Total sales
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def sales_data() -> BrandData:
+    return simulate_brand_data(total_sales=True, sales_noise=0.02)
+
+
+def test_total_sales_off_by_default(data: BrandData) -> None:
+    assert data.sales is None
+    assert data.sales_drivers is None
+    assert data.truth.sales_parts is None
+    assert data.truth.sales_short_term is None
+
+
+def test_total_sales_leaves_the_brand_system_unchanged(
+    data: BrandData, sales_data: BrandData
+) -> None:
+    np.testing.assert_array_equal(data.endog.to_numpy(), sales_data.endog.to_numpy())
+    np.testing.assert_array_equal(data.exog.to_numpy(), sales_data.exog.to_numpy())
+
+
+def test_total_sales_shapes_and_names(sales_data: BrandData) -> None:
+    assert list(sales_data.sales.columns) == ["total_sales"]
+    assert list(sales_data.sales_drivers.columns) == ["paid_search", "paid_social", "promo"]
+    assert list(sales_data.truth.sales_parts.columns) == [
+        "base",
+        "brand_spend",
+        "paid_search",
+        "paid_social",
+        "promo",
+        "seasonality",
+        "noise",
+    ]
+    for frame in (sales_data.sales, sales_data.sales_drivers, sales_data.truth.sales_parts):
+        assert frame.index.equals(sales_data.endog.index)
+        assert not frame.isna().any().any()
+
+
+def test_parts_add_up_to_total_sales(sales_data: BrandData) -> None:
+    parts = sales_data.truth.sales_parts
+    np.testing.assert_allclose(parts.sum(axis=1), sales_data.sales["total_sales"])
+
+
+def test_base_is_organic_sales_in_pounds(sales_data: BrandData) -> None:
+    np.testing.assert_allclose(
+        sales_data.truth.sales_parts["base"], np.exp(sales_data.endog["organic_sales"])
+    )
+
+
+def test_total_sales_is_positive_and_mostly_base(sales_data: BrandData) -> None:
+    total = sales_data.sales["total_sales"]
+    assert (total > 0).all()
+    share = (sales_data.truth.sales_parts["base"] / total).mean()
+    assert 0.8 < share < 0.95
+
+
+def test_sales_drivers_have_the_stated_form(sales_data: BrandData) -> None:
+    drivers = sales_data.sales_drivers
+    assert (drivers[["paid_search", "paid_social"]] > 0).all().all()
+    np.testing.assert_allclose(drivers[["paid_search", "paid_social"]].mean(), 1.0, atol=0.15)
+    assert set(np.unique(drivers["promo"])) <= {0.0, 1.0}
+    assert 0.02 < drivers["promo"].mean() < 0.15
+
+
+def test_brand_short_term_hit_is_centred(sales_data: BrandData) -> None:
+    assert abs(sales_data.truth.sales_parts["brand_spend"].mean()) < 1e-8
+
+
+def test_promo_part_is_the_flag_times_its_coefficient(sales_data: BrandData) -> None:
+    coef = sales_data.truth.sales_short_term["coef"]["promo"]
+    np.testing.assert_allclose(
+        sales_data.truth.sales_parts["promo"], coef * sales_data.sales_drivers["promo"]
+    )
+
+
+def test_short_term_effects_are_linear_and_same_week_by_default(sales_data: BrandData) -> None:
+    st = sales_data.truth.sales_short_term
+    parts, drivers = sales_data.truth.sales_parts, sales_data.sales_drivers
+    assert st["reference"] == pytest.approx(1.44 * 1000.0)
+    assert set(st["adstock"].values()) == {0.0}
+    assert set(st["saturation"].values()) == {0.0}
+    for name, share in (("paid_search", 0.08), ("paid_social", 0.05)):
+        assert st["coef"][name] == pytest.approx(share * st["reference"])
+        np.testing.assert_allclose(parts[name], st["coef"][name] * drivers[name])
+    spend = sales_data.exog["brand_spend"]
+    np.testing.assert_allclose(
+        parts["brand_spend"], st["coef"]["brand_spend"] * (spend - spend.mean())
+    )
+
+
+def test_sales_adstock_and_saturation() -> None:
+    out = simulate_brand_data(
+        total_sales=True,
+        sales_adstock={"paid_search": 0.4, "brand_spend": 0.3},
+        sales_saturation={"paid_search": 3.0},
+    )
+    st, parts, drivers = out.truth.sales_short_term, out.truth.sales_parts, out.sales_drivers
+    assert st["adstock"]["paid_search"] == 0.4
+    # Carryover: this week's search contribution depends on last week's spend.
+    stock = drivers["paid_search"].to_numpy().copy()
+    for t in range(1, len(stock)):
+        stock[t] = 0.6 * drivers["paid_search"].iloc[t] + 0.4 * stock[t - 1]
+    scale = st["spend_scale"]["paid_search"]
+    np.testing.assert_allclose(
+        parts["paid_search"], st["coef"]["paid_search"] * logistic_saturation(stock / scale, 3.0)
+    )
+    at_mean = st["coef"]["paid_search"] * logistic_saturation(1.0 / scale, 3.0)
+    assert at_mean == pytest.approx(0.08 * st["reference"])
+    np.testing.assert_allclose(
+        parts["paid_social"], st["coef"]["paid_social"] * drivers["paid_social"]
+    )
+    assert abs(parts["brand_spend"].mean()) < 1e-8
+
+
+def test_sales_noise_sets_the_noise_part() -> None:
+    quiet = simulate_brand_data(total_sales=True)
+    assert (quiet.truth.sales_parts["noise"] == 0).all()
+    loud = simulate_brand_data(n_obs=2000, total_sales=True, sales_noise=0.05)
+    sd = loud.truth.sales_parts["noise"].std() / loud.truth.sales_short_term["reference"]
+    assert sd == pytest.approx(0.05, rel=0.1)
+
+
+def test_total_sales_is_reproducible() -> None:
+    a = simulate_brand_data(seed=5, total_sales=True, sales_noise=0.01)
+    b = simulate_brand_data(seed=5, total_sales=True, sales_noise=0.01)
+    np.testing.assert_array_equal(a.sales.to_numpy(), b.sales.to_numpy())
+    c = simulate_brand_data(seed=6, total_sales=True, sales_noise=0.01)
+    assert not np.allclose(a.sales_drivers.to_numpy(), c.sales_drivers.to_numpy())
+
+
+def test_total_sales_works_with_saturated_brand_spend() -> None:
+    out = simulate_brand_data(total_sales=True, exog_saturation={"brand_spend": 5.0})
+    assert abs(out.truth.sales_parts["brand_spend"].mean()) < 1e-8
+    assert (out.sales["total_sales"] > 0).all()
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"total_sales": True, "sales_noise": -0.01}, "must not be negative"),
+        ({"sales_noise": 0.01}, "sales_noise needs total_sales"),
+        ({"sales_adstock": {"paid_search": 0.3}}, "sales_adstock needs total_sales"),
+        ({"sales_saturation": {"paid_search": 3.0}}, "sales_saturation needs total_sales"),
+        ({"total_sales": True, "sales_adstock": {"pr_reach": 0.3}}, "unknown sales_adstock"),
+        ({"total_sales": True, "sales_adstock": {"paid_search": 1.0}}, "must be in"),
+        ({"total_sales": True, "sales_saturation": {"brand_spend": 3.0}}, "unknown sales_sat"),
+        ({"total_sales": True, "sales_saturation": {"paid_social": 0.0}}, "must be positive"),
+    ],
+)
+def test_total_sales_option_errors(kwargs: dict, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        simulate_brand_data(**kwargs)
