@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pymc as pm
 import pytensor
 import pytest
 
-from bayesian_vecm import BayesianVECM
+from bayesian_vecm import BayesianVECM, simulate_brand_data
 from bayesian_vecm._design import cointegration_design
 from bayesian_vecm._pymc import build_pymc_model
 
@@ -158,9 +160,18 @@ def _frames() -> tuple[pd.DataFrame, pd.DataFrame]:
 def fitted():
     endog, exog = _frames()
     model = BayesianVECM(k_ar_diff=1, coint_rank=1, contemporaneous=CONTEMP, excluded=EXCLUDED)
-    model.fit(
-        endog, exog=exog, draws=30, tune=30, chains=1, cores=1, progressbar=False, random_seed=0
-    )
+    # Random drivers do not move awareness, so the instruments are weak.
+    with pytest.warns(UserWarning, match="weak instruments"):
+        model.fit(
+            endog,
+            exog=exog,
+            draws=30,
+            tune=30,
+            chains=1,
+            cores=1,
+            progressbar=False,
+            random_seed=0,
+        )
     return model
 
 
@@ -180,6 +191,8 @@ class TestModel:
             "upper",
             "evidence",
             "link",
+            "first_stage_f",
+            "sargan_p",
         ]
         row = table.iloc[0]
         assert (row.cause, row.effect) == ("awareness", "consideration")
@@ -202,6 +215,34 @@ class TestModel:
         assert fitted.fittedvalues.shape[-1] == K
         fc = fitted.sample_posterior_predictive(3, exog_future=exog.iloc[:3])
         assert np.isfinite(fc.posterior_predictive["y"].values).all()
+
+    def test_links_table_reports_the_instrument_check(self, fitted):
+        check = fitted.instrument_check_
+        table = fitted.same_week_links()
+        assert table.first_stage_f.iloc[0] == pytest.approx(check.first_stage_f.iloc[0])
+        assert table.sargan_p.iloc[0] == pytest.approx(check.sargan_p.iloc[0])
+
+    def test_drivers_table_splits_direct_and_via_links(self, fitted):
+        table = fitted.granger_causality().exog
+        assert {"direct", "via_links"} <= set(table.columns)
+        np.testing.assert_allclose(table.direct + table.via_links, table["mean"])
+        cons = table[table.effect == "consideration"].set_index("cause")
+        # Excluded drivers reach consideration only through awareness.
+        assert cons.loc["spend", "direct"] == 0.0
+        assert cons.loc["pr", "direct"] == 0.0
+        assert cons.loc["spend", "via_links"] != 0.0
+        # Sales have no links, so everything is direct.
+        sales = table[table.effect == "sales"]
+        np.testing.assert_allclose(sales.via_links, 0.0, atol=1e-12)
+        assert "Same-week effects split" in str(fitted.granger_causality())
+
+    def test_drivers_table_without_links_has_no_split(self):
+        endog, exog = _frames()
+        model = BayesianVECM(coint_rank=1, excluded=EXCLUDED)
+        model.fit(endog, exog=exog, draws=5, tune=5, chains=1, cores=1, progressbar=False)
+        result = model.granger_causality()
+        assert "direct" not in result.exog.columns
+        assert "Same-week effects split" not in str(result)
 
     def test_no_links_raises(self):
         endog, exog = _frames()
@@ -250,3 +291,46 @@ class TestValidation:
     def test_needs_exog(self):
         with pytest.raises(ValueError, match="need exog"):
             self._fit(contemporaneous=CONTEMP, excluded=EXCLUDED, exog=None)
+
+
+SIM_LINK = {"brand_consideration": ["brand_awareness"]}
+SIM_CHANNELS = ["brand_spend", "pr_reach", "sponsorship_reach"]
+
+
+class TestInstrumentCheck:
+    @pytest.fixture(scope="class")
+    def data(self):
+        return simulate_brand_data(
+            contemporaneous={"brand_consideration": {"brand_awareness": 0.2}}
+        )
+
+    def _check(self, data, excluded):
+        model = BayesianVECM(k_ar_diff=1, contemporaneous=SIM_LINK, excluded=excluded)
+        return model._check_instruments(data.endog, data.exog)
+
+    def test_good_instruments_do_not_warn(self, data):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            table = self._check(data, {"brand_consideration": SIM_CHANNELS})
+        assert table.first_stage_f.iloc[0] > 10
+        assert table.estimate.iloc[0] == pytest.approx(0.2, abs=0.1)
+
+    def test_wrong_exclusion_warns(self, data):
+        # Consumer confidence acts on consideration directly.
+        excluded = {"brand_consideration": [*SIM_CHANNELS, "consumer_confidence"]}
+        with pytest.warns(UserWarning, match="disagree"):
+            self._check(data, excluded)
+
+    def test_weak_instruments_warn(self, data):
+        short = data.endog.iloc[:40], data.exog.iloc[:40]
+        model = BayesianVECM(
+            k_ar_diff=1, contemporaneous=SIM_LINK, excluded={"brand_consideration": ["pr_reach"]}
+        )
+        with pytest.warns(UserWarning, match="weak instruments"):
+            model._check_instruments(*short)
+
+    def test_check_that_cannot_run_returns_none(self, data):
+        model = BayesianVECM(
+            k_ar_diff=1, contemporaneous=SIM_LINK, excluded={"brand_consideration": SIM_CHANNELS}
+        )
+        assert model._check_instruments(data.endog.iloc[:8], data.exog.iloc[:8]) is None

@@ -221,7 +221,11 @@ class BayesianVECM:
         direct effects. :math:`\\Sigma` stays a full covariance: the links
         are identified only by ``excluded``. Links must not form a cycle.
         Run :func:`~bayesian_vecm.granger_pretest` with the same arguments
-        first. ``None`` (default) means no links.
+        first. :meth:`fit` runs the same instrument check (two-stage least
+        squares with ``k_ar_diff + 1`` lags in levels) and warns when a link
+        has weak instruments (first-stage F below 10) or instruments that
+        disagree (Sargan p below 0.05). :meth:`same_week_links` reports both
+        numbers. ``None`` (default) means no links.
     excluded
         Drivers with no direct same-week effect on a brand metric, as
         ``{effect: [drivers]}`` with ``endog`` and ``exog`` column names.
@@ -393,6 +397,7 @@ class BayesianVECM:
             sat_scale, sat_level = _saturation_scale(exog, saturation_idx)
 
         links, b_mask = self._resolve_same_week(variable_names, endog_arr.shape[1], exog)
+        instrument_check = self._check_instruments(endog, exog) if links else None
 
         design = cointegration_design(
             endog_arr,
@@ -474,6 +479,7 @@ class BayesianVECM:
         self.saturation_level_ = sat_level
         self.exog_window_ = window
         self.links_ = links
+        self.instrument_check_ = instrument_check
         # The last `window` rows of the raw drivers seed the lags in a forecast.
         self.exog_tail_ = None
         if exog is not None:
@@ -545,9 +551,13 @@ class BayesianVECM:
         -------
         pandas.DataFrame
             One row per link. Columns ``cause``, ``effect``, ``mean``,
-            ``lower``, ``upper``, ``evidence`` and ``link``. ``evidence`` is
-            as in :meth:`granger_causality`: for one coefficient,
-            ``1 - 2 * min(P(> 0), P(< 0))``.
+            ``lower``, ``upper``, ``evidence``, ``link``, ``first_stage_f``
+            and ``sargan_p``. ``evidence`` is as in
+            :meth:`granger_causality`: for one coefficient,
+            ``1 - 2 * min(P(> 0), P(< 0))``. The last two come from the
+            instrument check at fit time. Below an F of 10 the link leans on
+            its prior. A small Sargan p means at least one exclusion is
+            wrong. Both are ``NaN`` if the check could not run.
 
         Raises
         ------
@@ -569,6 +579,13 @@ class BayesianVECM:
         draws = draws.reshape(-1, draws.shape[-1])
         names = self.variable_names_ or [f"y{i}" for i in range(self.endog_.shape[1])]
         tail = (1.0 - ci_prob) / 2.0
+        check = getattr(self, "instrument_check_", None)
+        iv = {}
+        if check is not None:
+            iv = {
+                (r.cause, r.effect): (float(r.first_stage_f), float(r.sargan_p))
+                for r in check.itertuples(index=False)
+            }
         rows = []
         for i, (effect, cause) in enumerate(links):
             d = draws[:, i]
@@ -583,9 +600,52 @@ class BayesianVECM:
                     "upper": float(upper),
                     "evidence": evidence,
                     "link": evidence >= threshold,
+                    "first_stage_f": iv.get((names[cause], names[effect]), (np.nan,))[0],
+                    "sargan_p": iv.get((names[cause], names[effect]), (np.nan, np.nan))[1],
                 }
             )
         return pd.DataFrame(rows)
+
+    def _check_instruments(self, endog: Any, exog: Any) -> pd.DataFrame | None:
+        """Run the same-week IV test and warn about weak or disagreeing instruments.
+
+        Uses :func:`~bayesian_vecm.granger_pretest` with ``k_ar_diff + 1``
+        lags in levels, so the controls match the model's dynamics. Returns
+        its ``same_week`` table, or ``None`` if the test cannot run (for
+        example on a very short sample).
+        """
+        from bayesian_vecm._granger import granger_pretest
+        from bayesian_vecm._same_week import WEAK_F
+
+        try:
+            table = granger_pretest(
+                endog,
+                exog,
+                lags=self.k_ar_diff + 1,
+                contemporaneous=self.contemporaneous,
+                excluded=self.excluded,
+            ).same_week
+        except (ValueError, np.linalg.LinAlgError):
+            return None
+        for row in table.itertuples(index=False):
+            link = f"{row.cause} -> {row.effect}"
+            if row.first_stage_f < WEAK_F:
+                warnings.warn(
+                    f"Same-week link {link} has weak instruments (first-stage F "
+                    f"{row.first_stage_f:.1f}, below {WEAK_F:g}). Its posterior will lean "
+                    "on the prior. Check that the excluded drivers move the cause.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+            elif row.sargan_p < 0.05:
+                warnings.warn(
+                    f"The instruments for same-week link {link} disagree (Sargan p "
+                    f"{row.sargan_p:.3f}). At least one driver in excluded may act on "
+                    f"{row.effect} directly.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+        return table
 
     @staticmethod
     def _resolve_drivers(items: list | None, exog: Any, label: str) -> tuple[int, ...]:

@@ -75,7 +75,10 @@ class CausalityResult:
         variable adjusts.
     exog : pandas.DataFrame or None
         Same columns as ``short_run``, with exogenous variables as causes.
-        ``None`` when the model was fitted without ``exog``.
+        With same-week links (``contemporaneous``) two more columns split
+        the posterior mean: ``direct`` is the driver's own effect and
+        ``via_links`` the part passed on through the links. ``None`` when
+        the model was fitted without ``exog``.
     threshold : float
         Evidence at or above this is reported as a link.
     ci_prob : float
@@ -111,6 +114,16 @@ class CausalityResult:
             lines.append(f"  {row.variable:<26}{row.evidence:>9.2f}  {verdict}")
         if self.exog is not None:
             lines += self._pair_table("Exogenous drivers (B)", self.exog, "helps predict")
+            if "via_links" in self.exog.columns:
+                passed = self.exog[self.exog["via_links"].abs() > 0]
+                lines += ["", "Same-week effects split: direct and through the same-week links"]
+                lines.append(f"  {'cause -> effect':<46}{'mean':>9}{'direct':>9}{'via':>9}")
+                lines.append("  " + "-" * 82)
+                for row in passed.itertuples(index=False):
+                    pair = f"{row.cause} -> {row.effect}"
+                    lines.append(
+                        f"  {pair:<46}{row.mean:>9.3f}{row.direct:>9.3f}{row.via_links:>9.3f}"
+                    )
         return "\n".join(lines)
 
     def _pair_table(self, title: str, table: pd.DataFrame, verb: str) -> list[str]:
@@ -263,17 +276,27 @@ def compute_causality(
         n_exog = b.shape[2] // (exog_lags + 1)
         x_names = exog_names or [f"x{i}" for i in range(n_exog)]
         b_total = _stack(posterior["B_total"].values) if adstock else None
+        # With same-week links, split each total into the direct effect
+        # (B_structural) and the part passed on by the links.
+        b_direct = None
+        if "A0_links" in posterior and "B_structural" in posterior:
+            b_direct = _stack(posterior["B_structural"].values)
         exog_rows = []
         for x in range(n_exog):
             for effect in range(n_vars):
                 row = effect_row(x_names[x], names[effect], b[:, effect, x::n_exog])
+                if b_direct is not None:
+                    direct = float(b_direct[:, effect, x::n_exog].sum(axis=1).mean())
+                    row["direct"] = direct
+                    row["via_links"] = row["mean"] - direct
                 if b_total is not None and x in adstock:
                     # Lags of an adstocked driver lie on a curve set by one
                     # total and one decay; test the total, which equals the sum.
                     total = b_total[:, effect, adstock.index(x)]
                     row["evidence"] = evidence_against_zero(total)
                 exog_rows.append(row)
-        exog_table = pd.DataFrame(exog_rows, columns=columns)
+        exog_columns = columns + (["direct", "via_links"] if b_direct is not None else [])
+        exog_table = pd.DataFrame(exog_rows, columns=exog_columns)
 
     return CausalityResult(
         short_run=pd.DataFrame(short_rows, columns=columns),

@@ -154,6 +154,7 @@ model.same_week_links()
 
 - `excluded` names the drivers that reach an effect only through its causes. They act as instruments: the link is the ratio of a driver's effect on the effect to its effect on the cause. Least squares cannot do this because the brand metrics share shocks. With no link in the data it reports about 0.3.
 - The shocks keep a full covariance, so the model is the usual one with `B = A0⁻¹ B_s`. `B`, `exog_irf()` and forecasts keep their meaning. Shock impulse responses still need GIRF or Cholesky.
+- `fit()` reruns the instrument check and warns when the instruments are weak (first-stage F below 10) or disagree (Sargan p below 0.05). `same_week_links()` reports both. The drivers table of `granger_causality()` splits each effect into `direct` and `via_links`.
 - On 20 simulated weekly data sets per truth the posterior tracked 2SLS (correlation 0.96 to 0.99) with 0 divergences. Tying a driver's effects together through the link halved the interval on brand spend's same-week effect on consideration.
 - **A wrong exclusion biases the result.** With brand spend acting on consideration directly, the link came out at 0.33 against 0.2 and Sargan caught it in only 10% of data sets. On monthly data a same-month link also holds the lagged weekly effects inside the month, and the instruments are often weak. `tools/same_week_check.py` and the [same-week guide](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/04_same_week_links.ipynb) have the details.
 
