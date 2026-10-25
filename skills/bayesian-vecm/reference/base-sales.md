@@ -20,7 +20,7 @@ None of these is wrong for an MMM. But the base they produce answers "what is no
 
 | How the base was made | The problem |
 |---|---|
-| A time-varying intercept in a Bayesian MMM (Gaussian process, random walk, splines: Meridian, pymc-marketing and others) | It absorbs slow brand-driven growth as "baseline", so brand gets no credit for it. Its smoothness is set by a prior chosen for fit, not by the data. |
+| A time-varying intercept in a Bayesian MMM (Gaussian process, random walk, splines: Meridian, pymc-marketing and others) | It absorbs slow brand-driven growth as "baseline", and it is a smooth curve. In simulation (`tools/mmm_trend_check.py`, PyMC-Marketing HSGP at lengthscales of 26, 78 and 156 weeks) the long-run return still came out right, but `alpha` was about 93% too slow, the sales shocks 85% too small and 4 in 5 fits found sales leading the brand metrics. The lengthscale did not fix it. Use the MMM's total minus its contributions instead. |
 | Prophet or Robyn trend | Changepoints and smoothing are imposed. Using the trend component as base removes the noise. |
 | A linear or polynomial time trend | Assumes growth is fixed, so the VECM cannot explain it with brand. Leaves spurious structure in the residual. |
 | Hodrick-Prescott filter | Known to create cycles that are not in the data (Hamilton 2018). Poor at the ends of the sample. |
@@ -89,7 +89,8 @@ Guide 06 (`notebooks/guides/06_base_sales_from_total_sales.ipynb`, `tools/ucm_ba
 - **The smoothed level is the riskiest choice** when the UCM's noise variance is not zero: wrong dynamics and false direction findings. When it is zero the smoothed level and the recipe give the same series.
 - **Performance spend that follows demand** (`tools/demand_feedback_check.py`). When search spend rose with consideration growth (correlation up to 0.7), the UCM's search coefficient came out 3% to 10% too high. The long-run return moved by 1% or less and the base still cointegrated with consideration in 9 of 10 data sets. Here search is 7% of sales; a channel that is a much larger share of sales would move more demand out of the base. Check that the base still cointegrates with consideration (`select_coint_rank`) before going further.
 - **Seasonality kept in the base confuses the rank test.** `select_coint_rank` has no seasonal terms, so with the seasonal swing still in base sales it found the true rank in only 2 to 4 of 10 data sets (8 of 10 with the seasonal part removed). Run the rank test on a deseasonalised copy and fit the VECM on the base with seasonality in.
-- **Not yet tested:** carryover and saturation in the short-term part (a Bayesian MMM), and seasonality that drifts or brand metrics that are seasonal too.
+- **With carryover and saturation, take the base from a Bayesian MMM** (`tools/mmm_trend_check.py`, 5 data sets, PyMC-Marketing). Total minus the MMM's channel and control contributions behaved like the UCM recipe: return within 3%, and the week-4 lift within 4% with the seasonality kept in. The MMM's own trend failed as in the table above. Total sales straight into the VECM, with `adstock=` on the weekly changes of the channels, also got the return within 3% and no false direction findings, but the lift built too fast (week 4 +30%) because it cannot fit saturation.
+- **Not yet tested:** seasonality that drifts, and brand metrics that are seasonal too.
 
 ## Checks on any base sales series
 

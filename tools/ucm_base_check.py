@@ -151,6 +151,14 @@ def coint_ranks(fit_endog: pd.DataFrame) -> dict:
     }
 
 
+def in_sales_equation(exog: pd.DataFrame, short_run: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Add weekly changes of ``short_run`` to ``exog``, kept out of the brand metric equations."""
+    changes = short_run.diff()
+    changes.columns = [f"d_{c}" for c in changes.columns]
+    excluded = {AWARE: list(changes.columns), CONS: list(changes.columns)}
+    return pd.concat([exog, changes], axis=1), excluded
+
+
 def evaluate(
     data,
     arm: str,
@@ -159,34 +167,45 @@ def evaluate(
     n_harmonics: int = 2,
     stochastic_seasonal: bool = False,
     vecm_harmonics: int = 2,
+    total_adstock: list[str] | None = None,
 ) -> list[dict]:
-    """Build the base for ``arm``, fit the VECM and score it against the truth."""
-    endog, exog, truth = data.endog, data.exog, data.truth
+    """Build the base for ``arm``, fit the VECM and score it against the truth.
+
+    ``total_adstock`` names short-term drivers that get the VECM's own
+    adstock in the ``total`` arm (applied to their weekly changes).
+    """
+    exog = data.exog
     total = data.sales["total_sales"]
-    true_base = truth.sales_parts["base"]
     regressors = pd.concat([exog[["brand_spend"]], data.sales_drivers], axis=1)[SHORT_TERM]
 
     info: dict = {}
     fit_exog = exog.copy()
     kwargs: dict = {}
     if arm == "true_base":
-        base = true_base
+        base = data.truth.sales_parts["base"]
     elif arm in ("ucm_minus", "ucm_level", "ucm_keep_season"):
         minus, level, keep_season, info = ucm_bases(
             total, regressors, n_harmonics, stochastic_seasonal
         )
         base = {"ucm_minus": minus, "ucm_level": level, "ucm_keep_season": keep_season}[arm]
         if arm == "ucm_keep_season":
-            changes = harmonics(total.index, vecm_harmonics).diff()
-            changes.columns = [f"d_{c}" for c in changes.columns]
-            fit_exog = pd.concat([exog, changes], axis=1)
-            kwargs["excluded"] = {AWARE: list(changes.columns), CONS: list(changes.columns)}
+            fit_exog, kwargs["excluded"] = in_sales_equation(
+                exog, harmonics(total.index, vecm_harmonics)
+            )
     else:
         base = total
-        changes = pd.concat([regressors, harmonics(total.index, vecm_harmonics)], axis=1).diff()
-        changes.columns = [f"d_{c}" for c in changes.columns]
-        fit_exog = pd.concat([exog, changes], axis=1)
-        kwargs["excluded"] = {AWARE: list(changes.columns), CONS: list(changes.columns)}
+        fit_exog, kwargs["excluded"] = in_sales_equation(
+            exog, pd.concat([regressors, harmonics(total.index, vecm_harmonics)], axis=1)
+        )
+        if total_adstock:
+            kwargs["adstock"] = [f"d_{c}" for c in total_adstock]
+    return score(data, base, fit_exog, kwargs, arm, seed, tags, info)
+
+
+def score(data, base, fit_exog, kwargs, arm, seed, tags, info) -> list[dict]:
+    """Fit the VECM with ``base`` as sales and score it against the truth."""
+    endog, truth = data.endog, data.truth
+    true_base = truth.sales_parts["base"]
     if (base <= 0).any():
         raise ValueError(f"non-positive base in seed {seed}, {tags}, arm {arm}")
 
