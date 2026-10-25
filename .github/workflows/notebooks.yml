@@ -50,4 +50,16 @@ jobs:
             --execute \
             --inplace \
             --ExecutePreprocessor.timeout=300 \
-            notebooks/guides/*.ipynb
+            $(ls notebooks/guides/*.ipynb | grep -v 07_base_sales_from_an_mmm)
+
+      # Guide 07 needs PyMC-Marketing, which is not a dependency of the package.
+      # Installed last so the other notebooks run on the locked environment.
+      - name: Execute the MMM guide
+        run: |
+          uv pip install "pymc-marketing==1.3.0"
+          uv run --no-sync jupyter nbconvert \
+            --to notebook \
+            --execute \
+            --inplace \
+            --ExecutePreprocessor.timeout=300 \
+            notebooks/guides/07_base_sales_from_an_mmm.ipynb

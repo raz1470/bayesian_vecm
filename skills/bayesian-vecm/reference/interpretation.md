@@ -12,6 +12,7 @@ print(causality)
 
 - **β:** "In the long run, sales move about 1.25% for every 1% move in consideration."
 - **α:** "When sales fall behind consideration, they close about a quarter of the gap each week. Half the gap is gone in about 2.5 weeks."  Half-life in weeks: `log(0.5) / log(1 + alpha)` for a negative α on the series' own tie.
+  When sales are base sales built from total sales, give α and the half-life as rough only: noise in the base that the brand system does not explain makes α look faster (see `pitfalls.md`). The long-run return is the robust number.
 - **Weak exogeneity:** "Awareness does not adjust to the others: it leads. Changes to awareness are where lasting change enters the system."
 
 ## What drives what

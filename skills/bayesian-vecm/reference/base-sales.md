@@ -9,7 +9,7 @@ The VECM explains the slow movement in sales through the brand metrics. So the s
 1. **Actual sales minus the short-term marketing and promotion contributions**, using the MMM's own adstock. Nothing else removed.
 2. **The noise kept in.** It is data minus contributions, not a fitted curve. A smooth base makes the model look surer than it is and distorts how the shared shocks split.
 3. **The level and the long-run trend kept in.** That is the brand effect being measured.
-4. **Seasonality handled one way for every series.** Either kept in with seasonal terms as drivers, or removed by the same method from all series. When only sales are seasonal, keep it in the base and give the sales equation the seasonal terms (see below). Subtracting a UCM's seasonal estimate adds a slow error to the base, because over a few years the level and an annual cycle are hard to tell apart.
+4. **Seasonality handled one way for every series.** Either kept in with seasonal terms as drivers, or removed by the same method from all series. When only sales are seasonal, the best route so far is to keep it in the base and give the sales equation the seasonal terms (see below). Subtracting a UCM's seasonal estimate adds a slow error to the base, because over a few years the level and an annual cycle are hard to tell apart. Treat this as provisional and say so to the user: it has been tested on smooth annual patterns only, not on holiday spikes or seasonal brand metrics.
 5. **The same frequency, dates and breaks** as the brand metrics.
 
 If short-term media is left in, the VECM counts it again. If the trend is taken out, there is nothing left for the VECM to find.
@@ -20,7 +20,7 @@ None of these is wrong for an MMM. But the base they produce answers "what is no
 
 | How the base was made | The problem |
 |---|---|
-| A time-varying intercept in a Bayesian MMM (Gaussian process, random walk, splines: Meridian, pymc-marketing and others) | It absorbs slow brand-driven growth as "baseline", so brand gets no credit for it. Its smoothness is set by a prior chosen for fit, not by the data. |
+| A time-varying intercept in a Bayesian MMM (Gaussian process, random walk, splines: Meridian, pymc-marketing and others) | It absorbs slow brand-driven growth as "baseline", and it is a smooth curve. In simulation (`tools/mmm_trend_check.py`, PyMC-Marketing HSGP at lengthscales of 26, 78 and 156 weeks) the long-run return still came out right, but `alpha` was about 93% too slow, the sales shocks 85% too small and 4 in 5 fits found sales leading the brand metrics. The lengthscale did not fix it. Use the MMM's total minus its contributions instead. |
 | Prophet or Robyn trend | Changepoints and smoothing are imposed. Using the trend component as base removes the noise. |
 | A linear or polynomial time trend | Assumes growth is fixed, so the VECM cannot explain it with brand. Leaves spurious structure in the residual. |
 | Hodrick-Prescott filter | Known to create cycles that are not in the data (Hamilton 2018). Poor at the ends of the sample. |
@@ -85,9 +85,12 @@ Guide 06 (`notebooks/guides/06_base_sales_from_total_sales.ipynb`, `tools/ucm_ba
 
 - **The long-run return on brand spend hardly depends on the base.** The UCM base, the smoothed level and total sales all came within 6% of the truth, with 90% to 100% coverage. Cointegration with consideration carries it.
 - **The short-run quantities do.** Noise outside the brand system goes into the sales shocks (twice too large at 2% noise) and makes `alpha` look too fast. Do not report `alpha`, half-lives or shock sizes as brand facts when the base carries such noise.
-- **Keep the seasonality in.** Subtracting the UCM's seasonal estimate made the week-4 lift 18% to 28% too low at low noise. Keeping it in fixed that.
+- **Keeping the seasonality in looks better, provisionally.** Subtracting the UCM's seasonal estimate made the week-4 lift 18% to 28% too low at low noise; keeping it in fixed that. `tools/seasonality_check.py` held this up with 1 to 3 harmonics (truth 2), with 5 and 8 years of data and with a drifting seasonal pattern (week-4 lift -11% at strong drift against -29% to -39%). At 3 years both routes were noisy. With more years the gap closes: removing the seasonal estimate was -6% at 8 years.
 - **The smoothed level is the riskiest choice** when the UCM's noise variance is not zero: wrong dynamics and false direction findings. When it is zero the smoothed level and the recipe give the same series.
-- **Not yet tested:** carryover and saturation in the short-term part, and performance spend that follows demand. If search spend rises with consideration, the UCM credits search with brand-driven demand and the base may lose its link to consideration. Check that the base still cointegrates with consideration (`select_coint_rank`) before going further.
+- **Performance spend that follows demand** (`tools/demand_feedback_check.py`). When search spend rose with consideration growth (correlation up to 0.7), the UCM's search coefficient came out 3% to 10% too high. The long-run return moved by 1% or less and the base still cointegrated with consideration in 9 of 10 data sets. Here search is 7% of sales; a channel that is a much larger share of sales would move more demand out of the base. Check that the base still cointegrates with consideration (`select_coint_rank`) before going further.
+- **Seasonality kept in the base confuses the rank test.** `select_coint_rank` has no seasonal terms, so with the seasonal swing still in base sales it found the true rank in only 2 to 4 of 10 data sets (8 of 10 with the seasonal part removed). Run the rank test on a deseasonalised copy and fit the VECM on the base with seasonality in.
+- **With carryover and saturation, take the base from a Bayesian MMM** (`tools/mmm_trend_check.py`, 5 data sets, PyMC-Marketing). Total minus the MMM's channel and control contributions behaved like the UCM recipe: return within 3%, and the week-4 lift within 4% with the seasonality kept in. The MMM's own trend failed as in the table above. Total sales straight into the VECM, with `adstock=` on the weekly changes of the channels, also got the return within 3% and no false direction findings, but the lift built too fast (week 4 +30%) because it cannot fit saturation.
+- **Not yet tested:** brand metrics that are seasonal too, and seasonality that is not smooth (holiday spikes).
 
 ## Checks on any base sales series
 

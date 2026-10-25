@@ -372,3 +372,59 @@ def test_total_sales_works_with_saturated_brand_spend() -> None:
 def test_total_sales_option_errors(kwargs: dict, match: str) -> None:
     with pytest.raises(ValueError, match=match):
         simulate_brand_data(**kwargs)
+
+
+def test_paid_search_follows_demand() -> None:
+    base = simulate_brand_data(total_sales=True, sales_noise=0.02)
+    out = simulate_brand_data(total_sales=True, sales_noise=0.02, paid_search_follows=0.2)
+    search = np.log(out.sales_drivers["paid_search"])
+    growth = out.endog["brand_consideration"].diff(4)
+    assert np.corrcoef(search[4:], growth[4:])[0, 1] > 0.4
+    indep = np.log(base.sales_drivers["paid_search"])
+    assert abs(np.corrcoef(indep[4:], growth[4:])[0, 1]) < 0.2
+    assert out.sales_drivers["paid_search"].mean() == pytest.approx(1.0)
+    np.testing.assert_array_equal(
+        out.sales_drivers["paid_social"].to_numpy(), base.sales_drivers["paid_social"].to_numpy()
+    )
+    np.testing.assert_array_equal(out.endog.to_numpy(), base.endog.to_numpy())
+    assert out.truth.sales_short_term["paid_search_follows"] == 0.2
+    parts = out.truth.sales_parts
+    np.testing.assert_allclose(parts.sum(axis=1), out.sales["total_sales"])
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"total_sales": True, "paid_search_follows": -0.1}, "must not be negative"),
+        ({"paid_search_follows": 0.1}, "paid_search_follows needs total_sales"),
+    ],
+)
+def test_paid_search_follows_errors(kwargs: dict, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        simulate_brand_data(**kwargs)
+
+
+def test_seasonal_drift() -> None:
+    fixed = simulate_brand_data(total_sales=True)
+    drift = simulate_brand_data(total_sales=True, seasonal_drift=0.05)
+    np.testing.assert_array_equal(fixed.sales_drivers.to_numpy(), drift.sales_drivers.to_numpy())
+    s0 = fixed.truth.sales_parts["seasonality"].to_numpy()
+    s1 = drift.truth.sales_parts["seasonality"].to_numpy()
+    # Same pattern in the first weeks, a different one by the end.
+    np.testing.assert_allclose(s1[0], s0[0], atol=1e-9)
+    assert np.corrcoef(s1[:26], s0[:26])[0, 1] > 0.95
+    assert not np.allclose(s1[-52:], s0[-52:], rtol=0.05)
+    assert drift.truth.sales_short_term["seasonal_drift"] == 0.05
+    np.testing.assert_allclose(drift.truth.sales_parts.sum(axis=1), drift.sales["total_sales"])
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"total_sales": True, "seasonal_drift": -0.1}, "must not be negative"),
+        ({"seasonal_drift": 0.1}, "seasonal_drift needs total_sales"),
+    ],
+)
+def test_seasonal_drift_errors(kwargs: dict, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        simulate_brand_data(**kwargs)

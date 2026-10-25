@@ -86,7 +86,10 @@ and weekly noise :math:`u_t` with standard deviation ``sales_noise`` times
 the reference level. By default every short-term effect is linear and in
 the same week, which a UCM with regressors can fit exactly.
 ``sales_adstock`` and ``sales_saturation`` add geometric carryover and
-logistic saturation to them. Sizes are set
+logistic saturation to them. ``paid_search_follows`` makes paid search
+spend rise and fall with demand: its log spend gets a term in the standardised
+four-week growth of consideration, as when search volume (and so spend) goes
+up with interest in the brand. Sizes are set
 against a reference level of ``1.44 * start_levels[0]``, the average of a
 level that doubles. The extra series use their own random numbers, so
 ``endog``, ``exog`` and ``truth`` are unchanged by the option.
@@ -276,8 +279,9 @@ class BrandTruth:
     sales_short_term : dict or None
         With ``total_sales=True``: the short-term settings, keys
         ``"reference"`` (£), ``"adstock"``, ``"saturation"``,
-        ``"spend_scale"`` and ``"coef"`` (£ per unit of the transformed
-        driver). ``None`` otherwise.
+        ``"spend_scale"``, ``"coef"`` (£ per unit of the transformed
+        driver), ``"paid_search_follows"`` and ``"seasonal_drift"``.
+        ``None`` otherwise.
     """
 
     alpha: NDArray[np.float64]
@@ -402,6 +406,8 @@ def simulate_brand_data(
     sales_noise: float = 0.0,
     sales_adstock: dict[str, float] | None = None,
     sales_saturation: dict[str, float] | None = None,
+    paid_search_follows: float = 0.0,
+    seasonal_drift: float = 0.0,
 ) -> BrandData:
     """Simulate weekly brand data from a VECM with known parameters.
 
@@ -478,6 +484,19 @@ def simulate_brand_data(
         effect on total sales, for example ``{"paid_search": 3.0}``. The
         coefficient is set so the effect at mean spend is unchanged.
         ``None`` (default) keeps them linear. Needs ``total_sales=True``.
+    paid_search_follows
+        How strongly paid search spend follows demand. Log spend gets
+        ``paid_search_follows * z_t``, where :math:`z_t` is the four-week
+        growth in log consideration, standardised. Spend is then rescaled to
+        mean 1. The other paid channel is unchanged. ``0.0`` (default) keeps
+        search spend independent of the brand. Must not be negative. Needs
+        ``total_sales=True``.
+    seasonal_drift
+        Lets the seasonal pattern in total sales change from year to year.
+        The sine and cosine weights of each harmonic follow random walks
+        whose weekly steps have standard deviation ``seasonal_drift`` times
+        that harmonic's amplitude. ``0.0`` (default) keeps the pattern
+        fixed. Must not be negative. Needs ``total_sales=True``.
 
     Returns
     -------
@@ -496,12 +515,21 @@ def simulate_brand_data(
         positive, ``spend_log_sd`` is not positive, or ``contemporaneous``
         names an unknown series, links a series to itself or has a cycle,
         ``sales_noise`` is negative, ``sales_adstock`` or ``sales_saturation``
-        names an unknown driver or has an invalid value, or any of the three
-        is set without ``total_sales``.
+        names an unknown driver or has an invalid value,
+        ``paid_search_follows`` or ``seasonal_drift`` is negative, or any of
+        these is set without ``total_sales``.
     """
     import pandas as pd
 
     sales_w, sales_lam = _sales_options(total_sales, sales_noise, sales_adstock, sales_saturation)
+    if paid_search_follows < 0.0:
+        raise ValueError(f"paid_search_follows must not be negative; got {paid_search_follows}")
+    if paid_search_follows and not total_sales:
+        raise ValueError("paid_search_follows needs total_sales=True")
+    if seasonal_drift < 0.0:
+        raise ValueError(f"seasonal_drift must not be negative; got {seasonal_drift}")
+    if seasonal_drift and not total_sales:
+        raise ValueError("seasonal_drift needs total_sales=True")
 
     if n_obs < 3:
         raise ValueError(f"n_obs must be at least 3; got n_obs={n_obs}")
@@ -606,8 +634,19 @@ def simulate_brand_data(
     if not total_sales:
         return BrandData(endog=endog, exog=exog, truth=truth)
     parts, drivers, settings = _simulate_total_sales(
-        np.exp(y[:, 0]), x[:, 0], dates, seed, float(start[0]), sales_noise, sales_w, sales_lam
+        np.exp(y[:, 0]),
+        x[:, 0],
+        dates,
+        seed,
+        float(start[0]),
+        sales_noise,
+        sales_w,
+        sales_lam,
+        _demand_signal(y[:, 2]) * paid_search_follows,
+        seasonal_drift,
     )
+    settings["paid_search_follows"] = float(paid_search_follows)
+    settings["seasonal_drift"] = float(seasonal_drift)
     truth = replace(truth, sales_parts=parts, sales_short_term=settings)
     sales = parts.sum(axis=1).to_frame("total_sales")
     return BrandData(endog=endog, exog=exog, truth=truth, sales=sales, sales_drivers=drivers)
@@ -649,6 +688,14 @@ def _sales_options(
     return w, lam
 
 
+def _demand_signal(log_consideration: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Standardised four-week growth in log consideration (0 in the first weeks)."""
+    growth = np.zeros_like(log_consideration)
+    growth[4:] = log_consideration[4:] - log_consideration[:-4]
+    growth[:4] = growth[4:].mean()
+    return (growth - growth.mean()) / growth.std()
+
+
 def _adstock(x: NDArray[np.float64], w: float) -> NDArray[np.float64]:
     """Geometric adstock :math:`a_t = (1 - w) x_t + w a_{t-1}`, started at ``x_0``."""
     a = np.array(x, dtype=np.float64)
@@ -666,6 +713,8 @@ def _simulate_total_sales(
     noise_sd: float,
     decay: dict[str, float],
     lam: dict[str, float],
+    search_demand: NDArray[np.float64],
+    seasonal_drift: float = 0.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
     """Total sales parts in £, the sales-only drivers and the settings.
 
@@ -683,9 +732,15 @@ def _simulate_total_sales(
     innov_sd = _PAID_LOG_SD * np.sqrt(1.0 - _PAID_RHO**2)
     d = np.zeros((n_total, 2))
     e = rng.normal(size=(n_total, 2)) * innov_sd
+    # search_demand is zero unless search follows demand; it starts after burn-in.
+    push = np.zeros(n_total)
+    push[_EXOG_BURN_IN:] = search_demand
     for t in range(1, n_total):
         d[t] = _PAID_RHO * d[t - 1] + e[t]
+        d[t, 0] += push[t]
     paid = np.exp(d[_EXOG_BURN_IN:] - _PAID_LOG_SD**2 / 2.0)
+    if search_demand.any():
+        paid[:, 0] /= paid[:, 0].mean()
     promo = (rng.random(n_obs) < _PROMO_RATE).astype(np.float64)
     noise = rng.normal(size=n_obs) * noise_sd * ref
 
@@ -711,9 +766,21 @@ def _simulate_total_sales(
     coef["promo"] = _SALES_SHARE["promo"] * ref
     parts["promo"] = coef["promo"] * promo
     angle = 2.0 * np.pi * np.arange(n_obs) / _WEEKS_PER_YEAR
-    parts["seasonality"] = ref * sum(
-        a * np.sin((h + 1) * angle) for h, a in enumerate(_SEASON_AMPLITUDE)
-    )
+    if seasonal_drift == 0.0:
+        parts["seasonality"] = ref * sum(
+            a * np.sin((h + 1) * angle) for h, a in enumerate(_SEASON_AMPLITUDE)
+        )
+    else:
+        # Random-walk sine and cosine weights, from their own generator.
+        drift_rng = np.random.default_rng([seed, 2])
+        season = np.zeros(n_obs)
+        for h, a in enumerate(_SEASON_AMPLITUDE):
+            steps = drift_rng.normal(size=(n_obs, 2)) * seasonal_drift * a
+            steps[0] = 0.0
+            w_sin = a + np.cumsum(steps[:, 0])
+            w_cos = np.cumsum(steps[:, 1])
+            season += w_sin * np.sin((h + 1) * angle) + w_cos * np.cos((h + 1) * angle)
+        parts["seasonality"] = ref * season
     parts["noise"] = noise
 
     settings = {

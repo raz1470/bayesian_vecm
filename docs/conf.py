@@ -46,6 +46,7 @@ _GUIDES = {
     "04_same_week_links.ipynb": "same_week_links.ipynb",
     "05_putting_it_together.ipynb": "putting_it_together.ipynb",
     "06_base_sales_from_total_sales.ipynb": "base_sales_from_total_sales.ipynb",
+    "07_base_sales_from_an_mmm.ipynb": "base_sales_from_an_mmm.ipynb",
 }
 (DOCS / "guide").mkdir(exist_ok=True)
 for _source, _target in _GUIDES.items():
