@@ -8,7 +8,7 @@ Ideas that were tested or scoped and left out of the first release, with the rea
 
 **Why plain regression fails.** The brand metrics share shocks to a common trend. On simulated data with no same-week link, least squares of consideration growth on awareness growth gives 0.30 (5-95%: 0.23 to 0.38) over 200 seeds of 260 weeks.
 
-**What works.** Two-stage least squares, with a driver that moves the cause but reaches the effect only through it as the instrument. On the same data the marketing channels instrument awareness: 2SLS gives 0.002 (-0.12 to 0.12), with a mean first-stage F of 83.
+**What works.** Instruments, as in Cain (2022). Two-stage least squares, with a driver that moves the cause but reaches the effect only through it as the instrument. On the same data the marketing channels instrument awareness: 2SLS gives 0.002 (-0.12 to 0.12), with a mean first-stage F of 83.
 
 **The test (built).** `granger_pretest(contemporaneous=..., excluded=...)` adds a `same_week` table: per link OLS, 2SLS, first-stage F, Sargan and a verdict ("same-week link", "no clear evidence", "weak instruments", "instruments disagree" or "not identified"). `simulate_brand_data(contemporaneous=...)` gives a non-zero truth. On 200 seeds of 260 weeks:
 
