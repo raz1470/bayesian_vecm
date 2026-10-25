@@ -2,7 +2,7 @@
 # GitHub Pages on every push to main.
 #
 # One-off setup: Settings -> Pages -> Source = "GitHub Actions".
-# The site keeps docs/walkthrough.html at /walkthrough.html.
+# The site keeps docs/_extra/walkthrough.html at /walkthrough.html.
 
 name: Docs
 

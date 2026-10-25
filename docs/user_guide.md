@@ -4,7 +4,7 @@ Start with the walkthrough for the idea and the results. To get response curves 
 
 | Page | What it covers |
 |---|---|
-| [Walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html) | How long brand lasts: the method, the tests and the results on simulated brand data |
+| [Walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html) | How Long Does Brand Last? The article: the problem, the VECM step by step and everything learned building it, on simulated data |
 | [Response curves on your data](guide/response_curves_on_your_data.ipynb) | Plug-in notebook: edit one configuration cell to get a response curve and return per £ for each channel, with every check recorded in a decision log |
 | [Practitioner guide](guide/practitioner_walkthrough.ipynb) | End-to-end notebook: data, tests, fit, impulse responses, counterfactual ROI, return per channel |
 | [Comparison with statsmodels](guide/statsmodels_comparison.ipynb) | Same estimates as statsmodels' VECM, how often each model's intervals contain the truth, and the return per £ with intervals |

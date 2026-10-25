@@ -35,7 +35,7 @@ Cain's papers:
 | | |
 |---|---|
 | 📚 [Documentation](https://raz1470.github.io/bayesian_vecm/) | User guide, API reference and model details |
-| 📖 [Walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html) | How long does brand last? The method, the tests and the results on simulated brand data |
+| 📖 [Walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html) | How Long Does Brand Last? The article: why adstock misses brand, the VECM step by step, carryover, saturation, same-week links and base sales, checked on simulated data |
 | 🔌 [Response curves on your data](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/08_response_curves_on_your_data.ipynb) | Plug-in notebook: set your columns and options in one cell and get a response curve and return per £ for each channel, with carryover, saturation and a same-week link, plus a decision log of every check |
 | 📓 [Practitioner Walkthrough](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/01_brand_vecm_walkthrough.ipynb) | End-to-end notebook: synthetic brand data → rank selection → fit → GIRF fan charts → counterfactual ROI |
 | ⚖️ [Comparison with statsmodels](https://nbviewer.org/github/raz1470/bayesian_vecm/blob/main/notebooks/guides/02_statsmodels_comparison.ipynb) | Same estimates as statsmodels' VECM, interval coverage on 30 seeds, and the return per £ with intervals |
