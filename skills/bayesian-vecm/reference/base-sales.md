@@ -87,7 +87,9 @@ Guide 06 (`notebooks/guides/06_base_sales_from_total_sales.ipynb`, `tools/ucm_ba
 - **The short-run quantities do.** Noise outside the brand system goes into the sales shocks (twice too large at 2% noise) and makes `alpha` look too fast. Do not report `alpha`, half-lives or shock sizes as brand facts when the base carries such noise.
 - **Keep the seasonality in.** Subtracting the UCM's seasonal estimate made the week-4 lift 18% to 28% too low at low noise. Keeping it in fixed that.
 - **The smoothed level is the riskiest choice** when the UCM's noise variance is not zero: wrong dynamics and false direction findings. When it is zero the smoothed level and the recipe give the same series.
-- **Not yet tested:** carryover and saturation in the short-term part, and performance spend that follows demand. If search spend rises with consideration, the UCM credits search with brand-driven demand and the base may lose its link to consideration. Check that the base still cointegrates with consideration (`select_coint_rank`) before going further.
+- **Performance spend that follows demand** (`tools/demand_feedback_check.py`). When search spend rose with consideration growth (correlation up to 0.7), the UCM's search coefficient came out 3% to 10% too high. The long-run return moved by 1% or less and the base still cointegrated with consideration in 9 of 10 data sets. Here search is 7% of sales; a channel that is a much larger share of sales would move more demand out of the base. Check that the base still cointegrates with consideration (`select_coint_rank`) before going further.
+- **Seasonality kept in the base confuses the rank test.** `select_coint_rank` has no seasonal terms, so with the seasonal swing still in base sales it found the true rank in only 2 to 4 of 10 data sets (8 of 10 with the seasonal part removed). Run the rank test on a deseasonalised copy and fit the VECM on the base with seasonality in.
+- **Not yet tested:** carryover and saturation in the short-term part (a Bayesian MMM), and seasonality that drifts or brand metrics that are seasonal too.
 
 ## Checks on any base sales series
 
