@@ -280,7 +280,8 @@ class BrandTruth:
         With ``total_sales=True``: the short-term settings, keys
         ``"reference"`` (£), ``"adstock"``, ``"saturation"``,
         ``"spend_scale"``, ``"coef"`` (£ per unit of the transformed
-        driver) and ``"paid_search_follows"``. ``None`` otherwise.
+        driver), ``"paid_search_follows"`` and ``"seasonal_drift"``.
+        ``None`` otherwise.
     """
 
     alpha: NDArray[np.float64]
@@ -406,6 +407,7 @@ def simulate_brand_data(
     sales_adstock: dict[str, float] | None = None,
     sales_saturation: dict[str, float] | None = None,
     paid_search_follows: float = 0.0,
+    seasonal_drift: float = 0.0,
 ) -> BrandData:
     """Simulate weekly brand data from a VECM with known parameters.
 
@@ -489,6 +491,12 @@ def simulate_brand_data(
         mean 1. The other paid channel is unchanged. ``0.0`` (default) keeps
         search spend independent of the brand. Must not be negative. Needs
         ``total_sales=True``.
+    seasonal_drift
+        Lets the seasonal pattern in total sales change from year to year.
+        The sine and cosine weights of each harmonic follow random walks
+        whose weekly steps have standard deviation ``seasonal_drift`` times
+        that harmonic's amplitude. ``0.0`` (default) keeps the pattern
+        fixed. Must not be negative. Needs ``total_sales=True``.
 
     Returns
     -------
@@ -508,8 +516,8 @@ def simulate_brand_data(
         names an unknown series, links a series to itself or has a cycle,
         ``sales_noise`` is negative, ``sales_adstock`` or ``sales_saturation``
         names an unknown driver or has an invalid value,
-        ``paid_search_follows`` is negative, or any of these is set without
-        ``total_sales``.
+        ``paid_search_follows`` or ``seasonal_drift`` is negative, or any of
+        these is set without ``total_sales``.
     """
     import pandas as pd
 
@@ -518,6 +526,10 @@ def simulate_brand_data(
         raise ValueError(f"paid_search_follows must not be negative; got {paid_search_follows}")
     if paid_search_follows and not total_sales:
         raise ValueError("paid_search_follows needs total_sales=True")
+    if seasonal_drift < 0.0:
+        raise ValueError(f"seasonal_drift must not be negative; got {seasonal_drift}")
+    if seasonal_drift and not total_sales:
+        raise ValueError("seasonal_drift needs total_sales=True")
 
     if n_obs < 3:
         raise ValueError(f"n_obs must be at least 3; got n_obs={n_obs}")
@@ -631,8 +643,10 @@ def simulate_brand_data(
         sales_w,
         sales_lam,
         _demand_signal(y[:, 2]) * paid_search_follows,
+        seasonal_drift,
     )
     settings["paid_search_follows"] = float(paid_search_follows)
+    settings["seasonal_drift"] = float(seasonal_drift)
     truth = replace(truth, sales_parts=parts, sales_short_term=settings)
     sales = parts.sum(axis=1).to_frame("total_sales")
     return BrandData(endog=endog, exog=exog, truth=truth, sales=sales, sales_drivers=drivers)
@@ -700,6 +714,7 @@ def _simulate_total_sales(
     decay: dict[str, float],
     lam: dict[str, float],
     search_demand: NDArray[np.float64],
+    seasonal_drift: float = 0.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
     """Total sales parts in £, the sales-only drivers and the settings.
 
@@ -751,9 +766,21 @@ def _simulate_total_sales(
     coef["promo"] = _SALES_SHARE["promo"] * ref
     parts["promo"] = coef["promo"] * promo
     angle = 2.0 * np.pi * np.arange(n_obs) / _WEEKS_PER_YEAR
-    parts["seasonality"] = ref * sum(
-        a * np.sin((h + 1) * angle) for h, a in enumerate(_SEASON_AMPLITUDE)
-    )
+    if seasonal_drift == 0.0:
+        parts["seasonality"] = ref * sum(
+            a * np.sin((h + 1) * angle) for h, a in enumerate(_SEASON_AMPLITUDE)
+        )
+    else:
+        # Random-walk sine and cosine weights, from their own generator.
+        drift_rng = np.random.default_rng([seed, 2])
+        season = np.zeros(n_obs)
+        for h, a in enumerate(_SEASON_AMPLITUDE):
+            steps = drift_rng.normal(size=(n_obs, 2)) * seasonal_drift * a
+            steps[0] = 0.0
+            w_sin = a + np.cumsum(steps[:, 0])
+            w_cos = np.cumsum(steps[:, 1])
+            season += w_sin * np.sin((h + 1) * angle) + w_cos * np.cos((h + 1) * angle)
+        parts["seasonality"] = ref * season
     parts["noise"] = noise
 
     settings = {
