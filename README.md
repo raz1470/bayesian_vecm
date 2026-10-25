@@ -8,6 +8,28 @@ The primary motivation is **brand marketing**. Brand metrics and sales move toge
 
 ---
 
+## Built on Peter Cain's work
+
+This package is an open-source Bayesian take on the method set out by **Peter Cain** for measuring the long-term effect of marketing. If you use it, read his papers first. They explain why the method works and show it on real brand data.
+
+What the package takes from Cain:
+
+- **Brand metrics tied to base sales by cointegration.** Awareness and consideration share a long-run relationship with base sales, so a lasting lift in a brand metric lifts sales for good (Cain 2022).
+- **The short and the long run as two separate things.** Short-term activation sits in the short-run dynamics. Brand building sits in the evolving base, not in a long adstock tail (Cain 2008, 2025).
+- **Same-week links estimated by instruments.** Links between the brand metrics in the same week are identified through exclusion restrictions on the marketing drivers, as in Cain (2022). `contemporaneous=` and `excluded=` implement this, and `granger_pretest` runs the test first.
+- **Base sales as the target.** Sales without short-term marketing, built so the long-run movement stays in. Guides 06 and 07 test how to build it.
+
+Where it differs: the estimation is Bayesian (PyMC), so every derived quantity has an interval. Shock responses default to generalised impulse responses rather than an identified structural model. Everything is checked against simulated data with a known answer.
+
+Cain's papers:
+
+- Cain, P. M. (2022). [Modelling short- and long-term marketing effects in the consumer purchase journey](https://doi.org/10.1016/j.ijresmar.2021.06.006). *International Journal of Research in Marketing*, 39(1), 96-116.
+- Cain, P. M. (2025). [Long-term advertising effects: The Adstock illusion](https://ideas.repec.org/a/aza/ama000/y2025v11i1p23-42.html). *Applied Marketing Analytics*, 11(1), 23-42.
+- Cain, P. M. (2010). Marketing mix modelling and return on investment. In P. J. Kitchen (ed.), *Integrated Brand Marketing and Measuring Returns*, ch. 4, 94-130. Palgrave Macmillan.
+- Cain, P. M. (2008). [Limitations of conventional market-mix modelling](https://www.warc.com/content/article/limitations-of-conventional-market-mix-modelling/en-gb/88108). *Admap*, March 2008.
+
+---
+
 ## Resources
 
 | | |

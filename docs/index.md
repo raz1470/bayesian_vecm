@@ -6,6 +6,10 @@ A VECM captures the long-run relationships between trending series and the short
 
 The main use is **brand marketing**. Brand metrics and sales move together over years, so spend that lifts awareness can lift sales for good. A media mix model whose effects fade within weeks misses that long-run tail.
 
+**Built on Peter Cain's work.** The method follows Cain (2022): [Modelling short- and long-term marketing effects in the consumer purchase journey](https://doi.org/10.1016/j.ijresmar.2021.06.006) in the *International Journal of Research in Marketing* 39(1). Two ideas come from that paper. Brand metrics are tied to base sales by cointegration. Same-week links between them are estimated by instruments.
+
+Cain (2025), [Long-term advertising effects: The Adstock illusion](https://ideas.repec.org/a/aza/ama000/y2025v11i1p23-42.html), explains why a long adstock cannot stand in for brand building. The [README](https://github.com/raz1470/bayesian_vecm#built-on-peter-cains-work) lists his other papers and what the package takes from each.
+
 ```bash
 pip install bayesian_vecm
 ```

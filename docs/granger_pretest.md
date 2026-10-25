@@ -89,7 +89,9 @@ It cannot say which moves which. Least squares cannot either: the metrics
 share shocks. With no same-week link in the data it reports 0.32 for
 awareness to consideration.
 
-Instruments can. Name the links and the drivers that do not act on each
+Instruments can. This is how Cain (2022) estimates the same-week links in
+the purchase funnel: current brand metrics instrumented by drivers excluded
+from their equations, with overidentifying restrictions tested. Name the links and the drivers that do not act on each
 effect directly:
 
 ```python

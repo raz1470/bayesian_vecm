@@ -245,6 +245,15 @@ class BayesianVECM:
     TypeError
         If ``priors`` is not ``None`` and not a ``dict``.
 
+    References
+    ----------
+    .. [1] Cain, P. M. (2022). Modelling short- and long-term marketing
+       effects in the consumer purchase journey. *International Journal of
+       Research in Marketing*, 39(1), 96-116.
+       https://doi.org/10.1016/j.ijresmar.2021.06.006
+    .. [2] Juselius, K. (2006). *The Cointegrated VAR Model: Methodology and
+       Applications*. Oxford University Press.
+
     Examples
     --------
     Construct a model and inspect its configuration::
