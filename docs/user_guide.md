@@ -1,10 +1,11 @@
 # User guide
 
-Start with the walkthrough for the idea and the results, then the practitioner guide to run the workflow on your own data. The other pages go deeper into single steps.
+Start with the walkthrough for the idea and the results. To get response curves from your own data, use the plug-in notebook. The other pages go deeper into single steps.
 
 | Page | What it covers |
 |---|---|
 | [Walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html) | How long brand lasts: the method, the tests and the results on simulated brand data |
+| [Response curves on your data](guide/response_curves_on_your_data.ipynb) | Plug-in notebook: edit one configuration cell to get a response curve and return per £ for each channel, with every check recorded in a decision log |
 | [Practitioner guide](guide/practitioner_walkthrough.ipynb) | End-to-end notebook: data, tests, fit, impulse responses, counterfactual ROI, return per channel |
 | [Comparison with statsmodels](guide/statsmodels_comparison.ipynb) | Same estimates as statsmodels' VECM, how often each model's intervals contain the truth, and the return per £ with intervals |
 | [Carryover and saturation](guide/carryover_and_saturation.ipynb) | `adstock=` and `saturation=` against a linear same-week fit: the effect by week, response curves and big budget moves |
@@ -20,6 +21,7 @@ Start with the walkthrough for the idea and the results, then the practitioner g
 ```{toctree}
 :hidden:
 
+guide/response_curves_on_your_data
 guide/practitioner_walkthrough
 guide/statsmodels_comparison
 guide/carryover_and_saturation
