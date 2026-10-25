@@ -10,6 +10,7 @@ Start with the walkthrough for the idea and the results, then the practitioner g
 | [Carryover and saturation](guide/carryover_and_saturation.ipynb) | `adstock=` and `saturation=` against a linear same-week fit: the effect by week, response curves and big budget moves |
 | [Same-week links](guide/same_week_links.ipynb) | Whether awareness moves consideration within the week: why regression fails, the instruments, the test and the model, and when it goes wrong |
 | [Putting it together](guide/putting_it_together.ipynb) | One model with adstock, saturation and a same-week link: the response curve for brand spend in £ and where one more £ stops paying back |
+| [Base sales from total sales](guide/base_sales_from_total_sales.ipynb) | A UCM base, its smoothed level or total sales: which one the VECM needs, checked where the true base is known |
 | [Agent skill](https://github.com/raz1470/bayesian_vecm/tree/main/skills) | Markdown instructions for an AI agent to guide an analyst through the whole analysis, from data to write-up |
 | [Choosing the rank and the lags](choosing_rank_and_lags.md) | Which tests to use and how often they find the truth on simulated data |
 | [The Granger pretest](granger_pretest.md) | What helps predict what before fitting: drivers, delays, links and feedback |
@@ -23,6 +24,7 @@ guide/statsmodels_comparison
 guide/carryover_and_saturation
 guide/same_week_links
 guide/putting_it_together
+guide/base_sales_from_total_sales
 choosing_rank_and_lags
 granger_pretest
 future_work
