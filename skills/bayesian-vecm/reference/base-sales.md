@@ -92,6 +92,28 @@ Guide 06 (`notebooks/guides/06_base_sales_from_total_sales.ipynb`, `tools/ucm_ba
 - **With carryover and saturation, take the base from a Bayesian MMM** (`tools/mmm_trend_check.py`, 5 data sets, PyMC-Marketing). Total minus the MMM's channel and control contributions behaved like the UCM recipe: return within 3%, and the week-4 lift within 4% with the seasonality kept in. The MMM's own trend failed as in the table above. Total sales straight into the VECM, with `adstock=` on the weekly changes of the channels, also got the return within 3% and no false direction findings, but the lift built too fast (week 4 +30%) because it cannot fit saturation.
 - **Not yet tested:** brand metrics that are seasonal too, and seasonality that is not smooth (holiday spikes).
 
+## Category demand and competitors
+
+Not yet tested by simulation. This is reasoning from one real-data case, so present it as a hypothesis to check, not a finding.
+
+The pattern: interest in the whole category rises (a new kind of product catches on). It lifts the brand's consideration and its competitors' together. Performance spend, especially search, follows the same demand through bids and budgets. Then:
+
+- **The performance effect looks large.** Performance spend appears to drive consideration, but both follow category demand.
+- **The base can lose its tie to the brand metrics.** The UCM or MMM credits performance with demand-driven sales and subtracts them. The part of sales that moves with consideration goes with them.
+- **A series may be missing.** Sales can depend on category demand times the brand's share. The brand's consideration alone mixes the two, so it may not tie to sales on its own.
+
+Signs: consideration moving with a competitor's, a large performance effect on a brand metric, or base sales and consideration with no tie.
+
+What to try, cheapest first:
+
+1. Run the rank test on total sales (no UCM) against consideration, with and without a competitor's consideration or a category series. Deseasonalise first. This separates "the base build caused it" from "the category is missing".
+2. Put the category in the system: a category demand series (category search interest), or a competitor's consideration, in `endog`.
+3. Re-test performance spend with the category in. Use `granger_pretest` for its direction: does consideration help predict spend?
+4. In the UCM, enter category demand as a regressor but **keep its contribution in the base**. Take out only what the VECM should not explain: performance, promotions and brand spend's same-week hit.
+5. Consider total sales straight into the VECM, with performance spend as a driver.
+
+A competitor's brand metric may itself respond to the brand's spend. Treat it as a category measure and check it.
+
 ## Checks on any base sales series
 
 Run these on a base someone else built, and on your own.

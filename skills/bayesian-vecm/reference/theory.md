@@ -76,6 +76,21 @@ Does awareness move consideration within the same week? The shared shocks make a
 - Guide 03: carryover and saturation.
 - Guide 04: same-week links step by step.
 - Guide 05: one model with everything and the response curve in £.
+- Guides 06 and 07: building base sales from total sales and from an MMM.
 - `docs/choosing_rank_and_lags.md` and `docs/granger_pretest.md`.
-- Cain (2022), *Modelling short- and long-term marketing effects in the consumer purchase journey*, IJRM 39, 96-116.
+
+### Where the method comes from
+
+The package builds on Peter Cain's work. Point the user to him first.
+
+- Cain, P. M. (2022). Modelling short- and long-term marketing effects in the consumer purchase journey. *International Journal of Research in Marketing*, 39(1), 96-116. The model this package follows: brand metrics tied to base sales, same-week links estimated with exclusions, long-run effects from the error correction.
+- Cain, P. M. (2025). Long-term advertising effects: The Adstock illusion. *Applied Marketing Analytics*, 11(1), 23-42. Why a long adstock cannot stand in for long-term brand building.
+- Cain, P. M. (2010). Marketing mix modelling and return on investment. In P. J. Kitchen (ed.), *Integrated Brand Marketing and Measuring Returns*, ch. 4, 94-130. Palgrave Macmillan.
+- Cain, P. M. (2008). Limitations of conventional market-mix modelling. *Admap*, March 2008. The three stages: find the brand beliefs that matter, link them to demand, then add the marketing.
+
+Also:
+
 - Binet and Field (2013), *The Long and the Short of It*, IPA.
+- Pesaran and Shin (1998), Generalized impulse response analysis in linear multivariate models, *Economics Letters* 58, 17-29.
+- Kim (2009), Generalized impulse response analysis: General or extreme?, Auburn University working paper.
+- Juselius (2006), *The Cointegrated VAR Model*, Oxford University Press.

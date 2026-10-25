@@ -21,13 +21,15 @@ We are building a model of how brand marketing affects sales over several years.
 | Performance media | Spend per week by channel. |
 | Price and promotions | Average price, promotion weeks and depth. |
 | Distribution | Any change in where the product is sold. |
-| Competitors | Their media spend or share of voice if known. |
+| Competitors | Their media spend or share of voice if known. Their awareness and consideration from the same tracker, if it asks about them. |
+| Category demand | Any measure of interest in the category as a whole, such as category search volume. |
 | Macro | Anything the business tracks that affects demand (interest rates, confidence). |
 
 ## Questions
 
 1. How are brand budgets set? Are they planned ahead, or changed in response to recent sales or brand health?
-2. Were there any launches or rebrands? Any outages, crises or big PR moments? Please list dates.
-3. Did any measurement change (tracker supplier, survey wording, website analytics)? Please list dates.
-4. What does one unit of each media variable cost (for example, spend in £1,000s)?
-5. Is there an existing MMM? If so, which tool, and how is its baseline built?
+2. How are performance budgets set? Do search bids or budgets follow search volume or demand automatically?
+3. Were there any launches or rebrands? Any outages, crises or big PR moments? Please list dates.
+4. Did any measurement change (tracker supplier, survey wording, website analytics)? Please list dates.
+5. What does one unit of each media variable cost (for example, spend in £1,000s)?
+6. Is there an existing MMM? If so, which tool, and how is its baseline built?

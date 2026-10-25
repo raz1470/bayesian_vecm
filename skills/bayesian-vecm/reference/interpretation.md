@@ -55,6 +55,7 @@ for label, w in WEEKS.items():
 "One more £1 of brand TV for one week returns about £2.20 in the next year and £12.50 over five years (90% range £9.30 to £16.00). Less than a fifth arrives in the first year, which is why a short-term MMM undervalues it."
 
 - The unit cost must match the units of the driver. Ask the user.
+- On short samples (around 60 periods) a few posterior draws can be explosive and give an infinite five-year return. Report the median and percentiles, never the mean.
 - With saturation, this is the return at average spend. Use `exog_irf(steps, at={"brand_tv": level})` for another level.
 - Report the year-1 share: it is the bridge to the MMM figure the business already knows.
 
@@ -66,6 +67,8 @@ curve = model.saturation_curve("brand_tv", levels)  # effect on weekly growth
 ```
 
 For a curve in £, compare forecasts with the spend held at each level against average spend, using the same `random_seed` so the noise cancels. Guide 05 in the repo has the full code (`fit_revenue`).
+
+The curve holds the other channels at their average. When channels move together in the data (flighted at the same time), their separate curves are harder to pin down. Say so, and suggest changing one channel at a time where the business can.
 
 Sentences:
 
@@ -90,6 +93,19 @@ fc = model.sample_posterior_predictive(52, exog_future=future_drivers, random_se
 
 - `exog_future` needs every driver for every future week, in the same units as in the fit (deviations, raw spend for saturated channels, Fourier terms if used).
 - For a scenario, forecast the plan and a baseline with the same `random_seed` and compare. Report the difference, not the levels.
+- Drivers passed as `exog_coint` are left out of forecasts, with a warning. Use `exog` for anything a scenario needs to move.
+
+## How much each series explains (FEVD)
+
+```python
+fevd = model.fevd(steps=52)  # share of each series' forecast uncertainty, by source
+```
+
+"A year ahead, a bit over half of the uncertainty in sales traces back to awareness."
+
+- Use it for **how much**, after the evidence tables have said **whether**.
+- The shares depend on how the correlated shocks are split. On simulated data the long-horizon awareness share was about 0.75 under the default (GIRF) and 0.93 with a Cholesky order with awareness first. Give it as a rough share, never as a headline number.
+- It covers the brand metrics and sales only. Driver effects are in `exog_irf()`.
 
 ## How to present uncertainty
 
