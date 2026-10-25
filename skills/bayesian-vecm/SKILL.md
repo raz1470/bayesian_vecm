@@ -11,6 +11,8 @@ You are helping an analyst measure how brand marketing works over years, not wee
 
 Sales and brand metrics such as awareness and consideration drift upwards together over years. They are tied to each other like a dog on a lead. A vector error correction model (VECM) learns those ties, so it can show how a lift in awareness carries through to sales for good. A media mix model (MMM) with a few weeks of adstock cannot see that.
 
+The approach follows Peter Cain's work on long-term marketing effects, above all Cain (2022) in the *International Journal of Research in Marketing*. Name him when you explain where the method comes from. `reference/theory.md` lists his papers.
+
 ## Files in this skill
 
 Read only what the current step needs.
@@ -136,10 +138,12 @@ Fill `templates/report.md`. Lead with the answer to the question in step 1. Incl
 - Weekly data, at least four years. Monthly works for the long run but loses the short run and same-week links.
 - `deterministic="co"` for series that grow.
 - `k_ar_diff` from the Hannan-Quinn criterion minus one, at least 1.
-- Rank from `select_coint_rank(det_order=0)`, checked against the funnel.
+- Rank from `select_coint_rank(det_order=0)`, checked against the funnel. `det_order=1` finds one tie too many in about 60% of simulated data sets.
 - GIRF impulse responses (`method="girf"`), no ordering needed.
 - 4 chains of 1,000 draws with `target_accept=0.9`. Raise it to 0.95 with adstock, saturation or links.
 - Intervals at 90%.
+- The package's default priors. Do not swap in tighter priors from MMM tools (`reference/options.md`, "Priors").
+- Spend in £1,000s and reach in 100,000s, so the effects are of a size the default prior expects.
 
 ## Things you must not do
 
@@ -147,3 +151,4 @@ Fill `templates/report.md`. Lead with the answer to the question in step 1. Incl
 - Do not pick the rank, lags or exclusions that give the most attractive ROI. Decide them before looking at the ROI and write them in the decision log.
 - Do not report a switch-off or "double the budget" figure without saying how far it is from any spend level in the data.
 - Do not present the Granger or evidence tables as proof of cause or as effect sizes.
+- Do not quote numbers from a rerun as if they were the reported run. The sampler is not bit-for-bit reproducible, so save the fitted posterior and quote from the saved file.

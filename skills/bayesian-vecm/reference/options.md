@@ -33,6 +33,7 @@ print(result)  # stop at the first row that does not reject
 - Check against the funnel. K series sharing one underlying trend give K - 1 ties.
 - With under four years of data or a trace statistic close to its critical value, fit the next rank as well and compare the return per £. If it barely moves, the choice matters less.
 - The model needs at least 1. If the test says 0, the series are not tied and a VECM is the wrong tool. Say so.
+- Keep `det_order=0`. With `det_order=1` the test found three ties instead of two in about 60% of simulated data sets.
 
 ## Deterministic terms (`deterministic`)
 
@@ -60,6 +61,9 @@ model = BayesianVECM(
 - One decay and one total effect per channel. The half-life is `log(0.5) / log(decay)` weeks.
 - Without it a same-week model missed about half of each channel's total on simulated data. With no carryover in the data it estimates decays near zero at no cost. So when unsure, include it.
 - The pretest's delay table is the evidence: spend that still predicts a metric beyond the same week.
+- `adstock_max_lag=8` cuts the carryover off after eight weeks. At a decay of 0.9 week 8 still carries 43% of the first week's weight. If a fitted decay comes out near the top of its range, raise the window and refit.
+- The default decay prior is flat. The Beta(1, 3) default used by some MMM tools pulled the decays and totals about 10% low on simulated data.
+- Adstock fitted the total well even when the true carryover peaked in week 2, a shape it cannot draw.
 
 ## Diminishing returns: `saturation=[channels]`
 
@@ -69,6 +73,9 @@ Use when the question involves big budget moves, or spend varied a lot over the 
 - `model.saturation_curve(channel, levels)` gives the effect of holding spend at each level. `exog_irf(at=...)` values one more unit at another spend level.
 - On simulated data a linear fit understated the loss from switching brand spend off by 60% and overstated doubling by 120%. The saturation fit got both within about 10%.
 - **Cost:** with no saturation in the data the prior still bends the curve a little. Effects far from current spend came out up to 30% too large for brand spend. Compare with a linear fit before relying on a far-away figure.
+- `B_total` for a saturated channel is the effect of one more unit **at average spend**. That is what the data pin down. The effect at full saturation (`B_saturation`) is derived from it.
+- Spend is scaled by its largest week in the sample. A forecast reuses that scale, so a future week far above the sample maximum is an extrapolation.
+- The default prior on the curve's steepness is Gamma(2, 0.3). The Gamma(3, 1) default of some MMM tools flattened the curve and missed the switch-off loss by up to 29%.
 
 Tell the user: "This lets each extra £ buy a bit less than the last. It matters when you ask about big changes to the budget."
 
@@ -92,20 +99,45 @@ model = BayesianVECM(..., contemporaneous=links, excluded=excluded)
   - **"instruments disagree" (Sargan):** at least one exclusion is wrong. Revisit with the user.
 - `fit()` repeats the check and warns. `same_week_links()` reports the link with its first-stage F and Sargan p.
 - **A wrong exclusion biases the link and Sargan often misses it.** On simulated data a wrong exclusion turned a true 0.2 into 0.33 and Sargan flagged it 10% of the time. The business argument matters more than the test.
+- **The driver must not react to this week's shocks.** Spend planned months ahead is fine. Spend raised because consideration dipped this week is not. The data cannot test this, so ask and record the answer.
 - On monthly data the link also contains lagged weekly effects. Say so when reporting it.
 - Leaving links out is safe for the return per £: `exog_irf()` and forecasts use the total effects either way.
+- With right exclusions, links halve the interval on a channel's effect on consideration (0.0043 against 0.0082 on simulated data). With a wrong one the interval held the truth 10% of the time against 70% without links.
+- Links do not identify the shocks. The shocks stay correlated, so impulse responses to shocks still need GIRF or an order.
 
 ## Shock impulse responses: `method=`
 
 - `model.irf(52, method="girf")` (default): no ordering needed. Use this.
 - `model.irf(52, method="cholesky", order=["awareness", "consideration", "sales"])`: assumes the order. With awareness first in a funnel it matches GIRF. Show it only as a check.
+- A GIRF for a shock equals the Cholesky response with that series first. Each GIRF puts its own shock first, so the GIRFs for different shocks cannot all hold at once (Kim 2009). Read the GIRF only for a series that leads, such as awareness. Cain (2022) finds awareness comes first on real brand data.
+- Set the order with `order=`, not by reordering the columns of `endog`. Reordering the columns also changes how β is normalised.
 
 ## Lagged drivers: `exog_lags=`
 
-For drivers without adstock that act with a delay, and for monthly data (`exog_lags=1`). Keep it at 1 or 2: lags of a flighted driver are highly correlated.
+For drivers without adstock that act with a delay, and for monthly data (`exog_lags=1`). Keep it at 1 or 2: lags of a flighted driver are highly correlated. Report the summed effect over the lags, not each lag.
 
+On 60 simulated months, adding last month's spend moved the brand spend effect from 13% too low to 3% too high, with narrower intervals.
+
+## Priors
+
+Keep the defaults unless there is a reason the user can write down.
+
+| Parameter | Default | Note |
+|---|---|---|
+| Driver effects `B` | Normal(0, 1) | Assumes effects of a modest size. Put spend in £1,000s and reach in 100,000s so they are. |
+| Momentum `Γ` | Normal | A horseshoe is the option for spare lags (see Lags). |
+| Adstock decay | Beta(1, 1), flat | Beta(1, 3) pulled decays about 10% low. |
+| Saturation steepness | Gamma(2, 0.3) | Gamma(3, 1) flattened the curve. |
+| Same-week links | Normal(0, 0.5) | |
+
+- **No horseshoe on `B`.** It prunes zero effects well but also shrinks small real lag effects. On simulated data the total brand spend effect came out 21% low and its interval held the truth 70% of the time. Use adstock or a Normal prior on lags.
+- **Do not copy priors from an MMM tool.** Their defaults are tuned for a different model. Both MMM-style defaults tested here biased the answer.
 ## Sampling settings
 
 - `chains=4`, `draws=1000`, `tune=1000` for a final run. 2 chains are fine for a first look.
 - `target_accept=0.9` by default. 0.95 with adstock, saturation or links. 0.99 with a horseshoe prior.
-- Always set `random_seed` so the user can reproduce the numbers.
+- Always set `random_seed`. It is not enough to reproduce the numbers exactly: the default sampler (nutpie) can differ between runs in the last digits. Save the fit and quote from the file.
+
+  ```python
+  model.idata_.to_netcdf("fit_2026-10-25.nc")
+  ```
