@@ -74,7 +74,7 @@ class TestDesign:
         xc = np.arange(T, dtype=np.float64)[:, None]
         d = cointegration_design(y, 0, exog=x, exog_coint=xc, exog_lags=3)
         # Row 0 is t = 3, so y_lag1 holds y_2 and exog_coint_2.
-        np.testing.assert_array_equal(d.y_lag1[0], [*y[2], 3.0])
+        np.testing.assert_array_equal(d.y_lag1[0], [*y[2], 2.0])
 
     def test_ignored_without_exog(self):
         d = cointegration_design(_endog(), 1, exog_lags=5)

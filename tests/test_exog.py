@@ -129,6 +129,18 @@ class TestDesignExog:
         assert d_coint.y_lag1.shape[1] == d_base.y_lag1.shape[1] + 2
         assert d_coint.exog is None  # exog_coint does NOT go into design.exog
 
+    def test_exog_coint_lagged_like_y_lag1(self):
+        """exog_coint enters the relation at t-1, the same period as y_lag1.
+
+        Johansen's model and statsmodels' VECM use beta' [y_{t-1}; x_{t-1}].
+        """
+        y = _make_endog()
+        x_c = np.arange(T, dtype=np.float64)[:, None]
+        for k in (0, 1, 2):
+            d = cointegration_design(y, k_ar_diff=k, exog_coint=x_c)
+            np.testing.assert_array_equal(d.y_lag1[:, :K], y[k : T - 1])
+            np.testing.assert_array_equal(d.y_lag1[:, K], x_c[k : T - 1, 0])
+
     def test_exog_coint_not_stored_in_exog_field(self):
         y = _make_endog()
         x_c = _make_exog()
