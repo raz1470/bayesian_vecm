@@ -248,8 +248,10 @@ def cointegration_design(
         )  # (T_eff, m * (L + 1))
 
     if exog_coint_arr is not None:
+        # Same timing as y_lag1: the relation is beta' [y_{t-1}; x_{t-1}], as in
+        # Johansen's model and statsmodels' VECM.
         exog_coint_aligned = np.ascontiguousarray(
-            exog_coint_arr[k_ar_diff + 1 :].astype(np.float64)
+            exog_coint_arr[k_ar_diff : n_obs - 1].astype(np.float64)
         )  # (T_eff, m_c)
         # Append to y_lag1 exactly like inside deterministic terms.
         y_lag1 = np.column_stack([y_lag1, exog_coint_aligned])

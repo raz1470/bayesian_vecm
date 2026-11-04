@@ -17,7 +17,8 @@ First public release.
 - Priors set through a plain dict, including a regularised horseshoe on the
   short-run lags (`priors={"Gamma": {"dist": "Horseshoe"}}`).
 - Exogenous drivers in the short run (`exog`) and inside the long-run relations
-  (`exog_coint`), with `exog_lags` for drivers that act with a delay.
+  (`exog_coint`, entering at t-1 like the lagged levels, as in Johansen's model
+  and statsmodels), with `exog_lags` for drivers that act with a delay.
 - `adstock=`: geometric carryover on chosen drivers.
 - `saturation=`: logistic diminishing returns on chosen drivers, with
   `saturation_curve()`.
