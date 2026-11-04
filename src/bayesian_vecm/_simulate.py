@@ -428,6 +428,7 @@ def simulate_brand_data(
     seasonal_drift: float = 0.0,
     exog_fade: dict[str, float] | None = None,
     exog_fade_share: float = 1.0,
+    exog_dark: dict[str, tuple[int, int]] | None = None,
 ) -> BrandData:
     """Simulate weekly brand data from a VECM with known parameters.
 
@@ -532,6 +533,12 @@ def simulate_brand_data(
         Share :math:`\\phi` of a faded driver's effect that fades, in
         ``(0, 1]``. ``1.0`` (default) fades all of it; ``0.5`` leaves half
         for good. Ignored without ``exog_fade``.
+    exog_dark
+        Weeks when a channel is switched off, as ``{name: (start, length)}``,
+        for example ``{"brand_spend": (130, 26)}`` for half a year off from
+        week 130. A saturated channel's raw spend is set to 0. A linear
+        channel is a deviation from an average of one unit, so off is a
+        deviation of ``-1``. ``None`` (default) keeps every channel on.
 
     Returns
     -------
@@ -623,6 +630,11 @@ def simulate_brand_data(
         log_dev = x[:, sat] * (spend_log_sd / _CHANNEL_SD)
         x[:, sat] = np.exp(log_dev - spend_log_sd**2 / 2.0)
         x_reg[:, sat] = x[:, sat]
+    for name, (first, length) in _dark_spells(exog_dark, n_obs, unit_root).items():
+        j = EXOG_NAMES.index(name)
+        off = 0.0 if sat[j] else -1.0
+        x[first : first + length, j] = off
+        x_reg[first : first + length, j] = off
     if decay.any():
         # Adstock state a_t = (1 - w) x_t + w a_{t-1}, started at x_0.
         stock = x_reg.copy()
@@ -709,6 +721,23 @@ def simulate_brand_data(
     truth = replace(truth, sales_parts=parts, sales_short_term=settings)
     sales = parts.sum(axis=1).to_frame("total_sales")
     return BrandData(endog=endog, exog=exog, truth=truth, sales=sales, sales_drivers=drivers)
+
+
+def _dark_spells(
+    dark: dict[str, tuple[int, int]] | None, n_obs: int, unit_root: tuple[str, ...]
+) -> dict[str, tuple[int, int]]:
+    """Validate ``exog_dark``: channels only, inside the sample."""
+    out: dict[str, tuple[int, int]] = {}
+    for name, spell in (dark or {}).items():
+        if name not in EXOG_NAMES[:3] or name in unit_root:
+            raise ValueError(f"exog_dark can switch off a stationary channel only; got {name!r}")
+        first, length = (int(v) for v in spell)
+        if first < 0 or length < 1 or first + length > n_obs:
+            raise ValueError(
+                f"exog_dark spell for {name!r} must lie inside the {n_obs} weeks; got {spell}"
+            )
+        out[name] = (first, length)
+    return out
 
 
 def _sales_options(

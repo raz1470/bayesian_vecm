@@ -50,16 +50,17 @@ First public release.
 ### Simulated data
 
 - `simulate_brand_data()`: weekly brand data with a known answer, with options
-  for trending drivers, carryover, saturation, same-week links, total sales and
-  fading effects (`exog_fade`, `exog_fade_share`).
+  for trending drivers, carryover, saturation, same-week links, total sales,
+  fading effects (`exog_fade`, `exog_fade_share`) and channels switched off for
+  a spell (`exog_dark`).
 
 ### Documentation
 
 - Documentation site with a user guide, API reference and model details.
 - The walkthrough article, *How Long Does Brand Last?*
-- Eight guide notebooks, including a plug-in notebook for response curves on
+- Nine guide notebooks, including a plug-in notebook for response curves on
   your own data, with how much to spend on a campaign and what happens to sales
-  if a channel goes dark.
+  if a channel goes dark, and a guide to whether brand lifts last.
 - An agent skill for running the analysis with an analyst new to VECMs.
 
 ### Dependencies

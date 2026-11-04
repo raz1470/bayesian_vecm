@@ -291,3 +291,31 @@ class TestModel:
         fades = share > 0.8
         assert fades.any()
         assert (end[fades] < peak[fades]).all()
+
+
+class TestDarkSpells:
+    def test_linear_channel_goes_to_minus_one(self):
+        d = simulate_brand_data(seed=1, exog_dark={"brand_spend": (100, 26)})
+        spend = d.exog["brand_spend"].to_numpy()
+        np.testing.assert_array_equal(spend[100:126], -1.0)
+        assert spend[99] != -1.0 and spend[126] != -1.0
+
+    def test_saturated_channel_goes_to_zero(self):
+        d = simulate_brand_data(
+            seed=1, exog_dark={"brand_spend": (100, 13)}, exog_saturation={"brand_spend": 5.0}
+        )
+        np.testing.assert_array_equal(d.exog["brand_spend"].to_numpy()[100:113], 0.0)
+
+    def test_changes_the_brand_metrics(self):
+        a = simulate_brand_data(seed=1)
+        b = simulate_brand_data(seed=1, exog_dark={"brand_spend": (100, 26)})
+        np.testing.assert_array_equal(a.endog.values[:100], b.endog.values[:100])
+        assert not np.allclose(a.endog.values[101:], b.endog.values[101:])
+
+    @pytest.mark.parametrize(
+        "dark",
+        [{"interest_rate": (10, 5)}, {"brand_spend": (250, 20)}, {"brand_spend": (10, 0)}],
+    )
+    def test_validation(self, dark):
+        with pytest.raises(ValueError, match="exog_dark"):
+            simulate_brand_data(exog_dark=dark)
