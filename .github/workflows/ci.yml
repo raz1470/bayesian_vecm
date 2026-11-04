@@ -66,3 +66,41 @@ jobs:
       # 7. Run the test suite.
       - name: Pytest
         run: uv run pytest
+
+  # Build the wheel, install it into a clean environment with only the runtime
+  # dependencies, and run what a new user runs first: the README quick start and
+  # guide 08 on a CSV. The test job above uses the locked dev environment, so it
+  # cannot see a missing runtime dependency.
+  clean-install:
+    name: Clean install smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Build the wheel and sdist
+        run: uv build
+
+      - name: Check the package metadata
+        run: uvx twine check dist/*
+
+      - name: Install the wheel into a clean environment
+        run: |
+          uv venv --python 3.12 /tmp/clean
+          uv pip install --python /tmp/clean/bin/python dist/*.whl
+
+      - name: README quick start
+        run: /tmp/clean/bin/python tools/ci/readme_quickstart.py README.md
+
+      - name: Guide 08 on a CSV
+        run: |
+          uv pip install --python /tmp/clean/bin/python nbconvert ipykernel
+          /tmp/clean/bin/python -m ipykernel install --sys-prefix
+          /tmp/clean/bin/python tools/ci/guide08_on_csv.py /tmp/guide08

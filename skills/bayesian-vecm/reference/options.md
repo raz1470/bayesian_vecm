@@ -136,8 +136,13 @@ Keep the defaults unless there is a reason the user can write down.
 
 - `chains=4`, `draws=1000`, `tune=1000` for a final run. 2 chains are fine for a first look.
 - `target_accept=0.9` by default. 0.95 with adstock, saturation or links. 0.99 with a horseshoe prior.
-- Always set `random_seed`. It is not enough to reproduce the numbers exactly: the default sampler (nutpie) can differ between runs in the last digits. Save the fit and quote from the file.
+- Always set `random_seed`. It is not enough to reproduce the numbers exactly: the default sampler (nutpie) can differ between runs in the last digits. Save the posterior and quote from the file. Zarr is installed with the package; NetCDF needs an extra library, so use Zarr.
 
   ```python
-  model.idata_.to_netcdf("fit_2026-10-25.nc")
+  model.idata_.to_zarr("fit_2026-10-25.zarr")
+
+  import xarray as xr
+  posterior = xr.open_datatree("fit_2026-10-25.zarr", engine="zarr")
   ```
+
+  The saved file holds the draws, not the model object: refit with the same settings to draw new curves.
