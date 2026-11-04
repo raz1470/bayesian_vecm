@@ -109,6 +109,9 @@ indent-style = "space"
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 minversion = "8.0"
+markers = [
+    "slow: samples a PyMC model (marked automatically in tests/conftest.py)",
+]
 testpaths = ["tests"]
 addopts = [
     "-ra",                      # show short summary for all non-passing tests
@@ -133,6 +136,7 @@ exclude_lines = [
 [dependency-groups]
 dev = [
     "ipykernel>=7.2.0",
+    "pytest-xdist>=3.6",
     "jupyter>=1.1.1",
     "matplotlib>=3.10.9",
     "pytest-cov>=7.1.0",
