@@ -1,10 +1,22 @@
 # GitHub Actions CI workflow.
-# Runs lint + tests on every push to main and every pull request.
 # Docs: https://docs.github.com/en/actions
+#
+# What runs when:
+#
+# | Job            | Pull request                                   | Push to main |
+# |----------------|------------------------------------------------|--------------|
+# | lint           | always (seconds)                               | always       |
+# | fast tests     | when code changes, Python 3.12 and 3.13        | always       |
+# | sampling tests | when code changes, Python 3.12                 | 3.12 + 3.13  |
+# | clean install  | when the package, README or guide 08 changes   | always       |
+#
+# "Code changes" means src/, tests/, pyproject.toml, uv.lock or this file. A pull
+# request that only touches docs, notebooks or the article runs lint alone (plus
+# the docs build in docs.yml). Sampling tests are the ones that fit a PyMC model;
+# tests/conftest.py marks them `slow` automatically.
 
 name: CI
 
-# When does this workflow run?
 on:
   push:
     branches: [main]
@@ -12,93 +24,133 @@ on:
     branches: [main]
 
 # Cancel an old in-flight run if a new commit is pushed to the same branch/PR.
-# Saves CI minutes and avoids confusing "stale" status checks.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  lint-and-test:
-    name: Lint & test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+env:
+  # Keep compiled PyTensor and Numba code between runs (see the cache step).
+  PYTENSOR_FLAGS: base_compiledir=${{ github.workspace }}/.cache/pytensor
+  NUMBA_CACHE_DIR: ${{ github.workspace }}/.cache/numba
 
-    # Matrix: run the whole job once per Python version listed.
-    # Catches version-specific issues early.
+jobs:
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      package: ${{ steps.filter.outputs.package }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - "src/**"
+              - "tests/**"
+              - "pyproject.toml"
+              - "uv.lock"
+              - ".github/workflows/ci.yml"
+            package:
+              - "src/**"
+              - "pyproject.toml"
+              - "uv.lock"
+              - "README.md"
+              - "notebooks/guides/08_response_curves_on_your_data.ipynb"
+              - "tools/ci/**"
+              - ".github/workflows/ci.yml"
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    # Same ruff as uv.lock; bump this when the lock file moves it.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Ruff lint
+        run: uvx ruff@0.15.12 check .
+      - name: Ruff format check
+        run: uvx ruff@0.15.12 format --check .
+
+  fast-tests:
+    name: Fast tests (Python ${{ matrix.python-version }})
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
-
-    # Make every uv command in this job use the matrix Python version.
     env:
       UV_PYTHON: ${{ matrix.python-version }}
-
     steps:
-      # 1. Check out the code.
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # 2. Install uv. Astral's official action handles caching too.
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-          # Cache key includes the lockfile so cache invalidates when deps change.
           cache-dependency-glob: "uv.lock"
-
-      # 3. Install the requested Python version (uv handles this).
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      # 4. Install project + dev dependencies into an isolated venv.
-      #    --frozen ensures CI uses exactly the versions in uv.lock — no surprise upgrades.
       - name: Install dependencies
         run: uv sync --all-extras --frozen
+      - name: Pytest (no sampling)
+        run: uv run pytest -m "not slow" -n auto --no-cov
 
-      # 5. Lint with ruff.
-      - name: Ruff lint
-        run: uv run ruff check .
-
-      # 6. Check formatting (doesn't modify files; fails if anything is unformatted).
-      - name: Ruff format check
-        run: uv run ruff format --check .
-
-      # 7. Run the test suite.
-      - name: Pytest
-        run: uv run pytest
+  sampling-tests:
+    name: Sampling tests (Python ${{ matrix.python-version }})
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both versions on main; 3.12 only on pull requests.
+        python-version: ${{ github.event_name == 'push' && fromJSON('["3.12", "3.13"]') || fromJSON('["3.12"]') }}
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Cache compiled model code
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: compiled-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('uv.lock', 'src/**') }}
+          restore-keys: |
+            compiled-${{ runner.os }}-py${{ matrix.python-version }}-
+      - name: Install dependencies
+        run: uv sync --all-extras --frozen
+      - name: Pytest (sampling)
+        # loadscope keeps each class on one worker, so a fitted fixture is
+        # sampled once rather than once per worker.
+        run: uv run pytest -m slow -n auto --dist loadscope --no-cov
 
   # Build the wheel, install it into a clean environment with only the runtime
   # dependencies, and run what a new user runs first: the README quick start and
-  # guide 08 on a CSV. The test job above uses the locked dev environment, so it
+  # guide 08 on a CSV. The test jobs use the locked dev environment, so they
   # cannot see a missing runtime dependency.
   clean-install:
     name: Clean install smoke test
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.package == 'true'
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
       - name: Set up Python
         run: uv python install 3.12
-
       - name: Build the wheel and sdist
         run: uv build
-
       - name: Check the package metadata
         run: uvx twine check dist/*
-
       - name: Install the wheel into a clean environment
         run: |
           uv venv --python 3.12 /tmp/clean
           uv pip install --python /tmp/clean/bin/python dist/*.whl
-
       - name: README quick start
         run: /tmp/clean/bin/python tools/ci/readme_quickstart.py README.md
-
       - name: Guide 08 on a CSV
         run: |
           uv pip install --python /tmp/clean/bin/python nbconvert ipykernel

@@ -97,7 +97,8 @@ For a counterfactual, call `sample_posterior_predictive(steps, exog_future=..., 
 
 ```bash
 uv sync --all-extras
-uv run pytest
+uv run pytest -m "not slow" -n auto   # seconds: everything that does not sample
+uv run pytest -n auto --dist loadscope   # the full suite, including PyMC fits
 uv run ruff check . && uv run ruff format .
 uv build
 ```

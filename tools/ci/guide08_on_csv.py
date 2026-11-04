@@ -1,7 +1,8 @@
 """Run guide 08 on a CSV, the way a user runs it on their own data.
 
 Writes simulated weekly data to a CSV, points a copy of the notebook's
-configuration cell at it (DATA_PATH), and executes the copy. The default run of
+configuration cell at it (DATA_PATH), cuts the sampler to 200 draws (this checks
+that the notebook runs, not its numbers), and executes the copy. The default run of
 the notebook uses simulated data in memory and skips the branch that reads a
 file and saves the fit, so this is the only test of that path.
 
@@ -39,6 +40,11 @@ nb = json.loads(NOTEBOOK.read_text())
 config = "".join(nb["cells"][1]["source"])
 assert "DATA_PATH = None" in config, "configuration cell has changed"
 nb["cells"][1]["source"] = config.replace("DATA_PATH = None", f"DATA_PATH = {str(csv)!r}")
+# A smoke test of the code path, not of the answers: sample briefly.
+setup = "".join(nb["cells"][2]["source"])
+draws_line = "DRAWS, TUNE, CHAINS = (2000, 1000, 4) if FINAL_RUN else (1000, 1000, 2)"
+assert draws_line in setup, "setup cell has changed"
+nb["cells"][2]["source"] = setup.replace(draws_line, "DRAWS, TUNE, CHAINS = 200, 200, 2")
 
 notebook = reads(json.dumps(nb), as_version=4)
 ExecutePreprocessor(timeout=900, kernel_name="python3").preprocess(
