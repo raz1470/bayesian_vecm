@@ -36,14 +36,20 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-# Runtime dependencies. statsmodels runs the rank and stationarity tests.
+# Runtime dependencies. statsmodels runs the rank and stationarity tests;
+# matplotlib is needed by PyMC's progress bar and by the guides; zarr saves fits.
 dependencies = [
     "arviz>=1.1",
-    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "numpy>=2.0",
     "nutpie>=0.16",
+    "pandas>=2.0",
     "pymc>=6.0",
+    "pytensor>=3.0.2",
     "scipy>=1.11",
     "statsmodels>=0.14",
+    "xarray>=2025.1.2",
+    "zarr>=3.1",
 ]
 
 # Optional dependency groups. Users install these with `pip install bayesian_vecm[dev]`.
@@ -68,6 +74,10 @@ Changelog = "https://github.com/raz1470/bayesian_vecm/blob/main/CHANGELOG.md"
 # ---------------------------------------------------------------------------
 [tool.hatch.build.targets.wheel]
 packages = ["src/bayesian_vecm"]
+
+# Keep the source distribution to what is needed to build and test the package.
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/README.md", "/LICENSE", "/CHANGELOG.md", "/pyproject.toml"]
 
 # ---------------------------------------------------------------------------
 # Ruff: linter + formatter. Replaces flake8, isort, and black.

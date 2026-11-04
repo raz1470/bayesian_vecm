@@ -58,7 +58,9 @@ First public release.
 
 ### Dependencies
 
-- Requires Python 3.12+, PyMC 6, ArviZ 1.1, nutpie, NumPy, SciPy and
-  statsmodels.
+- Requires Python 3.12+, PyMC 6, ArviZ 1.1, nutpie, NumPy 2, SciPy, pandas,
+  xarray, PyTensor, statsmodels, matplotlib (PyMC's progress bar needs it) and
+  zarr (to save fits).
+- The package ships type information (`py.typed`).
 
 [0.1.0]: https://github.com/raz1470/bayesian_vecm/releases/tag/v0.1.0

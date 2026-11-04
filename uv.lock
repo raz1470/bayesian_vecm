@@ -251,11 +251,16 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "arviz" },
+    { name = "matplotlib" },
     { name = "numpy" },
     { name = "nutpie" },
+    { name = "pandas" },
     { name = "pymc" },
+    { name = "pytensor" },
     { name = "scipy" },
     { name = "statsmodels" },
+    { name = "xarray" },
+    { name = "zarr" },
 ]
 
 [package.optional-dependencies]
@@ -283,14 +288,19 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "arviz", specifier = ">=1.1" },
-    { name = "numpy", specifier = ">=1.26" },
+    { name = "matplotlib", specifier = ">=3.8" },
+    { name = "numpy", specifier = ">=2.0" },
     { name = "nutpie", specifier = ">=0.16" },
+    { name = "pandas", specifier = ">=2.0" },
     { name = "pymc", specifier = ">=6.0" },
+    { name = "pytensor", specifier = ">=3.0.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "scipy", specifier = ">=1.11" },
     { name = "statsmodels", specifier = ">=0.14" },
+    { name = "xarray", specifier = ">=2025.1.2" },
+    { name = "zarr", specifier = ">=3.1" },
 ]
 provides-extras = ["dev"]
 
