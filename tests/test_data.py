@@ -171,3 +171,10 @@ class TestLagMatrix:
         result = lag_matrix(data, n_lags=1)
         result[0, 0] = 999.0
         assert data[0, 0] == 0.0
+
+
+def test_validate_endog_rejects_infinite_values():
+    y = np.cumsum(np.ones((10, 2)), axis=0)
+    y[3, 1] = -np.inf  # what log(0) gives
+    with pytest.raises(ValueError, match="infinite"):
+        validate_endog(y)

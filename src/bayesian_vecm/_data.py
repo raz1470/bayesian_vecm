@@ -53,7 +53,7 @@ def validate_endog(data: Any, *, min_obs: int = 2) -> NDArray[np.float64]:
     Raises
     ------
     ValueError
-        If ``data`` is not 2-D, contains NaN, has fewer than ``min_obs``
+        If ``data`` is not 2-D, contains NaN or infinite values, has fewer than ``min_obs``
         rows, has zero columns, or cannot be cast to floating point.
     """
     # Duck-type the pandas path: anything with ``to_numpy`` is fair game.
@@ -78,6 +78,12 @@ def validate_endog(data: Any, *, min_obs: int = 2) -> NDArray[np.float64]:
 
     if np.isnan(arr).any():
         raise ValueError("endog must not contain NaN values")
+
+    if np.isinf(arr).any():
+        raise ValueError(
+            "endog must not contain infinite values; a log of a zero gives -inf, "
+            "so check for zeros before taking logs"
+        )
 
     return np.ascontiguousarray(arr)
 

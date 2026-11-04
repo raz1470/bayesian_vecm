@@ -204,3 +204,43 @@ def test_brand_data_forecast_keeps_growing_at_the_true_rate() -> None:
     # The first step is a small move, not a jump away from the data.
     first_step = forecast[0] - data.endog.to_numpy()[-1]
     assert float(np.abs(first_step).max()) < 0.05
+
+
+@pytest.mark.parametrize("code", ["lo", "li"])
+def test_trend_numbering_follows_dropped_rows(code: str) -> None:
+    """With leading rows dropped (exog lags, adstock), the trend counts design rows.
+
+    The fit numbers the trend from the first row it keeps. Here ``drop`` rows
+    stand in front of the reference path as the rows a fit would drop: with
+    the design's row count the forecast continues the path, and with the
+    default ``T - k_ar_diff - 1`` of the padded sample it does not.
+    """
+    drop = 6
+    y = _reference_path(code, 1, _N_FIT + _STEPS)
+    padded = np.vstack([np.ones((drop, _N_VARS)), y[:_N_FIT]])
+    kwargs = {
+        "idata": _posterior(code, 1),
+        "endog": padded,
+        "k_ar_diff": 1,
+        "steps": _STEPS,
+        "deterministic": code,
+    }
+    right = forecast_posterior(**kwargs, rng=np.random.default_rng(0), n_eff=_N_FIT - 2)
+    wrong = forecast_posterior(**kwargs, rng=np.random.default_rng(0))
+    np.testing.assert_allclose(
+        right["posterior_predictive"]["y"].values[0, 0], y[_N_FIT:], atol=1e-8
+    )
+    assert not np.allclose(wrong["posterior_predictive"]["y"].values[0, 0], y[_N_FIT:])
+
+
+def test_model_stores_design_rows_for_the_trend() -> None:
+    """``n_eff_`` is the design's row count, which adstock trims."""
+    data = simulate_brand_data(n_obs=80, seed=1)
+    model = BayesianVECM(
+        k_ar_diff=1, coint_rank=2, deterministic="lo", adstock=["brand_spend"], adstock_max_lag=8
+    )
+    model.fit(data.endog, exog=data.exog, draws=20, tune=20, chains=1, progressbar=False)
+    design = cointegration_design(
+        data.endog.to_numpy(), 1, deterministic="lo", exog=data.exog.to_numpy(), exog_lags=8
+    )
+    assert model.n_eff_ == design.delta_y.shape[0] == 80 - 8

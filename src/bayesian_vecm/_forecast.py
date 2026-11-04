@@ -70,6 +70,7 @@ def forecast_posterior(
     rng: np.random.Generator | None = None,
     deterministic: str = "n",
     extra_mean: NDArray[np.floating] | None = None,
+    n_eff: int | None = None,
 ) -> xr.DataTree:
     """Roll the VECM recursion forward *steps* periods for every posterior draw.
 
@@ -105,6 +106,10 @@ def forecast_posterior(
         Optional ``(D, steps, K)`` term added to the mean at each step, for
         example the fading part of the drivers' effects. ``D`` runs over
         chains and draws, chain-major.
+    n_eff
+        Rows in the fitted design, which numbers the trend under ``"lo"`` and
+        ``"li"``. Defaults to ``T - k_ar_diff - 1``; pass the design's row
+        count when leading rows were dropped for exog lags or adstock.
 
     Returns
     -------
@@ -180,7 +185,8 @@ def forecast_posterior(
     elif deterministic in ("ci", "li"):
         inside_coef = beta_draws[:, :, n_vars, :].reshape(n_total, r)
     is_trend = deterministic in ("lo", "li")
-    n_eff = endog.shape[0] - k_ar_diff - 1  # rows in the fitted design
+    if n_eff is None:
+        n_eff = endog.shape[0] - k_ar_diff - 1  # rows in the fitted design
 
     # Pre-compute the Cholesky factor of Sigma once — reused at every step.
     # numpy.linalg.cholesky broadcasts over leading batch dims in NumPy >= 2.0;
