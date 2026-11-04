@@ -281,6 +281,11 @@ def _validate_exog(arr: Any, *, name: str, n_obs: int) -> NDArray[np.float64]:
             f"{name} must have the same number of rows as endog (T={n_obs}); "
             f"got {name}.shape[0]={arr.shape[0]}"
         )
+    if not np.isfinite(arr).all():
+        bad = sorted({int(j) for j in np.argwhere(~np.isfinite(arr))[:, 1]})
+        raise ValueError(
+            f"{name} must not contain NaN or infinite values; found them in column(s) {bad}"
+        )
     return arr
 
 

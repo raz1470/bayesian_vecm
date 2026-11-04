@@ -516,6 +516,7 @@ class BayesianVECM:
         self.saturation_scale_ = sat_scale
         self.saturation_level_ = sat_level
         self.exog_window_ = window
+        self.n_eff_ = design.delta_y.shape[0]  # numbers the trend in forecasts
         self.links_ = links
         self.instrument_check_ = instrument_check
         # The last `window` rows of the raw drivers seed the lags in a forecast.
@@ -1434,4 +1435,5 @@ class BayesianVECM:
             rng=rng,
             deterministic=self.deterministic,
             extra_mean=extra_mean,
+            n_eff=getattr(self, "n_eff_", None),
         )

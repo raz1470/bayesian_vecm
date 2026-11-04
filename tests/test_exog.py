@@ -432,3 +432,12 @@ class TestExogIrf:
         np.testing.assert_allclose(
             result.isel(horizon=0).values, model.idata.posterior["B"].values, atol=1e-12
         )
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf])
+def test_exog_rejects_nan_and_inf(bad):
+    y = _make_endog()
+    x = _make_exog(m=2)
+    x[5, 1] = bad
+    with pytest.raises(ValueError, match=r"column\(s\) \[1\]"):
+        cointegration_design(y, k_ar_diff=1, exog=x)
