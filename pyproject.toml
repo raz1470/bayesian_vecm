@@ -36,14 +36,14 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-# Runtime dependencies. Add libraries as the code grows; pymc/arviz come later
-# once we start wiring up the Bayesian model itself.
+# Runtime dependencies. statsmodels runs the rank and stationarity tests.
 dependencies = [
     "arviz>=1.1",
     "numpy>=1.26",
     "nutpie>=0.16",
     "pymc>=6.0",
     "scipy>=1.11",
+    "statsmodels>=0.14",
 ]
 
 # Optional dependency groups. Users install these with `pip install bayesian_vecm[dev]`.
@@ -55,11 +55,13 @@ dev = [
     "ruff>=0.6",
 ]
 
-# Links shown on the PyPI page. Update these once you have a GitHub repo.
+# Links shown on the PyPI page.
 [project.urls]
 Homepage = "https://github.com/raz1470/bayesian_vecm"
 Repository = "https://github.com/raz1470/bayesian_vecm"
 Issues = "https://github.com/raz1470/bayesian_vecm/issues"
+Documentation = "https://raz1470.github.io/bayesian_vecm/"
+Changelog = "https://github.com/raz1470/bayesian_vecm/blob/main/CHANGELOG.md"
 
 # ---------------------------------------------------------------------------
 # Hatchling: tell it where the actual package code lives (src layout).
@@ -124,7 +126,6 @@ dev = [
     "jupyter>=1.1.1",
     "matplotlib>=3.10.9",
     "pytest-cov>=7.1.0",
-    "statsmodels>=0.14.6",
 ]
 docs = [
     "myst-nb>=1.4.0",

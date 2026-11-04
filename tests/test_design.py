@@ -237,7 +237,7 @@ class TestLagMajorOrdering:
 # ---------------------------------------------------------------------------
 # Deterministic terms.
 #
-# Single-character codes only in v0:
+# Single codes only:
 #     "n"  — no deterministic terms (default; current behaviour)
 #     "co" — constant *outside* cointegration relation → column on delta_x
 #     "ci" — constant *inside* cointegration relation  → column on y_lag1
@@ -248,8 +248,8 @@ class TestLagMajorOrdering:
 # (only the slope coefficient is invariant; the intercept absorbs the shift),
 # so we pick the convention that keeps the column strictly positive.
 #
-# Compound codes (e.g. "colo", "cili") — Johansen cases 4 and 5 — are deferred
-# to a follow-up slice.
+# Compound codes (e.g. "colo", "cili") — Johansen cases 4 and 5 — are not
+# supported.
 # ---------------------------------------------------------------------------
 class TestDeterministicTerms:
     def test_default_is_n_and_matches_no_arg_behaviour(self) -> None:
@@ -356,9 +356,8 @@ class TestDeterministicValidation:
             cointegration_design(TINY_Y, k_ar_diff=1, deterministic="xyz")
 
     def test_rejects_compound_code_with_helpful_message(self) -> None:
-        # Compound codes (e.g. "colo", "cili") are a documented follow-up.
-        # The error message must call this out so users know to wait for v0.x
-        # rather than wonder if they've typed the code wrong.
+        # Compound codes (e.g. "colo", "cili") are not supported. The error
+        # message must say so, so users know they have not mistyped the code.
         with pytest.raises(ValueError, match="compound"):
             cointegration_design(TINY_Y, k_ar_diff=1, deterministic="colo")
 

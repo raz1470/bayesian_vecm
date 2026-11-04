@@ -84,9 +84,8 @@ All are weakly informative; any of the four can be overridden via the
   standard PyMC idiom; ``eta=2.0`` mildly favours weaker correlations.
 
 The :math:`\\Sigma` prior is special-cased — the LKJCholeskyCov factory
-doesn't fit the simple ``{"dist": ..., **kwargs}`` pattern — and v0 only
-accepts ``eta`` and ``sd_sigma`` overrides for it. A richer covariance-prior
-API is a follow-up.
+doesn't fit the simple ``{"dist": ..., **kwargs}`` pattern — and only
+``eta`` and ``sd_sigma`` overrides are accepted for it.
 
 Centred constant
 ----------------
@@ -188,7 +187,7 @@ import pytensor.tensor as pt
 
 from bayesian_vecm._design import CointegrationDesign
 
-#: Prior-dict keys recognised in v0. Sigma is handled specially — see
+#: Prior-dict keys recognised by the model. Sigma is handled specially — see
 #: :func:`_build_sigma` — because its parameterisation doesn't fit the
 #: ``{"dist": ..., **kwargs}`` pattern used for the other three.
 #: ``B`` is the exogenous-regressor coefficient matrix; it is only added to
@@ -204,7 +203,7 @@ _VALID_PRIOR_KEYS: frozenset[str] = frozenset(
 #: near-linear part of the curve to well into saturation.
 _DEFAULT_SATURATION_LAM: dict[str, Any] = {"dist": "Gamma", "alpha": 2.0, "beta": 0.3}
 
-#: Recognised override keys for the Sigma prior in v0.
+#: Recognised override keys for the Sigma prior.
 _VALID_SIGMA_KEYS: frozenset[str] = frozenset({"eta", "sd_sigma"})
 
 #: ``dist`` sentinel that triggers the regularised horseshoe path for Gamma.
@@ -235,7 +234,7 @@ def build_pymc_model(
     links: tuple[tuple[int, int], ...] = (),
     b_mask: Any = None,
 ) -> pm.Model:
-    """Build the PyMC model graph for a v0 BayesianVECM fit.
+    """Build the PyMC model graph for a BayesianVECM fit.
 
     Parameters
     ----------
@@ -688,7 +687,7 @@ def _validate_priors_dict(priors: dict[str, Any] | None) -> dict[str, Any]:
     """Return a defensive copy of ``priors``, validating its keys.
 
     The public ``BayesianVECM`` constructor already checks that ``priors`` is
-    a dict or ``None``; this pass adds the v0-specific check on which keys
+    a dict or ``None``; this pass adds the check on which keys
     are recognised so a typo like ``"sigma"`` (lowercase) fails loudly
     instead of silently being ignored.
     """
@@ -868,7 +867,7 @@ def _build_sigma(*, n_vars: int, user_spec: dict[str, Any] | None) -> Any:
     """Construct the residual-covariance Cholesky factor.
 
     Uses :class:`pm.LKJCholeskyCov` regardless of user spec; only ``eta`` and
-    ``sd_sigma`` are configurable in v0. The packed-name ``"Sigma_chol"`` is
+    ``sd_sigma`` are configurable. The packed-name ``"Sigma_chol"`` is
     introduced so the public-facing ``"Sigma"`` name can be reserved for the
     full covariance matrix (added as a :func:`pm.Deterministic` by the
     caller).
@@ -886,8 +885,7 @@ def _build_sigma(*, n_vars: int, user_spec: dict[str, Any] | None) -> Any:
         if unknown:
             valid = sorted(_VALID_SIGMA_KEYS)
             raise ValueError(
-                f"unknown Sigma-prior key(s) {sorted(unknown)}; "
-                f"v0 accepts only {valid}. A richer covariance-prior API is a follow-up."
+                f"unknown Sigma-prior key(s) {sorted(unknown)}; only {valid} are accepted."
             )
         eta = float(user_spec.get("eta", 2.0))
         sd_sigma = float(user_spec.get("sd_sigma", 1.0))

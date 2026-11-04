@@ -20,7 +20,7 @@ Design decisions captured here
   names (``"alpha"``, ``"beta"``, ``"Gamma"``, ``"Sigma"``) to distribution
   specs of the form ``{"dist": "Normal", "mu": 0.0, "sigma": 1.0}``. This is
   inspired by ``pymc_marketing.MMM``'s pattern but kept one step simpler:
-  no dedicated ``Prior`` class in v0. The dict is JSON-serialisable,
+  no dedicated ``Prior`` class. The dict is JSON-serialisable,
   trivial to document, and forward-compatible — we can later accept a
   ``Prior``-like object in addition without breaking anyone.
 * **Store ``endog`` after fit.** ``sample_posterior_predictive`` is a
@@ -312,7 +312,7 @@ class BayesianVECM:
             valid = sorted(VALID_DETERMINISTIC)
             raise ValueError(
                 f"deterministic must be one of {valid}; got deterministic={deterministic!r}. "
-                "Compound Johansen codes (cases 4 and 5) are a v0.x follow-up."
+                "Compound Johansen codes (cases 4 and 5) are not supported."
             )
 
         if priors is not None and not isinstance(priors, dict):

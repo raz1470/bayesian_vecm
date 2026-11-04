@@ -255,6 +255,7 @@ dependencies = [
     { name = "nutpie" },
     { name = "pymc" },
     { name = "scipy" },
+    { name = "statsmodels" },
 ]
 
 [package.optional-dependencies]
@@ -270,7 +271,6 @@ dev = [
     { name = "jupyter" },
     { name = "matplotlib" },
     { name = "pytest-cov" },
-    { name = "statsmodels" },
 ]
 docs = [
     { name = "myst-nb" },
@@ -290,6 +290,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "scipy", specifier = ">=1.11" },
+    { name = "statsmodels", specifier = ">=0.14" },
 ]
 provides-extras = ["dev"]
 
@@ -299,7 +300,6 @@ dev = [
     { name = "jupyter", specifier = ">=1.1.1" },
     { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
-    { name = "statsmodels", specifier = ">=0.14.6" },
 ]
 docs = [
     { name = "myst-nb", specifier = ">=1.4.0" },

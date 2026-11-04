@@ -138,21 +138,13 @@ def check_stationarity(
 
     Raises
     ------
-    ImportError
-        If ``statsmodels`` is not installed.
     ValueError
         If ``data`` fails validation, a column is constant, ``signif`` is not
         strictly between 0 and 1, or ``regression`` is not recognised.
     """
-    try:
-        from statsmodels.tsa.stattools import adfuller
-    except ImportError as exc:  # pragma: no cover
-        raise ImportError(
-            "statsmodels is required for check_stationarity. "
-            "Install it with: uv add --dev statsmodels"
-        ) from exc
     import numpy as np
     import pandas as pd
+    from statsmodels.tsa.stattools import adfuller
 
     if not 0.0 < signif < 1.0:
         raise ValueError(f"signif must be strictly between 0 and 1; got signif={signif}")
