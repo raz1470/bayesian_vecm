@@ -122,6 +122,10 @@ def compute_fittedvalues(
             mu = mu + saturation_term(idata, exog_vals)
         # exog_contrib[d, t, k] = sum_i exog[t,i] * B[d,k,i]
         mu = mu + np.einsum("ti,dki->dtk", exog_vals, b_mat)  # (D, T_eff, K)
+        if "fade_share" in posterior:
+            from bayesian_vecm._fading import fade_term
+
+            mu = mu + fade_term(idata, exog_vals, exog_vals.shape[0])
 
     mu_out = mu.reshape(n_chains, n_draws, t_eff, n_vars)
 

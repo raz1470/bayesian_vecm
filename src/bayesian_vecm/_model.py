@@ -232,6 +232,24 @@ class BayesianVECM:
         Their entries of :math:`B_s` are zero at every lag. Each effect in
         ``contemporaneous`` needs at least as many excluded drivers as
         causes. Can be used without ``contemporaneous`` to drop effects.
+    fading
+        Drivers whose effect may fade, given as ``exog`` column names or
+        positions. Without it a week of spend moves the brand metrics, and
+        through them sales, for good. With it each listed driver gets a
+        share of its lift that drains away (``fade_share``, :math:`\\phi`,
+        prior ``Beta(1, 1)``) and a half-life for that share in periods
+        (``fade_half_life``, :math:`h`, prior ``LogNormal(log 52, 0.75)``):
+        the driver's weekly contribution :math:`c_t` to growth is joined by
+        :math:`-\\phi (1 - \\delta) \\sum_{k \\ge 1} \\delta^{k-1} c_{t-k}`
+        with :math:`\\delta = 0.5^{1/h}`. A one-week pulse lifts the levels
+        and only the share :math:`1 - \\phi` stays; stopping spend for good
+        lets the metrics fall towards a lower level instead of drifting
+        apart for ever. ``B``, :meth:`granger_causality` and
+        :meth:`saturation_curve` give the effect in the week it lands;
+        :meth:`exog_irf` and forecasts include the fade. Five years of
+        weekly data tell a lasting effect from one with a half-life of a
+        year or two only weakly, so read ``fade_share`` through its
+        interval. ``None`` (default) means every effect lasts.
 
     Raises
     ------
@@ -283,6 +301,7 @@ class BayesianVECM:
         saturation: Sequence[str | int] | None = None,
         contemporaneous: dict[str, list[str]] | None = None,
         excluded: dict[str, list[str]] | None = None,
+        fading: Sequence[str | int] | None = None,
     ) -> None:
         """Configure the model. See the class docstring for parameter details.
 
@@ -307,6 +326,7 @@ class BayesianVECM:
 
         adstock = _driver_list(adstock, "adstock")
         saturation = _driver_list(saturation, "saturation")
+        fading = _driver_list(fading, "fading")
 
         if deterministic not in VALID_DETERMINISTIC:
             valid = sorted(VALID_DETERMINISTIC)
@@ -330,6 +350,7 @@ class BayesianVECM:
         self.saturation = saturation
         self.contemporaneous = contemporaneous
         self.excluded = excluded
+        self.fading = fading
 
     def fit(
         self,
@@ -400,6 +421,7 @@ class BayesianVECM:
         saturation_idx = self._resolve_drivers(
             getattr(self, "saturation", None), exog, "saturation"
         )
+        fading_idx = self._resolve_drivers(getattr(self, "fading", None), exog, "fading")
         window = self._window_for(adstock_idx)
         sat_scale = sat_level = None
         if saturation_idx:
@@ -431,6 +453,7 @@ class BayesianVECM:
             saturation_level=sat_level,
             links=links,
             b_mask=b_mask,
+            fading=fading_idx,
         )
 
         with model:
@@ -464,6 +487,11 @@ class BayesianVECM:
             idata.constant_data["saturation_scale"] = xr.DataArray(
                 sat_scale, dims=("saturation_variable",)
             )
+        if fading_idx:
+            idata.constant_data["fading_idx"] = xr.DataArray(
+                np.array(fading_idx), dims=("fading_variable",)
+            )
+            idata.constant_data["exog_window"] = xr.DataArray(np.array(window))
         if exog_coint is not None:
             # Store the raw (T, m_c) array — aligned slice is embedded in y_lag1.
             exog_coint_arr = np.asarray(
@@ -482,6 +510,7 @@ class BayesianVECM:
         self.exog_ = design.exog  # (T_eff, m * (window + 1)) or None
         self.adstock_idx_ = adstock_idx
         self.saturation_idx_ = saturation_idx
+        self.fading_idx_ = fading_idx
         # Drivers with a B_total column, in its order.
         self.total_idx_ = adstock_idx + tuple(j for j in saturation_idx if j not in adstock_idx)
         self.saturation_scale_ = sat_scale
@@ -1025,17 +1054,31 @@ class BayesianVECM:
         from bayesian_vecm._irf import compute_exog_irf
 
         idata = self.idata_
+        b = None
         if getattr(self, "saturation_idx_", ()) and not (isinstance(at, str) and at == "mean"):
-            from types import SimpleNamespace
-
             from bayesian_vecm._saturation import linearised_b
 
             b = linearised_b(idata, self._saturation_levels(at))
+        window = self._exog_window()
+        if getattr(self, "fading_idx_", ()):
+            from bayesian_vecm._fading import faded_b
+
+            if b is None:
+                b = np.asarray(idata.posterior["B"].values, dtype=np.float64)
+            b = faded_b(b, self.idata_, steps, window + 1)
+            window = steps
+        if b is not None:
+            from types import SimpleNamespace
+
             posterior = idata.posterior
             posterior = (
                 posterior.to_dataset() if hasattr(posterior, "to_dataset") else posterior
             ).copy()
-            posterior["B"] = (posterior["B"].dims, b)
+            dims = posterior["B"].dims
+            posterior = posterior.drop_vars("B")
+            if b.shape[-1] != posterior.sizes.get(dims[-1], b.shape[-1]):
+                dims = (*dims[:-1], "B_lagged_column")  # fade adds lags
+            posterior["B"] = (dims, b)
             idata = SimpleNamespace(posterior=posterior)
         return compute_exog_irf(
             idata=idata,
@@ -1043,7 +1086,7 @@ class BayesianVECM:
             steps=steps,
             variable_names=self.variable_names_,
             exog_names=getattr(self, "exog_names_", None),
-            exog_lags=self._exog_window(),
+            exog_lags=window,
         )
 
     def saturation_curve(
@@ -1372,6 +1415,14 @@ class BayesianVECM:
 
         from bayesian_vecm._forecast import forecast_posterior
 
+        extra_mean = None
+        if exog_future_arr is not None and getattr(self, "fading_idx_", ()):
+            from bayesian_vecm._fading import fade_term
+
+            # Run the fade through the fitted rows, then on into the forecast.
+            rows = np.vstack([self.exog_, exog_future_arr])
+            extra_mean = fade_term(self.idata_, rows, self.exog_.shape[0])[:, -steps:]
+
         rng = np.random.default_rng(random_seed)
         return forecast_posterior(
             idata=self.idata_,
@@ -1382,4 +1433,5 @@ class BayesianVECM:
             exog_future=exog_future_arr,
             rng=rng,
             deterministic=self.deterministic,
+            extra_mean=extra_mean,
         )

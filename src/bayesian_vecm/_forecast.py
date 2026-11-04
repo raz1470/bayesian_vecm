@@ -69,6 +69,7 @@ def forecast_posterior(
     exog_future: NDArray[np.floating] | None = None,
     rng: np.random.Generator | None = None,
     deterministic: str = "n",
+    extra_mean: NDArray[np.floating] | None = None,
 ) -> xr.DataTree:
     """Roll the VECM recursion forward *steps* periods for every posterior draw.
 
@@ -100,6 +101,10 @@ def forecast_posterior(
     deterministic
         The deterministic-term code the model was fitted with. The matching
         constant or trend is carried into every forecast step.
+    extra_mean
+        Optional ``(D, steps, K)`` term added to the mean at each step, for
+        example the fading part of the drivers' effects. ``D`` runs over
+        chains and draws, chain-major.
 
     Returns
     -------
@@ -237,6 +242,8 @@ def forecast_posterior(
             mu = mu + np.einsum("dkm,m->dk", b_mat, x_h)  # (D, K)
             if sat_extra is not None:
                 mu = mu + sat_extra[:, h]
+        if extra_mean is not None:
+            mu = mu + extra_mean[:, h]
 
         # Innovation: eps ~ MvNormal(0, Sigma) via pre-computed Cholesky
         z = rng.standard_normal((n_total, n_vars))  # (D, K)
