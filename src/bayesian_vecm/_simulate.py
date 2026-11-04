@@ -272,6 +272,12 @@ class BrandTruth:
     b_structural : np.ndarray, shape (K, m)
         Direct same-week effects :math:`B_s`, before the links pass them on.
         ``b`` is ``inv(a0) @ b_structural``. Equal to ``b`` without links.
+    fade_half_life : np.ndarray, shape (m,)
+        Half-life in weeks of the fading part of each driver's effect, from
+        ``exog_fade``. ``inf`` for drivers whose effect does not fade.
+    fade_share : float
+        Share of a faded driver's effect that fades, from
+        ``exog_fade_share``. ``0.0`` without ``exog_fade``.
     sales_parts : pandas.DataFrame or None
         With ``total_sales=True``: each part of total sales in £ per week,
         columns :data:`SALES_PART_NAMES`. They sum to
@@ -307,6 +313,18 @@ class BrandTruth:
     )
     sales_parts: pd.DataFrame | None = None
     sales_short_term: dict[str, Any] | None = None
+    fade_half_life: NDArray[np.float64] = field(
+        default_factory=lambda: np.full(len(EXOG_NAMES), np.inf)
+    )
+    fade_share: float = 0.0
+
+    @property
+    def fade_decay(self) -> NDArray[np.float64]:
+        """Weekly decay of the fading part of each driver's effect.
+
+        ``0.5 ** (1 / half_life)``; 1 for drivers whose effect does not fade.
+        """
+        return 0.5 ** (1.0 / self.fade_half_life)
 
     @property
     def links(self) -> NDArray[np.float64]:
@@ -408,6 +426,8 @@ def simulate_brand_data(
     sales_saturation: dict[str, float] | None = None,
     paid_search_follows: float = 0.0,
     seasonal_drift: float = 0.0,
+    exog_fade: dict[str, float] | None = None,
+    exog_fade_share: float = 1.0,
 ) -> BrandData:
     """Simulate weekly brand data from a VECM with known parameters.
 
@@ -497,6 +517,21 @@ def simulate_brand_data(
         whose weekly steps have standard deviation ``seasonal_drift`` times
         that harmonic's amplitude. ``0.0`` (default) keeps the pattern
         fixed. Must not be negative. Needs ``total_sales=True``.
+    exog_fade
+        Half-life in weeks of the effect of a driver that fades, for example
+        ``{"brand_spend": 52.0}``. Without it a week of spend moves the
+        brand metrics for good. With it the share ``exog_fade_share`` of
+        the lift decays at weekly rate :math:`\\delta = 0.5^{1/h}`: the
+        driver's contribution :math:`c_t` to growth becomes
+        :math:`c_t - \\phi (1 - \\delta) S_t` with
+        :math:`S_t = \\sum_{k \\ge 1} \\delta^{k-1} c_{t-k}`. A campaign then
+        lifts the metrics and the lift drains away, and stopping spend for
+        good lets them fall towards a lower level. ``None`` (default) keeps
+        every effect permanent. Cannot be combined with ``exog_lag_share``.
+    exog_fade_share
+        Share :math:`\\phi` of a faded driver's effect that fades, in
+        ``(0, 1]``. ``1.0`` (default) fades all of it; ``0.5`` leaves half
+        for good. Ignored without ``exog_fade``.
 
     Returns
     -------
@@ -558,6 +593,22 @@ def simulate_brand_data(
             if not 0.0 <= w < 1.0:
                 raise ValueError(f"adstock decay for {name!r} must be in [0, 1); got {w}")
             decay[EXOG_NAMES.index(name)] = w
+    fade_h = np.full(len(EXOG_NAMES), np.inf)
+    if exog_fade:
+        unknown = sorted(set(exog_fade) - set(EXOG_NAMES))
+        if unknown:
+            raise ValueError(f"unknown exog_fade name(s) {unknown}; choose from {list(EXOG_NAMES)}")
+        if exog_lag_share:
+            raise ValueError("exog_fade cannot be combined with exog_lag_share")
+        if not 0.0 < exog_fade_share <= 1.0:
+            raise ValueError(f"exog_fade_share must be in (0, 1]; got {exog_fade_share}")
+        for name, h in exog_fade.items():
+            if not h > 0.0:
+                raise ValueError(f"exog_fade half-life for {name!r} must be positive; got {h}")
+            fade_h[EXOG_NAMES.index(name)] = float(h)
+    fade_delta = 0.5 ** (1.0 / fade_h)  # 1 where nothing fades
+    fades = fade_h < np.inf
+    phi = float(exog_fade_share) if exog_fade else 0.0
     lam = _saturation_values(exog_saturation, exog_lag_share, unit_root, spend_log_sd)
     sat = lam > 0.0
     a0 = _a0_matrix(contemporaneous)
@@ -603,8 +654,14 @@ def simulate_brand_data(
     const = _constant(y[0])
     pi = _ALPHA @ _BETA.T
     dy_prev = np.zeros(3)
+    # Fading: S_t = sum_{k>=1} delta^(k-1) u_{t-k} per faded driver, started at
+    # its steady state for the in-sample mean so there is no start-up jump.
+    fade_state = np.where(fades, x_reg.mean(axis=0) / np.where(fades, 1.0 - fade_delta, 1.0), 0.0)
     for t in range(1, n_obs):
         exog_term = b_eff @ x_reg[t] + b_lag @ x_reg[t - 1]
+        if fades.any():
+            fade_state = fade_delta * fade_state + np.where(fades, x_reg[t - 1], 0.0)
+            exog_term = exog_term - phi * (b_eff @ ((1.0 - fade_delta) * fade_state))
         dy = const + pi @ y[t - 1] + _GAMMA @ dy_prev + exog_term + eps[t]
         y[t] = y[t - 1] + dy
         dy_prev = dy
@@ -628,6 +685,8 @@ def simulate_brand_data(
         saturation_mean=f_mean,
         a0=a0,
         b_structural=b_now * (1.0 - decay),
+        fade_half_life=fade_h,
+        fade_share=phi,
     )
     endog = pd.DataFrame(y, index=dates, columns=list(ENDOG_NAMES))
     exog = pd.DataFrame(x, index=dates, columns=list(EXOG_NAMES))

@@ -194,8 +194,21 @@ from bayesian_vecm._design import CointegrationDesign
 #: the graph when ``design.exog`` is not ``None``.
 #: ``adstock_alpha`` is the geometric decay of each adstocked driver.
 #: ``saturation_lam`` is the logistic saturation rate of each saturated driver.
+#: ``fade_share`` and ``fade_half_life`` set how much of a fading driver's
+#: effect drains away and how fast.
 _VALID_PRIOR_KEYS: frozenset[str] = frozenset(
-    {"alpha", "beta", "Gamma", "Sigma", "B", "adstock_alpha", "saturation_lam", "A0"}
+    {
+        "alpha",
+        "beta",
+        "Gamma",
+        "Sigma",
+        "B",
+        "adstock_alpha",
+        "saturation_lam",
+        "A0",
+        "fade_share",
+        "fade_half_life",
+    }
 )
 
 #: Default prior on the saturation rate: mean 6.7, 90% of its mass between
@@ -233,6 +246,7 @@ def build_pymc_model(
     saturation_level: Any = None,
     links: tuple[tuple[int, int], ...] = (),
     b_mask: Any = None,
+    fading: tuple[int, ...] = (),
 ) -> pm.Model:
     """Build the PyMC model graph for a BayesianVECM fit.
 
@@ -301,6 +315,18 @@ def build_pymc_model(
     b_mask
         ``(K, m)`` array, zero where a driver has no direct effect on a
         series (the same at every lag). ``None`` means no exclusions.
+    fading
+        Column indices of the drivers whose effect may fade. Each driver's
+        weekly contribution :math:`c_t` to growth (after adstock,
+        saturation and the same-week links) is joined by
+        :math:`-\\phi (1 - \\delta) S_t`, with
+        :math:`S_t = \\sum_{k \\ge 1} \\delta^{k-1} c_{t-k}`, so the share
+        :math:`\\phi` (``fade_share``, prior ``Beta(1, 1)``) of the lift it
+        builds drains away at weekly rate
+        :math:`\\delta = 0.5^{1 / h}`, :math:`h` being ``fade_half_life``
+        (prior ``LogNormal(log 52, 0.75)``, in periods). Before the sample
+        :math:`c` is taken at its in-sample mean. Empty (default) means every
+        effect lasts.
 
     Returns
     -------
@@ -475,8 +501,9 @@ def build_pymc_model(
         # with no exog lags. With L lags each entry gets sd 1 / sqrt(L + 1),
         # so the summed effect of a driver keeps a Normal(0, 1) prior.
         sat_term = None
+        sat_parts = None
         if exog is not None and (adstock or saturation):
-            b_mat, sat_term = _build_structured_b(
+            b_mat, sat_term, sat_parts = _build_structured_b(
                 exog=exog,
                 n_vars=n_vars,
                 exog_lags=exog_lags,
@@ -525,6 +552,17 @@ def build_pymc_model(
                 exog_term = exog_term + sat_term
             if a0_inv is not None:
                 exog_term = pm.math.dot(exog_term, a0_inv.T)
+            if fading:
+                n_lags = (max(exog_lags, adstock_max_lag) if adstock else exog_lags) + 1
+                exog_term = exog_term + _fade_term(
+                    exog=exog,
+                    n_lags=n_lags,
+                    b_mat=b_mat,
+                    sat_parts=sat_parts,
+                    a0_inv=a0_inv,
+                    fading=fading,
+                    user_priors=user_priors,
+                )
             mu = mu + exog_term
 
         # --- Likelihood: row-wise MvNormal with shared Sigma ----------------
@@ -568,9 +606,11 @@ def _build_structured_b(
     at ``saturation_level`` and ``B_saturation`` (the effect at full
     saturation) is derived from it.
 
-    Returns ``(b_lin, sat_term)``. ``b_lin`` multiplies the design's lag
-    columns and is zero for saturated drivers. ``sat_term`` is the
-    ``(T_eff, K)`` saturated contribution, or ``None``. The deterministic
+    Returns ``(b_lin, sat_term, sat_parts)``. ``b_lin`` multiplies the
+    design's lag columns and is zero for saturated drivers. ``sat_term`` is
+    the ``(T_eff, K)`` saturated contribution, or ``None``. ``sat_parts`` is
+    ``(saturated indices, f - f_mean (T_eff, m_sat), b_sat (K, m_sat))``, or
+    ``None``, so callers can split ``sat_term`` by driver. The deterministic
     ``B`` spreads every ``B_total`` over its lags, so for a saturated driver
     readers of ``B`` get the marginal effect at ``saturation_level``.
 
@@ -630,6 +670,7 @@ def _build_structured_b(
     # Sampling b directly puts the posterior on a ridge between b and lambda.
     gain_lin = np.ones(len(struct))
     sat_term = None
+    sat_parts = None
     if saturation:
         sat_pos = [struct.index(j) for j in saturation]
         gain_lin[sat_pos] = 0.0
@@ -652,6 +693,7 @@ def _build_structured_b(
             f"B_saturation{det_suffix}", b_total[:, sat_pos] / slope
         )  # (K, m_sat)
         sat_term = pt.dot(f - f_mean, b_sat.T)  # (T_eff, K)
+        sat_parts = (list(saturation), f - f_mean, b_sat)
 
     def assemble(gain: Any) -> Any:
         blocks = b_total[:, :, None] * (gain[:, None] * weights)[None, :, :]  # (K, m_s, n_lags)
@@ -678,9 +720,66 @@ def _build_structured_b(
 
     b_lin = assemble(pt.as_tensor(gain_lin))
     if not saturation:
-        return pm.Deterministic(f"B{det_suffix}", b_lin), None
+        return pm.Deterministic(f"B{det_suffix}", b_lin), None, None
     pm.Deterministic(f"B{det_suffix}", assemble(pt.as_tensor(np.ones(len(struct)))))
-    return b_lin, sat_term
+    return b_lin, sat_term, sat_parts
+
+
+def _fade_term(
+    *,
+    exog: np.ndarray,
+    n_lags: int,
+    b_mat: Any,
+    sat_parts: Any,
+    a0_inv: Any,
+    fading: tuple[int, ...],
+    user_priors: dict[str, Any],
+) -> Any:
+    """Fading part of the fading drivers' contributions, ``(T_eff, K)``.
+
+    For driver :math:`j` with weekly contribution :math:`c_t` (its lag
+    blocks of ``b_mat`` plus its saturated term, through ``a0_inv``), adds
+    :math:`-\\phi_j [(1 - \\delta_j) \\sum_{s < t} \\delta_j^{t-s-1} c_s
+    + \\delta_j^t \\bar c]`, the second term standing in for the weeks
+    before the sample at the in-sample mean :math:`\\bar c`.
+    """
+    n_obs, n_cols = exog.shape
+    n_exog = n_cols // n_lags
+    share = _resolve_dist(
+        name="fade_share",
+        user_spec=user_priors.get("fade_share"),
+        default_spec={"dist": "Beta", "alpha": 1.0, "beta": 1.0},
+        shape=(len(fading),),
+    )
+    half_life = _resolve_dist(
+        name="fade_half_life",
+        user_spec=user_priors.get("fade_half_life"),
+        default_spec={"dist": "LogNormal", "mu": float(np.log(52.0)), "sigma": 0.75},
+        shape=(len(fading),),
+    )
+    delta = 0.5 ** (1.0 / half_life)  # (n_fade,)
+    t = np.arange(n_obs, dtype=np.float64)
+    total = None
+    for pos, j in enumerate(fading):
+        cols = list(range(j, n_cols, n_exog))  # driver j at every lag
+        contrib = pt.dot(exog[:, cols], b_mat[:, cols].T)  # (T_eff, K)
+        if sat_parts is not None and j in sat_parts[0]:
+            k = sat_parts[0].index(j)
+            contrib = contrib + sat_parts[1][:, k : k + 1] * sat_parts[2][:, k][None, :]
+        if a0_inv is not None:
+            contrib = pt.dot(contrib, a0_inv.T)
+        # sum_{s<t} d^(t-s-1) c_s = d^(t-1) * cumsum_{s<t}(d^-s c_s): O(T) rather
+        # than a T x T kernel. d is kept at 0.1 or more (half-life above a third
+        # of a period) so d^-s stays far from overflow over any weekly sample.
+        log_d = pt.log(pt.maximum(delta[pos], 0.1))
+        grow = pt.exp(-t * log_d)[:, None]  # d^-s
+        running = pt.cumsum(grow * contrib, axis=0)  # sum_{s<=t} d^-s c_s
+        shrink = pt.exp((t[1:] - 1.0) * log_d)[:, None]  # d^(t-1)
+        past = pt.concatenate([pt.zeros((1, contrib.shape[1])), shrink * running[:-1]], axis=0)
+        start = pt.exp(t * log_d)[:, None] * contrib.mean(axis=0)[None, :]
+        term = -share[pos] * ((1.0 - pt.exp(log_d)) * past + start)
+        total = term if total is None else total + term
+    return total
 
 
 def _validate_priors_dict(priors: dict[str, Any] | None) -> dict[str, Any]:

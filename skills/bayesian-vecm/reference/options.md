@@ -105,6 +105,14 @@ model = BayesianVECM(..., contemporaneous=links, excluded=excluded)
 - With right exclusions, links halve the interval on a channel's effect on consideration (0.0043 against 0.0082 on simulated data). With a wrong one the interval held the truth 10% of the time against 70% without links.
 - Links do not identify the shocks. The shocks stay correlated, so impulse responses to shocks still need GIRF or an order.
 
+## Lifts that fade: `fading=[channels]`
+
+- **What it does.** Without it the model assumes every lift in the brand metrics lasts for good. With it each listed channel gets a share of its lift that drains away (`fade_share`) and a half-life for that share (`fade_half_life`). `exog_irf()` and forecasts include the fade.
+- **When to use.** By default for brand channels, unless the user has evidence that lifts last. Ask: "When you went dark in the past, did awareness slide back, or just stop growing?"
+- **What the data can say.** Five years of weekly data pin the lasting share down only loosely: expect intervals that span most of 0 to 1. A period when a channel was off for months sharpens it most. Report the 5-year return and the going-dark scenario with their intervals, and say the lasting share is uncertain.
+- **Why it matters.** On simulated data where lifts faded (half-life 26 to 104 weeks), the model without `fading` overstated 5-year returns 2 to 6 times and its intervals missed the truth every time. With `fading` the intervals held the truth in 16 of 20 data sets, at the cost of being wide and about 27% low when lifts truly lasted (`tools/fade_check.py`).
+- **Cost.** Fits take about two to three times as long.
+
 ## Shock impulse responses: `method=`
 
 - `model.irf(52, method="girf")` (default): no ordering needed. Use this.

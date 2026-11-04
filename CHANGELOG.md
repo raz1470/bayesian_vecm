@@ -22,6 +22,9 @@ First public release.
 - `adstock=`: geometric carryover on chosen drivers.
 - `saturation=`: logistic diminishing returns on chosen drivers, with
   `saturation_curve()`.
+- `fading=`: lets a share of each listed driver's lift fade with an estimated
+  half-life (`fade_share`, `fade_half_life`), instead of assuming every lift in
+  the brand metrics lasts for good. `exog_irf()` and forecasts include the fade.
 - `contemporaneous=` and `excluded=`: same-week links between endogenous series,
   identified by exclusion restrictions, with an instrument check at fit time and
   `same_week_links()`.
@@ -47,14 +50,16 @@ First public release.
 ### Simulated data
 
 - `simulate_brand_data()`: weekly brand data with a known answer, with options
-  for trending drivers, carryover, saturation, same-week links and total sales.
+  for trending drivers, carryover, saturation, same-week links, total sales and
+  fading effects (`exog_fade`, `exog_fade_share`).
 
 ### Documentation
 
 - Documentation site with a user guide, API reference and model details.
 - The walkthrough article, *How Long Does Brand Last?*
 - Eight guide notebooks, including a plug-in notebook for response curves on
-  your own data.
+  your own data, with how much to spend on a campaign and what happens to sales
+  if a channel goes dark.
 - An agent skill for running the analysis with an analyst new to VECMs.
 
 ### Dependencies

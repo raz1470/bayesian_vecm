@@ -74,6 +74,7 @@ response = model.exog_irf(steps=260)         # a one-week rise in each driver
 | `adstock=[...]` | A channel's effect carries over for weeks |
 | `saturation=[...]` | One more £ buys less as spend grows. Pass raw, non-negative spend |
 | `contemporaneous=`, `excluded=` | One brand metric moves another in the same week. A wrong exclusion biases the link |
+| `fading=[...]` | A brand lift may drain away once spend stops. Estimates how much lasts; without it every lift lasts by assumption |
 | `priors={"Gamma": {"dist": "Horseshoe"}}` | The lag order is unclear. Fit with `target_accept=0.99` |
 
 For a counterfactual, call `sample_posterior_predictive(steps, exog_future=..., random_seed=0)` on a baseline and an uplift path with the same seed, and take the difference. The guides show each option on simulated data with a known answer.

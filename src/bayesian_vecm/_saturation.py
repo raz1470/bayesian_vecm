@@ -56,6 +56,11 @@ def saturation_term(idata: Any, x_lagged: NDArray[np.floating]) -> NDArray[np.fl
     ``x_lagged`` is the lag-major exog design, ``(T, m * (L + 1))``, in raw
     units for the saturated drivers.
     """
+    return saturation_parts(idata, x_lagged).sum(axis=2)
+
+
+def saturation_parts(idata: Any, x_lagged: NDArray[np.floating]) -> NDArray[np.float64]:
+    """Saturated contribution of each saturated driver, shape ``(D, T, m_sat, K)``."""
     posterior = idata.posterior
     idx, scale = saturation_info(idata)
     lam = _draws(posterior, "saturation_lam")  # (D, m_sat)
@@ -68,7 +73,7 @@ def saturation_term(idata: Any, x_lagged: NDArray[np.floating]) -> NDArray[np.fl
     lagged = x.reshape(x.shape[0], n_lags, n_exog)[:, :, idx]  # (T, n_lags, m_sat)
     stock = np.einsum("tlj,djl->dtj", lagged, weights) / scale  # (D, T, m_sat)
     f = logistic_saturation(stock, lam[:, None, :]) - f_mean[:, None, :]
-    return np.einsum("dtj,dkj->dtk", f, b_sat)
+    return np.einsum("dtj,dkj->dtjk", f, b_sat)
 
 
 def linearised_b(idata: Any, levels: NDArray[np.floating]) -> NDArray[np.float64]:
