@@ -2,7 +2,7 @@
 
 ## §0 Opening
 
-Brand teams and media mix models disagree about time. Brand teams say a campaign builds the brand for years. A media mix model (MMM) usually says its effect is gone within a couple of months.
+Brand teams and media mix models disagree about time. Brand teams say a campaign builds the brand for years. A media mix model (MMM) usually credits it with what arrives within weeks, and at most within the first year.
 
 Both can be right. The MMM measures the short-term lift in sales that follows a burst of spend. What it struggles to see is the slow climb: more people who know the brand, more who would consider it, and a higher level of sales that stays.
 
@@ -10,7 +10,9 @@ Binet and Field made this case with the IPA databank in *The Long and the Short 
 
 Peter Cain has shown how. In a 2022 paper in the *International Journal of Research in Marketing* he ties brand metrics to base sales with cointegration. A lasting lift in awareness or consideration then carries through to sales for good. This article works through his approach step by step, with a Bayesian version of the model in an open-source Python package.
 
-Here is the shape of the answer on a simulated brand. Run a 13-week brand campaign and add up what it earns. Over five years it earns about six times what it earns in the first year, because the lift in awareness and consideration holds sales up long after the spend stops. Only about a sixth of the return arrives in the window an MMM looks at.
+Here is the shape of the answer on a simulated brand. Run a 13-week brand campaign and add up what it earns. If the lift in awareness and consideration lasts, it holds sales up long after the spend stops, and over five years the campaign earns about six times what it earns in the first year. Only about a sixth of the return (17%) arrives within the year an MMM looks at.
+
+That "if" carries most of the answer. If the lift fades instead, with a half-life of one to two years, five years earn two to three times the first year, not six. §13 shows how to let the data say which, and how little five years of data can settle.
 
 Every number in the article comes from simulated data with a known answer, so each step can be checked against the truth. The same code runs on real data, and the last section covers what changes when you use your own.
 
@@ -74,7 +76,7 @@ A second lead runs between awareness and consideration. Two leads tie three seri
 
 The number of leads is the cointegration rank. Johansen's trace test finds it by asking in turn whether there are none, at most one, at most two. It stops at the first answer it cannot reject. On our brand it stops at two, the true number.
 
-The test is a guide rather than a ruling. Across 200 simulated data sets like ours it found two in 81% of them with five years of weekly data. With three years that fell to 45%, and most misses found one too few. A business view of how the funnel should work is a useful check: three series sharing one trend should have two leads.
+The test is a guide rather than a ruling. Across 200 simulated data sets like ours it found two in 80% of them with five years of weekly data. With three years that fell to 45%, and most misses found one too few. A business view of how the funnel should work is a useful check: three series sharing one trend should have two leads.
 
 ## §5 The VECM, one piece at a time
 
@@ -100,7 +102,7 @@ What is left is the shock: the part of this week that nothing in the model predi
 
 For our brand the choices are one week of momentum, two leads and a constant. The lag comes from the Hannan-Quinn criterion, which picked the true order in at least 94% of simulated data sets. The rank comes from the test in §4.
 
-We fit the model with Bayesian sampling. §11 explains why. For now it means every estimate comes with an 89% interval.
+We fit the model with Bayesian sampling. §11 explains why. For now it means every estimate comes with an interval. §5 to §8 show 89% intervals; §11 and §13 check 90% ones.
 
 The fitted leads match the truth closely. Sales track 1.27 times consideration (truth 1.25) and awareness tracks 1.14 times consideration (truth 1.125). Both truths sit inside their 89% intervals.
 
@@ -112,7 +114,7 @@ In our brand sales close about 23% of the gap to consideration each week, so hal
 
 A series that does not respond to the gaps is weakly exogenous. Awareness is the one here, which is why the shared trend from §4 belongs to it. A lasting lift in awareness is never pulled back. Consideration and then sales move up to meet it.
 
-The fitted model is not perfect on this point. The truth has awareness ignoring both gaps. The fit gives it a small α of 0.05 on the second gap against 0.20 and 0.23 for the two followers, and its interval just misses zero. Across many simulated data sets the model calls awareness weakly exogenous about nine times in ten.
+The fitted model is not perfect on this point. The truth has awareness ignoring both gaps. The fit gives it a small α of 0.05 on the second gap against 0.20 and 0.23 for the two followers, and its interval just misses zero.
 
 α is one way to ask what drives what. Granger causality is the other. X Granger-causes Y if past values of X help predict Y beyond Y's own past. The name oversells it: it is about prediction, not cause.
 
@@ -134,7 +136,7 @@ The classic answer is a Cholesky ordering. You put the series in an order, and e
 
 Generalised impulse responses (GIRFs, Pesaran and Shin 1998) avoid choosing an order. They let a shock bring along whatever usually moves with it. That turns out to equal a Cholesky response with the shocked series placed first, and GIRFs for different shocks rest on different orders that cannot all hold at once (Kim 2009).
 
-So a GIRF is safe to read for the series that genuinely comes first. Cain (2022) estimates the same-week links in a real brand funnel and finds awareness comes first: it moves consideration and sales within the week and nothing moves it. For awareness shocks the GIRF is then the right answer. In our brand putting sales first instead changes the first few weeks but not where sales end up.
+So a GIRF is safe to read for the series that genuinely comes first. Cain (2022) estimates the same-week links in a real brand funnel and finds awareness comes first: it moves consideration and sales within the week and nothing moves it. If awareness does come first, as Cain found, the GIRF for an awareness shock is the right one to read. In our brand putting sales first instead changes the first few weeks but not where sales end up.
 
 ## §8 From spend to £
 
@@ -144,11 +146,11 @@ Put one more unit of brand spend into a single week and push it through the fitt
 
 Add up the extra sales each week and value them at recent weekly sales. That is the return per £. Because sales stay higher the total keeps growing with the window: one year, three years or five.
 
-In our brand one more £1 of brand spend returns about £2.20 within a year and about £12.60 within five. Less than a fifth arrives in the first year. That year-1 figure is the one closest to what an MMM measures for the same channel.
+In our brand one more £1 of brand spend returns about £2.20 within a year and about £12.60 within five. About a sixth (17%) arrives in the first year. That year-1 figure is the one closest to what an MMM measures for the same channel.
 
-Two things set the size of the pounds. The model treats a lasting lift in awareness as permanent. Each week then adds the same extra sales for as long as you count. The simulated brand also spends heavily against its sales with large effects, chosen so the model has a clear signal to recover. Read the pounds as an illustration of the method and the year-1 share as the lesson.
+Two things set the size of the pounds. The model treats a lasting lift in awareness as permanent. Each week then adds the same extra sales for as long as you count, and nothing is discounted. §13 tests that assumption. The simulated brand also spends heavily against its sales with large effects, chosen so the model has a clear signal to recover. Read the pounds as an illustration of the method and the year-1 share as the lesson.
 
-On this data set the model runs about a fifth above the truth for every channel, because they share the path from awareness to sales. §11 shows it holds the truth on average across many data sets.
+On this data set the model runs 14% to 25% above the truth, depending on the channel, because they share the path from awareness to sales. §11 shows it holds the truth on average across many data sets.
 
 The same calculation works for PR and sponsorship per person reached. §9 and §10 add carryover, diminishing returns and same-week links to the model. The pattern holds: most of the return arrives after the first year.
 
@@ -202,32 +204,54 @@ The good news is that the long-run return survived every route. It came within a
 
 The short run did not. Noise that the brand system does not explain stays in any base built from total sales, and it makes sales look quicker to adjust than they are. The smooth trend fails the other way: sales adjust far too slowly, and most fits found sales leading the brand metrics, a link that does not exist. So report the long-run return with confidence and treat adjustment speeds and half-lives as rough.
 
-One more practical rule from the tests. Keep seasonality in the base and give the sales equation seasonal terms, but run the rank test on a deseasonalised copy.
+One more practical rule from the tests. Keep seasonality in the base and give the sales equation seasonal terms, but run the rank test on a deseasonalised copy: the trace test has no seasonal terms of its own. The plug-in notebook does both when you switch `SEASONAL` on.
 
-## §13 Using it on your own data
+## §13 Does brand last?
+
+Everything so far has assumed that a lift in awareness lasts. A campaign raises awareness, awareness stops rising when the campaign ends, but it does not fall back. Cain's model makes the same assumption: marketing enters the weekly growth of the brand metrics, so its effect builds into their level for good.
+
+Many brand teams would tell a different story. Run a quarter of brand activity, stop, and awareness slides back over the following months. Part of the lift may stay, but part drains away.
+
+The two stories look almost the same in the first weeks, which is all an MMM sees. They part company after a few months, which is exactly where five years of weekly data has least to say.
+
+The package can now let the data weigh in. With `fading=`, each channel gets two extra numbers: the share of a lift that drains away, and the half-life of that share. If the share is zero every lift lasts, as before. If it is one every lift fades.
+
+We tested both models on simulated brands where the truth is known: every lift lasts, or all of it fades with a half-life of six months, one year or two years. Five data sets each.
+
+When lifts fade, the model that assumes they last is confidently wrong. It overstated the five-year return two to six times, and its 90% interval missed the truth in every data set. Its first-year figure is much less affected.
+
+The model with `fading=` is honest but loose. Its interval held the truth in 16 of 20 data sets, but it is wide, and it leans towards the middle: about a quarter low when lifts truly last, too high when they fade fast. The share that fades comes out somewhere between 0 and 1 almost whatever the truth.
+
+The difference shows most when a brand goes dark. Switch brand spend off for a quarter, then back on. If lifts last, the growth lost while spend was off never comes back, and sales settle below their old path for good. If lifts fade, the fading part of past lifts drains while spend is off, and rebuilds when it returns: sales dip and then most of the loss comes back.
+
+The best evidence a brand can have is a period when a channel was actually off. On simulated brands where lifts fade, a year with brand spend switched off narrowed the uncertainty about the fading share by half and brought the five-year return from about twice the truth to about a third above it. Even then it did not settle the question.
+
+So treat whether brand lasts as the central assumption, and report it as one. Give the first-year return, which is robust, and the five-year return with `fading=` as a range. If your brand has ever gone dark, keep those weeks in the data.
+
+## §14 Using it on your own data
 
 Everything above runs on your own data with the same code. Three things matter more than any setting.
 
 - **Enough history.** Weekly data for four years or more. With three years the rank test finds the right number of leads under half the time.
-- **Every brand activity.** A channel left out lends its effect to the ones that move with it. On simulated monthly data, leaving out PR and sponsorship put brand spend 40% too high.
+- **Every brand activity.** A channel left out lends its effect to the ones that move with it.
 - **How the numbers were made.** How the tracker is built, when anything about it changed, and how budgets are set. A budget that follows sales breaks the drivers' independence.
 
-The package ships with a notebook built for this. You edit one cell with your column names, costs per unit and options. It then works through every check in this article in order and records each one as fine, worth a look or needing your decision. It ends with a response curve and the return per £ for each channel.
+The package ships with a notebook built for this. You edit one cell with your column names, costs per unit and options. It then works through every check in this article in order and records each one as fine, worth a look or needing your decision. It ends with a response curve, how much to spend on a campaign, the return per £ for each channel and what happens to sales if a channel goes dark for a quarter.
 
 There is also an agent skill: written instructions an AI assistant can follow to run the analysis with an analyst who has never seen a VECM. It explains each step in plain words and stops at the decisions only the analyst can make.
 
 Be clear about what the method cannot do.
 
 - **It shows what predicts what.** Causal claims need the assumptions written down: drivers set outside the brand and exclusions that hold.
-- **The long run assumes a lift in awareness lasts.** If your brand's awareness drifts back, the five-year figures are too high.
+- **Whether a lift lasts is the biggest assumption.** Without `fading=` it is assumed; with it the data weigh in, but five years rarely settle it. Report the five-year figures as a range.
 - **Big budget moves rest on the curve's shape.** Anything outside the spend your data has seen is an extrapolation.
 - **Base sales built from total sales blur the short run.** Trust the long-run return more than any half-life.
 
-## §14 Bringing it together
+## §15 Bringing it together
 
-Brand does last, and it can be measured. Tie the brand metrics and sales together as a system and a lasting lift in awareness carries through to sales. A short adstock lets it go, which is why an MMM undercounts brand.
+If brand lasts, it can be measured. Tie the brand metrics and sales together as a system and a lasting lift in awareness carries through to sales. A short adstock lets it go, which is why an MMM undercounts brand. How much of a lift lasts is the question the data find hardest, so the model should be allowed to answer it rather than assume it.
 
-In our simulated brand most of what a campaign earns arrives after the first year. The return on the next pound depends on how much is already being spent. Both answers come with intervals that hold up on short samples.
+In our simulated brand most of what a campaign earns arrives after the first year if lifts last, and less of it if they fade. The return on the next pound depends on how much is already being spent. The model's intervals for its parameters and returns hold up on short samples.
 
 None of this is new thinking. Peter Cain set out the approach for marketing in a series of papers. This package is an open Bayesian version of it. Read his work first: it shows the method on real brand data. Our thanks to him.
 

@@ -98,7 +98,7 @@ ax.set_title("Fits finding sales\nleading the brand", loc="left", fontsize=11.5,
 for side in ("top", "right", "left", "bottom"):
     ax.spines[side].set_visible(False)
 fig.suptitle(
-    "Every base gets the long-run return. None gets the adjustment speed right.",
+    "Every base gets the long-run return. Only the true base gets the adjustment speed.",
     x=0.01,
     ha="left",
     fontsize=13,

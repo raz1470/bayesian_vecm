@@ -1,7 +1,7 @@
-"""§0 chart: response curve for a 13-week brand campaign, revenue within 90 days and 5 years.
+"""§0 chart: response curve for a 13-week brand campaign, revenue within 1 year and 5 years.
 
-Full model (adstock, saturation, same-week link) on guide 08's default data,
-set up exactly as guide 08 does. No truth line: the chart illustrates the shape.
+Full model (adstock, saturation, same-week link) on the simulated brand guide 08
+used before fading was added; every lift lasts. No truth line: the chart illustrates the shape.
 """
 
 import warnings
