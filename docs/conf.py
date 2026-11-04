@@ -50,6 +50,7 @@ _GUIDES = {
     "06_base_sales_from_total_sales.ipynb": "base_sales_from_total_sales.ipynb",
     "07_base_sales_from_an_mmm.ipynb": "base_sales_from_an_mmm.ipynb",
     "08_response_curves_on_your_data.ipynb": "response_curves_on_your_data.ipynb",
+    "09_does_brand_last.ipynb": "does_brand_last.ipynb",
 }
 (DOCS / "guide").mkdir(exist_ok=True)
 for _source, _target in _GUIDES.items():

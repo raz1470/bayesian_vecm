@@ -23,6 +23,7 @@ The main use is **brand marketing**: brand metrics and sales move together over 
 | 🧩 [Putting it together](https://github.com/raz1470/bayesian_vecm/blob/main/notebooks/guides/05_putting_it_together.ipynb) | Adstock, saturation and a same-week link in one model |
 | 🧮 [Base sales from total sales](https://github.com/raz1470/bayesian_vecm/blob/main/notebooks/guides/06_base_sales_from_total_sales.ipynb) | Which base the VECM needs when you only have total sales |
 | 📊 [Base sales from an MMM](https://github.com/raz1470/bayesian_vecm/blob/main/notebooks/guides/07_base_sales_from_an_mmm.ipynb) | Why an MMM's trend fails as base sales. Needs `pymc-marketing` |
+| ⏳ [Does brand last?](https://github.com/raz1470/bayesian_vecm/blob/main/notebooks/guides/09_does_brand_last.ipynb) | `fading=`: lifts that fade, going dark, and what the data can settle |
 | 🤖 [Agent skill](https://github.com/raz1470/bayesian_vecm/blob/main/skills/README.md) | Instructions for an AI agent to run the analysis with an analyst |
 | 🧭 [Choosing the rank and the lags](https://github.com/raz1470/bayesian_vecm/blob/main/docs/choosing_rank_and_lags.md) | Which tests to use and how far to trust them |
 | 🔎 [The Granger pretest](https://github.com/raz1470/bayesian_vecm/blob/main/docs/granger_pretest.md) | What helps predict what, before fitting |
