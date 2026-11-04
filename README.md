@@ -30,7 +30,6 @@ This is hard econometrics. Unit roots, the cointegration rank, base sales, carry
 | 🧭 [Choosing the rank and the lags](https://github.com/raz1470/bayesian_vecm/blob/main/docs/choosing_rank_and_lags.md) | Which tests to use and how far to trust them |
 | 🔎 [The Granger pretest](https://github.com/raz1470/bayesian_vecm/blob/main/docs/granger_pretest.md) | What helps predict what, before fitting |
 | 🔧 [How it was built](https://raz1470.github.io/bayesian_vecm/how_it_was_built.html) | One notebook per feature, each checked on data with a known answer |
-| 🗺️ [Future work](https://github.com/raz1470/bayesian_vecm/blob/main/docs/future_work.md) | What was tested and left out of the first release |
 
 ## Installation
 
