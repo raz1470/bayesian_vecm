@@ -141,19 +141,11 @@ def select_coint_rank(
 
     Raises
     ------
-    ImportError
-        If ``statsmodels`` is not installed.
     ValueError
         If ``endog`` fails validation or ``det_order`` is not in
         ``{-1, 0, 1}``.
     """
-    try:
-        from statsmodels.tsa.vector_ar.vecm import select_coint_rank as _sm_select
-    except ImportError as exc:  # pragma: no cover
-        raise ImportError(
-            "statsmodels is required for select_coint_rank. "
-            "Install it with: uv add --dev statsmodels"
-        ) from exc
+    from statsmodels.tsa.vector_ar.vecm import select_coint_rank as _sm_select
 
     if det_order not in (-1, 0, 1):
         raise ValueError(f"det_order must be -1, 0, or 1; got {det_order!r}.")

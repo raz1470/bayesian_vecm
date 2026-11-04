@@ -1,4 +1,4 @@
-"""Tests for the v0 PyMC model graph.
+"""Tests for the PyMC model graph.
 
 These tests build models but do not run any sampler — sampling is exercised
 by the integration tests in ``test_model.py``. Keeping graph-construction
@@ -121,7 +121,7 @@ class TestBuildHappyPath:
     def test_beta_first_entry_pinned_to_one(self, design_k1):
         """The β-identification normalisation: β[0, 0] is fixed at 1.
 
-        This is the headline econometric property of the v0 graph — if the
+        This is the headline econometric property of the graph — if the
         normalisation ever breaks silently, every downstream β interpretation
         is wrong.
         """

@@ -10,7 +10,7 @@ Two layers of testing live here:
    actually samples (briefly) so we exercise the full validate → design
    → build → sample → store-state pipeline, plus the not-yet-fitted error
    paths on ``idata`` and ``summary``. ``sample_posterior_predictive``
-   stays a stub — forecasting is its own follow-up slice.
+   is tested separately.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def test_custom_construction_round_trips_attributes() -> None:
 
 @pytest.mark.parametrize("code", sorted(_VALID_DETERMINISTIC))
 def test_every_valid_deterministic_code_is_accepted(code: str) -> None:
-    """Each v0 deterministic code constructs without error."""
+    """Each supported deterministic code constructs without error."""
     model = BayesianVECM(deterministic=code)
     assert model.deterministic == code
 
@@ -116,8 +116,8 @@ def test_unknown_deterministic_code_rejected(bad_code: str) -> None:
 
 
 def test_deterministic_error_message_mentions_compound_codes() -> None:
-    """The error should signpost the v0.x follow-up rather than just listing codes."""
-    with pytest.raises(ValueError, match="follow-up"):
+    """The error should say compound codes are not supported, not just list codes."""
+    with pytest.raises(ValueError, match="not supported"):
         BayesianVECM(deterministic="cili")
 
 

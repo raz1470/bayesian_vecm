@@ -30,8 +30,8 @@ The smallest :math:`t` for which all three are well defined is
 
 Deterministic terms (constants and linear trends, either inside or outside
 the cointegration relation) are supported via the ``deterministic`` argument.
-Single-character codes only in v0; compound cases — Johansen cases 4 and 5,
-e.g. ``"colo"``, ``"cili"`` — are a planned follow-up.
+Only single codes are supported; compound cases (Johansen cases 4 and 5,
+e.g. ``"colo"``, ``"cili"``) are rejected.
 """
 
 from __future__ import annotations
@@ -112,8 +112,8 @@ def cointegration_design(
         ``[1, 2, ..., T_eff]`` (the origin is arbitrary — only the slope
         coefficient is invariant under shifts — so we choose the convention
         that keeps the column strictly positive). Compound cases such as
-        ``"colo"`` and ``"cili"`` (Johansen cases 4 and 5) are a planned
-        follow-up and are rejected in v0.
+        ``"colo"`` and ``"cili"`` (Johansen cases 4 and 5) are not
+        supported and are rejected.
     exog
         Optional contemporaneous exogenous regressors, shape ``(T, m)``.
         Accepts anything with a ``.to_numpy()`` method or a plain NumPy array.
@@ -154,16 +154,15 @@ def cointegration_design(
 
     if deterministic not in VALID_DETERMINISTIC:
         # Pick a message tailored to the failure mode so users know whether
-        # they've mistyped a code or hit the (intentional) v0 gap on compound
-        # cases like "colo" / "cili" — Johansen cases 4 and 5 — which are a
-        # planned follow-up.
+        # they've mistyped a code or asked for a compound case like "colo" /
+        # "cili" (Johansen cases 4 and 5), which is not supported.
         _valid_sorted = sorted(VALID_DETERMINISTIC)
         if _looks_like_compound_code(deterministic):
             raise ValueError(
                 f"deterministic={deterministic!r} looks like a compound code. "
                 "Compound deterministic cases (Johansen cases 4 and 5, e.g. "
-                "'colo', 'cili') are a planned follow-up; v0 supports only "
-                f"single codes {_valid_sorted}."
+                "'colo', 'cili') are not supported. Use one of the single "
+                f"codes {_valid_sorted}."
             )
         raise ValueError(
             f"deterministic must be one of {_valid_sorted}; got deterministic={deterministic!r}."
