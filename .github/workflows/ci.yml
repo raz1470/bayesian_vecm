@@ -10,6 +10,8 @@
 # | sampling tests | when code changes, Python 3.12                 | 3.12 + 3.13  |
 # | clean install  | when the package, README or guide 08 changes   | always       |
 #
+# The repository ruleset requires only "CI passed", which sums up the rest.
+#
 # "Code changes" means src/, tests/, pyproject.toml, uv.lock or this file. A pull
 # request that only touches docs, notebooks or the article runs lint alone (plus
 # the docs build in docs.yml). Sampling tests are the ones that fit a PyMC model;
@@ -156,3 +158,21 @@ jobs:
           uv pip install --python /tmp/clean/bin/python nbconvert ipykernel
           /tmp/clean/bin/python -m ipykernel install --sys-prefix
           /tmp/clean/bin/python tools/ci/guide08_on_csv.py /tmp/guide08
+
+  # One check for the repository ruleset to require. Skipped matrix jobs report
+  # under their unexpanded names, so requiring them by name blocks docs-only pull
+  # requests; this job always runs and fails only if a job it needs failed or
+  # was cancelled. Skipped jobs (no code changes) count as passing.
+  ci-passed:
+    name: CI passed
+    needs: [lint, fast-tests, sampling-tests, clean-install]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the jobs it depends on
+        run: |
+          echo '${{ toJSON(needs) }}'
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "A required job failed or was cancelled."
+            exit 1
+          fi
