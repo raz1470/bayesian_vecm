@@ -429,6 +429,7 @@ def simulate_brand_data(
     exog_fade: dict[str, float] | None = None,
     exog_fade_share: float = 1.0,
     exog_dark: dict[str, tuple[int, int]] | None = None,
+    exog_plan: dict[str, np.ndarray] | None = None,
 ) -> BrandData:
     """Simulate weekly brand data from a VECM with known parameters.
 
@@ -539,6 +540,15 @@ def simulate_brand_data(
         week 130. A saturated channel's raw spend is set to 0. A linear
         channel is a deviation from an average of one unit, so off is a
         deviation of ``-1``. ``None`` (default) keeps every channel on.
+    exog_plan
+        Weekly multiplier of a channel's spend, as ``{name: array}`` with one
+        non-negative value per week. For example a value of 2 for 26 weeks a
+        year and 0 for the rest runs the same budget in pulses. Applied after
+        ``exog_dark``. A saturated channel's raw spend is multiplied; a linear
+        channel's level ``1 + x`` is multiplied, so 0 gives ``-1`` as in
+        ``exog_dark``. A saturated channel keeps the curve it would have had
+        without the plan: its scale is the in-sample maximum before the plan.
+        ``None`` (default) leaves spend as drawn.
 
     Returns
     -------
@@ -635,6 +645,11 @@ def simulate_brand_data(
         off = 0.0 if sat[j] else -1.0
         x[first : first + length, j] = off
         x_reg[first : first + length, j] = off
+    spend_max = x.max(axis=0)  # saturation scale, before any plan
+    for name, mult in _spend_plans(exog_plan, n_obs, unit_root).items():
+        j = EXOG_NAMES.index(name)
+        x[:, j] = x[:, j] * mult if sat[j] else (1.0 + x[:, j]) * mult - 1.0
+        x_reg[:, j] = x[:, j]
     if decay.any():
         # Adstock state a_t = (1 - w) x_t + w a_{t-1}, started at x_0.
         stock = x_reg.copy()
@@ -647,7 +662,7 @@ def simulate_brand_data(
     b_eff = b_now.copy()
     if sat.any():
         # f(a / s) - mean, with b_s set so the slope per unit at spend 1 is b.
-        scale[sat] = x[:, sat].max(axis=0)
+        scale[sat] = spend_max[sat]
         f = logistic_saturation(x_reg[:, sat] / scale[sat], lam[sat])
         f_mean[sat] = f.mean(axis=0)
         x_reg = x_reg.copy()
@@ -737,6 +752,23 @@ def _dark_spells(
                 f"exog_dark spell for {name!r} must lie inside the {n_obs} weeks; got {spell}"
             )
         out[name] = (first, length)
+    return out
+
+
+def _spend_plans(
+    plan: dict[str, np.ndarray] | None, n_obs: int, unit_root: tuple[str, ...]
+) -> dict[str, np.ndarray]:
+    """Validate ``exog_plan``: channels only, one non-negative value a week."""
+    out: dict[str, np.ndarray] = {}
+    for name, mult in (plan or {}).items():
+        if name not in EXOG_NAMES[:3] or name in unit_root:
+            raise ValueError(f"exog_plan can change a stationary channel only; got {name!r}")
+        m = np.asarray(mult, dtype=np.float64)
+        if m.shape != (n_obs,) or not np.isfinite(m).all() or (m < 0).any():
+            raise ValueError(
+                f"exog_plan for {name!r} must be {n_obs} non-negative numbers; got shape {m.shape}"
+            )
+        out[name] = m
     return out
 
 
