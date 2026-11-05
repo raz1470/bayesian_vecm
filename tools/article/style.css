@@ -145,3 +145,14 @@ footer p { margin: 0 auto; }
   .hdr-in { padding-block: 2.5rem 2rem; }
 }
 @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+
+.tbl { margin: 1.5rem 0; overflow-x: auto; }
+.tbl table { border-collapse: collapse; width: 100%; font-size: 0.92rem; line-height: 1.5; }
+.tbl th { text-align: left; font-weight: 700; border-bottom: 2px solid var(--ink); padding: 0.45rem 0.75rem 0.45rem 0; }
+.tbl td { vertical-align: top; border-bottom: 1px solid var(--rule); padding: 0.5rem 0.75rem 0.5rem 0; }
+.eq {
+  margin: 1.5rem 0; padding: 1rem 1.2rem; text-align: center;
+  font-family: "Cambria Math", "STIX Two Math", Georgia, serif; font-size: 1.2rem;
+  background: var(--wash); border: 1px solid var(--rule); border-radius: 8px; overflow-x: auto;
+}
+.note { font-size: 0.9rem; color: #374151; background: var(--wash); border-left: 3px solid var(--rule); padding: 0.7rem 1rem; }
