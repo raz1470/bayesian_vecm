@@ -20,8 +20,10 @@ FIGS = {
             "fig00_response_curve.png",
             "Response curve of a 13-week brand campaign, revenue within one year and within five "
             "years",
-            "Extra revenue from a 13-week brand campaign at each spend level, against no campaign. "
-            "Simulated brand, full model, 89% intervals.",
+            "Extra revenue from a 13-week brand campaign at each spend level, against no campaign, "
+            "if every lift lasts. Simulated brand, full model, 89% intervals. Against no campaign "
+            "at all the model's level runs high (zero spend is below any week in the data); the "
+            "ratio between the two lines matches the truth.",
         )
     ],
     "1": [
@@ -202,8 +204,23 @@ FIGS = {
     ],
     "13": [
         (
+            "When lifts fade, the model that assumes",
+            "fig13_fade_check.png",
+            "Five-year return as a multiple of the truth for four truths, with and without fading",
+            "Brand spend, one more unit for one week. Dots: median across five simulated brands; "
+            "bars: median 90% interval; labels: share of brands whose interval held the truth.",
+        ),
+        (
+            "The difference shows most",
+            "fig13_going_dark.png",
+            "Weekly sales after brand spend is off for 13 weeks, both models and the truth",
+            "A simulated brand where every lift fades with a half-life of one year. 90% intervals.",
+        ),
+    ],
+    "14": [
+        (
             "The package ships with a notebook",
-            "fig13_check_table.png",
+            "fig14_check_table.png",
             "The table of checks the plug-in notebook prints",
             None,
         )
@@ -223,8 +240,9 @@ NAV = {
     "10": "Same-week links",
     "11": "Why Bayesian",
     "12": "Base sales",
-    "13": "Your data",
-    "14": "Bringing it together",
+    "13": "Does brand last?",
+    "14": "Your data",
+    "15": "Bringing it together",
 }
 
 
@@ -268,7 +286,7 @@ for i in range(1, len(parts) - 1, 3):
     sections[parts[i]] = (parts[i + 1], parts[i + 2])
 
 body = []
-for num in [str(n) for n in range(15)]:
+for num in [str(n) for n in range(16)]:
     title, text = sections[num]
     text = text.split("\n## ")[0]
     blocks = [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip()]
@@ -304,7 +322,7 @@ for num in [str(n) for n in range(15)]:
             f"<h2>{inline(title)}</h2>" + "\n".join(out) + "</section>"
         )
 
-nav = "".join(f'<a href="#s{n}">{n} · {html.escape(NAV[str(n)])}</a>' for n in range(1, 15))
+nav = "".join(f'<a href="#s{n}">{n} · {html.escape(NAV[str(n)])}</a>' for n in range(1, 16))
 css = (HERE / "style.css").read_text()
 page = f"""<!doctype html>
 <html lang="en">

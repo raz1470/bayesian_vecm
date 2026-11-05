@@ -142,7 +142,7 @@ for ax, (ch, cost, lab, unit, col) in zip(axes, CH, strict=True):
 axes[0].plot([], [], color=INK, ls="--", label="Truth")
 axes[0].legend(frameon=False, loc="upper left")
 fig.suptitle(
-    "Every channel keeps paying for years",
+    "If every lift lasts, each channel keeps paying for years",
     x=0.01,
     ha="left",
     fontsize=13,

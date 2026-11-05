@@ -17,7 +17,7 @@ FIGS = {
     "fig06_evidence_table": ("#f", 700),
     "fig09_where_they_sit": ("#f1", 960),
     "fig09_impact_table": ("#f2", 760),
-    "fig13_check_table": ("#f", 960),
+    "fig14_check_table": ("#f", 960),
 }
 
 with sync_playwright() as p:
