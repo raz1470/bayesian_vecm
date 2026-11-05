@@ -6,7 +6,7 @@ Every number comes from simulated data with a known answer.
 
 | File | What it does |
 |---|---|
-| `article.md` | The text, one `## §N` heading per section |
+| `article.md` | The text, one `## §N` heading per section, figures placed with `[[fig ...]]` |
 | `build.py` | Assembles the page from the text, `style.css` and the figures |
 | `style.css` | Page styles |
 | `figures/fig*.py` | One script per chart, written to `docs/_extra/walkthrough/` |
@@ -20,7 +20,4 @@ uv run python tools/article/figures/render_html.py
 uv run python tools/article/build.py
 ```
 
-`figures/fig12_mmm_handover.py` fits a PyMC-Marketing MMM. It needs
-`pymc-marketing==1.3.0` in a separate environment, so skip it in the loop above
-unless that is installed. The other chart scripts refit the package's models
-with fixed seeds. They also read the validation results in `tools/*_results.csv`.
+The chart scripts that fit models (`fig07_shocks.py`, `fig08_response_curves.py`) use fixed seeds and take a few minutes each.

@@ -10,14 +10,6 @@ OUT.mkdir(parents=True, exist_ok=True)
 # file stem -> (element to capture, viewport width)
 FIGS = {
     "fig02_system_diagram": ("figure", 880),
-    "fig03_stationarity_table": ("#f", 680),
-    "fig05_equation": ("#f1", 880),
-    "fig05_three_equations": ("#f3", 960),
-    "fig05_terms_table": ("#f2", 820),
-    "fig06_evidence_table": ("#f", 700),
-    "fig09_where_they_sit": ("#f1", 960),
-    "fig09_impact_table": ("#f2", 760),
-    "fig14_check_table": ("#f", 960),
 }
 
 with sync_playwright() as p:

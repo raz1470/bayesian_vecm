@@ -1,4 +1,6 @@
-"""§4 charts: sales and 1.27 x consideration with their gap; Johansen trace test."""
+"""§5 chart: base sales and consideration trend together; the gap between them does not.
+
+Also prints the Johansen trace test the text quotes (rank 2)."""
 
 from pathlib import Path
 
@@ -59,34 +61,3 @@ fig.savefig(str(OUT / "fig04_cointegration.png"), bbox_inches="tight")
 res = select_coint_rank(e, k_ar_diff=1, det_order=0)
 stats, crit = np.asarray(res.test_stats), np.asarray(res.crit_vals)
 print("trace", stats.round(1), "crit", crit.round(1), "rank", res.rank)
-fig, ax = plt.subplots(figsize=(9, 4.4), dpi=150)
-labels = ["None", "At most one", "At most two"]
-x = np.arange(3)
-colours = [BLUE if st > cv else "#b8c4d6" for st, cv in zip(stats, crit, strict=True)]
-ax.bar(x, stats, width=0.55, color=colours, zorder=2)
-for i, (st, cv) in enumerate(zip(stats, crit, strict=True)):
-    ax.hlines(cv, i - 0.38, i + 0.38, color=INK, lw=2, zorder=3)
-    ax.text(i + 0.4, cv, f"critical value {cv:.1f}", va="center", fontsize=9.5, color=INK)
-    ax.text(
-        i, max(st, cv) + 1.5, f"{st:.1f}", ha="center", fontsize=10.5, color=INK, fontweight="bold"
-    )
-ax.set_xticks(x)
-ax.set_xticklabels([f"{t} lead{'s' if t == 'None' else ''}" for t in labels])
-ax.set_xticklabels(["None", "At most one", "At most two"])
-ax.set_xlabel("Number of leads tested")
-ax.set_ylabel("Trace statistic")
-ax.set_xlim(-0.6, 3.0)
-for side in ("top", "right"):
-    ax.spines[side].set_visible(False)
-ax.grid(axis="y", color="#e5e7eb", lw=0.8)
-ax.set_axisbelow(True)
-ax.set_title(
-    "Two leads: the test rejects none and one, then stops",
-    loc="left",
-    fontsize=13,
-    fontweight="bold",
-    color=INK,
-    pad=12,
-)
-fig.tight_layout()
-fig.savefig(str(OUT / "fig04_rank_test.png"), bbox_inches="tight")

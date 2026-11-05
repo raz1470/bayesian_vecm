@@ -64,7 +64,7 @@ for ax in (left, right):
     for side in ("top", "right", "left"):
         ax.spines[side].set_visible(False)
 fig.suptitle(
-    "Regression calls them related (t = 15.9, R² = 0.50). They are not.",
+    "Regression calls them related. They are not.",
     x=0.01,
     ha="left",
     fontsize=13,
