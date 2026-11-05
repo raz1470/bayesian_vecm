@@ -319,3 +319,51 @@ class TestDarkSpells:
     def test_validation(self, dark):
         with pytest.raises(ValueError, match="exog_dark"):
             simulate_brand_data(exog_dark=dark)
+
+
+def _pulses(n_obs=260, on=13, gap=13):
+    """2x spend for ``on`` weeks, then nothing for ``gap`` weeks, repeated."""
+    week = np.arange(n_obs) % (on + gap)
+    return np.where(week < on, 2.0, 0.0)
+
+
+class TestSpendPlan:
+    def test_linear_channel_level_is_multiplied(self):
+        a = simulate_brand_data(seed=1)
+        b = simulate_brand_data(seed=1, exog_plan={"brand_spend": _pulses()})
+        x, y = a.exog["brand_spend"].to_numpy(), b.exog["brand_spend"].to_numpy()
+        np.testing.assert_allclose(y, (1.0 + x) * _pulses() - 1.0)
+
+    def test_saturated_channel_keeps_its_curve(self):
+        kw = {"seed": 1, "exog_saturation": {"brand_spend": 5.0}}
+        a = simulate_brand_data(**kw)
+        b = simulate_brand_data(**kw, exog_plan={"brand_spend": _pulses()})
+        j = 0
+        assert b.truth.spend_scale[j] == a.truth.spend_scale[j]
+        np.testing.assert_allclose(
+            b.exog["brand_spend"].to_numpy(), a.exog["brand_spend"].to_numpy() * _pulses()
+        )
+
+    def test_ones_change_nothing(self):
+        a = simulate_brand_data(seed=1)
+        b = simulate_brand_data(seed=1, exog_plan={"brand_spend": np.ones(260)})
+        np.testing.assert_allclose(a.endog.values, b.endog.values)
+
+    def test_zeros_match_a_dark_spell(self):
+        plan = np.ones(260)
+        plan[100:126] = 0.0
+        a = simulate_brand_data(seed=1, exog_dark={"brand_spend": (100, 26)})
+        b = simulate_brand_data(seed=1, exog_plan={"brand_spend": plan})
+        np.testing.assert_allclose(a.endog.values, b.endog.values)
+
+    @pytest.mark.parametrize(
+        "plan",
+        [
+            {"interest_rate": np.ones(260)},
+            {"brand_spend": np.ones(100)},
+            {"brand_spend": -np.ones(260)},
+        ],
+    )
+    def test_validation(self, plan):
+        with pytest.raises(ValueError, match="exog_plan"):
+            simulate_brand_data(exog_plan=plan)
