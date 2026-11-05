@@ -17,7 +17,6 @@ Start with the walkthrough for the idea and the results. To get response curves 
 | [Agent skill](https://github.com/raz1470/bayesian_vecm/tree/main/skills) | Markdown instructions for an AI agent to guide an analyst through the whole analysis, from data to write-up |
 | [Choosing the rank and the lags](choosing_rank_and_lags.md) | Which tests to use and how often they find the truth on simulated data |
 | [The Granger pretest](granger_pretest.md) | What helps predict what before fitting: drivers, delays, links and feedback |
-| [Future work](future_work.md) | What was tested and left out of the first release, and what to check first |
 
 ```{toctree}
 :hidden:
@@ -33,5 +32,4 @@ guide/base_sales_from_an_mmm
 guide/does_brand_last
 choosing_rank_and_lags
 granger_pretest
-future_work
 ```

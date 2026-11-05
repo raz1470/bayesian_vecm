@@ -9,6 +9,8 @@ The main use is **brand marketing**: brand metrics and sales move together over 
 - Cain, P. M. (2022). [Modelling short- and long-term marketing effects in the consumer purchase journey](https://doi.org/10.1016/j.ijresmar.2021.06.006). *International Journal of Research in Marketing*, 39(1), 96-116. Brand metrics tied to base sales by cointegration, and same-week links between them estimated by instruments.
 - Cain, P. M. (2025). [Long-term advertising effects: The Adstock illusion](https://ideas.repec.org/a/aza/ama000/y2025v11i1p23-42.html). *Applied Marketing Analytics*, 11(1), 23-42. Why a long adstock cannot stand in for brand building.
 
+This is hard econometrics. Unit roots, the cointegration rank, base sales, carryover, saturation, same-week links and whether brand lifts last can each go quietly wrong. The [agent skill](https://github.com/raz1470/bayesian_vecm/blob/main/skills/README.md) is set up to help: it walks an analyst who has never used a VECM through every step, in plain words, and stops at the decisions only they can make.
+
 ## Resources
 
 | | |
@@ -28,7 +30,6 @@ The main use is **brand marketing**: brand metrics and sales move together over 
 | 🧭 [Choosing the rank and the lags](https://github.com/raz1470/bayesian_vecm/blob/main/docs/choosing_rank_and_lags.md) | Which tests to use and how far to trust them |
 | 🔎 [The Granger pretest](https://github.com/raz1470/bayesian_vecm/blob/main/docs/granger_pretest.md) | What helps predict what, before fitting |
 | 🔧 [How it was built](https://raz1470.github.io/bayesian_vecm/how_it_was_built.html) | One notebook per feature, each checked on data with a known answer |
-| 🗺️ [Future work](https://github.com/raz1470/bayesian_vecm/blob/main/docs/future_work.md) | What was tested and left out of the first release |
 
 ## Installation
 
