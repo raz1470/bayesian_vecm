@@ -20,4 +20,4 @@ uv run python tools/article/figures/render_html.py
 uv run python tools/article/build.py
 ```
 
-The chart scripts that fit models (`fig07_shocks.py`, `fig08_response_curves.py`) use fixed seeds and take a few minutes each.
+The chart scripts that fit models (`fig07_shocks.py`, `fig08_response_curves.py`, `fig08a_lasting_curve.py`) use fixed seeds and take a few minutes each.

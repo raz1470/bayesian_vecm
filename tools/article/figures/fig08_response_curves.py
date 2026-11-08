@@ -161,7 +161,12 @@ axes[0].legend(frameon=False, loc="upper left", fontsize=10)
 axes[0].set_ylabel("Extra sales (1 = first year at current spend, if lifts last)")
 axes[1].set_xlabel("Weekly brand spend during the campaign")
 fig.suptitle(
-    "What a 13-week campaign earns", x=0.01, ha="left", fontsize=13, fontweight="bold", color=INK
+    "Over five years the drain model pulls all three brands towards the middle",
+    x=0.01,
+    ha="left",
+    fontsize=13,
+    fontweight="bold",
+    color=INK,
 )
 fig.tight_layout()
 fig.savefig(str(OUT / "fig08_response_curves.png"), bbox_inches="tight")

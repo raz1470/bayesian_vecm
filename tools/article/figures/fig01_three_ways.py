@@ -54,7 +54,7 @@ for ax, (title, sub, y, colour) in zip(axes, panels, strict=True):
 axes[0].text(START + LEN + 8, 0.2 * scale, "13 weeks of spend", color=MUTED, fontsize=9.5)
 axes[0].set_ylabel("Sales above where they\nwould have been", color=INK)
 fig.suptitle(
-    "Three ways a campaign can play out",
+    "The same campaign can fade in weeks, last for good, or drain away over years",
     x=0.01,
     ha="left",
     fontsize=13,
