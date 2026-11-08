@@ -156,3 +156,16 @@ footer p { margin: 0 auto; }
   background: var(--wash); border: 1px solid var(--rule); border-radius: 8px; overflow-x: auto;
 }
 .note { font-size: 0.9rem; color: #374151; background: var(--wash); border-left: 3px solid var(--rule); padding: 0.7rem 1rem; }
+
+.part { margin-top: 4rem; padding-top: 1.5rem; border-top: 3px solid var(--ink); }
+.part + section { margin-top: 1.5rem; }
+.part-n {
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.2rem;
+}
+.part-t { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; margin: 0; }
+.aims { margin: 0 0 1.4rem; padding-left: 1.4rem; max-width: 64ch; }
+.aims li { padding: 0.3rem 0 0.3rem 0.2rem; font-size: 1.03rem; line-height: 1.65; }

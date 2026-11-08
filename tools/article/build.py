@@ -6,7 +6,8 @@ article.md uses a small subset of Markdown:
 
 * ``# Title`` and an italic line under it for the subtitle.
 * ``## §N Title`` starts a section; ``### Heading`` a sub-heading.
-* Paragraphs, ``- `` lists, ``| a | b |`` tables, ``**bold**``, ``*italic*``,
+* ``PARTS`` below places a part banner before the section that opens each part.
+* Paragraphs, ``- `` and ``1. `` lists, ``| a | b |`` tables, ``**bold**``, ``*italic*``,
   ``[text](url)`` links and ``<sub>`` / ``<sup>``.
 * A block that starts with ``<`` is passed through as HTML.
 * ``[[fig FILE | ALT | CAPTION]]`` places a figure.
@@ -32,9 +33,16 @@ NAV = {
     "6": "The model",
     "7": "Leaders",
     "8": "Response curves",
-    "9": "What can go wrong",
-    "10": "Open questions",
-    "11": "Run it yourself",
+    "9": "Fading lifts",
+    "10": "Estimating it",
+    "11": "Bringing it together",
+}
+
+# Section that opens each part -> (part label, part title)
+PARTS = {
+    "2": ("Part 1", "Cain's method"),
+    "9": ("Part 2", "Letting lifts fade"),
+    "10": ("Part 3", "Can we estimate it?"),
 }
 
 
@@ -91,6 +99,9 @@ def block_html(b: str, in_refs: bool) -> str:
         items = [inline(x[2:]) for x in b.split("\n") if x.startswith("- ")]
         cls = "refs" if in_refs else "probs"
         return f'<ul class="{cls}">' + "".join(f"<li>{x}</li>" for x in items) + "</ul>"
+    if re.match(r"1\. ", b):
+        items = [inline(re.sub(r"^\d+\. ", "", x)) for x in b.split("\n") if re.match(r"\d+\. ", x)]
+        return '<ol class="aims">' + "".join(f"<li>{x}</li>" for x in items) + "</ol>"
     return f"<p>{inline(' '.join(b.split()))}</p>"
 
 
@@ -106,6 +117,12 @@ for i in range(0, len(rest), 3):
     for b in blocks:
         in_refs = in_refs or b.startswith("### References")
         out.append(block_html(b, in_refs))
+    if num in PARTS:
+        label, ptitle = PARTS[num]
+        body.append(
+            f'<div class="part"><p class="part-n">{label}</p>'
+            f'<p class="part-t">{html.escape(ptitle)}</p></div>'
+        )
     body.append(
         f'<section id="s{num}"><p class="s-label">§{num} · {html.escape(NAV[num])}</p>'
         f"<h2>{inline(name)}</h2>" + "\n".join(out) + "</section>"
