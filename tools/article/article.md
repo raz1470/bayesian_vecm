@@ -3,15 +3,15 @@
 
 # How Long Does Brand Last?
 
-*Why a media mix model undercounts brand, and how cointegration measures it*
+*Why a marketing mix model undercounts brand, and how cointegration measures it*
 
 ## 1. Introduction
 
-Brand teams and media mix models disagree about time. Brand teams say a campaign builds the brand for years. A media mix model (MMM) usually says its effect is gone within a couple of months.
+Brand teams and marketing mix models disagree about time. Brand teams say a campaign builds the brand for years. A marketing mix model (MMM) usually says its effect is gone within a couple of months.
 
 Both can be right. An MMM measures the short-term lift in sales that follows a burst of spend. What it struggles to see is the slow climb: more people who know the brand, more who would consider it, and a higher level of sales that stays.
 
-Les Binet and Peter Field made this case with the IPA databank in [*The Long and the Short of It*](https://ipa.co.uk/knowledge/effectiveness-research-analysis/les-binet-peter-field) (2013). Measuring the effect for one brand from its own data is harder. Peter Cain has shown how. In a [2022 paper](https://doi.org/10.1016/j.ijresmar.2021.06.006) he ties brand metrics to base sales with cointegration, so a lasting lift in awareness carries through to sales.
+Les Binet and Peter Field made this case with the IPA databank in [*The Long and the Short of It*](https://ipa.co.uk/knowledge/effectiveness-research-analysis/les-binet-peter-field) (2013). Measuring the effect for one brand from its own data is harder. Peter Cain has shown how. In [*Modelling short- and long-term marketing effects in the consumer purchase journey*](https://doi.org/10.1016/j.ijresmar.2021.06.006) (2022) he ties brand metrics to base sales with cointegration, so a lasting lift in awareness carries through to sales.
 
 The chart shows three ways a campaign can play out:
 
@@ -237,7 +237,7 @@ Real data won't tell you when something is off. So for each common problem we ch
 
 ## 10. The first year is firm. The fifth is a range.
 
-A media mix model sees the short-term lift that follows a campaign. It misses the slow climb in base sales that comes when a brand grows. This article set out to measure that climb, with three aims.
+A marketing mix model sees the short-term lift that follows a campaign. It misses the slow climb in base sales that comes when a brand grows. This article set out to measure that climb, with three aims.
 
 **Explain the VECM.** Brand metrics and sales trend, and cointegration ties them together so a lasting lift in awareness carries down to sales. On the brand we built, the method found the two ties, picked out awareness as the leader and recovered the response curve. At current spend a campaign earned 0.8 within a year and 5.2 within five on the model, against a true 1.0 and 6.2. Both intervals held the truth.
 
@@ -260,7 +260,7 @@ The method answers a lot, but the hardest question is still the one in the title
 - **Ties that change.** A pandemic, a change to the tracker or a repositioning can move the long-run links. Allowing the ties to shift at known dates, or slowly over time, would make the model safer on long histories.
 - **Competitors and the category.** Our brand moves on its own. Real brands share a market, and part of a lasting lift may come at a rival's expense or from growth in the category.
 
-The method is Peter Cain's, and the package is an open Bayesian version of it. Read [his 2022 paper](https://doi.org/10.1016/j.ijresmar.2021.06.006) for the method on real brand data. My thanks to him.
+The method is Peter Cain's, and the package is an open Bayesian version of it. Read [*Modelling short- and long-term marketing effects in the consumer purchase journey*](https://doi.org/10.1016/j.ijresmar.2021.06.006) for the method on real brand data.
 
 ### References
 

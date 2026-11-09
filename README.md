@@ -4,7 +4,7 @@ Bayesian Vector Error Correction Models (VECM) in Python, built on [PyMC](https:
 
 A VECM captures the long-run relationships between trending series and the short-run dynamics that pull them back when they drift apart. This package fits it in full Bayes, so every parameter, impulse response and return has an interval.
 
-The main use is **brand marketing**: brand metrics and sales move together over years, so spend that lifts awareness can lift sales for good. A media mix model whose effects fade within weeks misses that tail. The method follows Peter Cain's work:
+The main use is **brand marketing**: brand metrics and sales move together over years, so spend that lifts awareness can lift sales for good. A marketing mix model whose effects fade within weeks misses that tail. The method follows Peter Cain's work:
 
 - Cain, P. M. (2022). [Modelling short- and long-term marketing effects in the consumer purchase journey](https://doi.org/10.1016/j.ijresmar.2021.06.006). *International Journal of Research in Marketing*, 39(1), 96-116. Brand metrics tied to base sales by cointegration, and same-week links between them estimated by instruments.
 - Cain, P. M. (2025). [Long-term advertising effects: The Adstock illusion](https://ideas.repec.org/a/aza/ama000/y2025v11i1p23-42.html). *Applied Marketing Analytics*, 11(1), 23-42. Why a long adstock cannot stand in for brand building.
