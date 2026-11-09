@@ -1,25 +1,22 @@
-"""§8 chart: what a 13-week brand campaign earns, if lifts last, half fade or all fade.
+"""Section 8 chart: what a 13-week brand campaign earns, if lifts last, half fade or all fade.
 
 Three versions of the simulated brand, the same apart from the fade: every lift
 lasts; half of each lift fades; all of it fades (half-life 52 weeks for the
 fading share). Brand spend has carryover (0.5) and saturation (5). Each is
-fitted with the drain on the three channels, as §9 recommends. Curves are
+fitted with the drain on the three channels, as section 9 recommends. Curves are
 extra sales against no campaign, summed over 1 and 5 years, indexed so the true
 1-year return of a campaign at current spend, if lifts last, is 1.
 """
 
 import warnings
-from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
+from _spec import r as r_
+from _spec import save
 
 from bayesian_vecm import BayesianVECM, simulate_brand_data
 from bayesian_vecm._saturation import logistic_saturation
 
-ROOT = Path(__file__).resolve().parents[3]
-OUT = ROOT / "docs" / "_extra" / "walkthrough"
-OUT.mkdir(parents=True, exist_ok=True)
 warnings.filterwarnings("ignore")
 
 CH = ["brand_spend", "pr_reach", "sponsorship_reach"]
@@ -120,6 +117,13 @@ def curves(name, kw):
 
 
 res = {name: curves(name, kw) for name, kw in VERSIONS.items()}
+mean = float(
+    simulate_brand_data(
+        seed=SEED, exog_adstock={"brand_spend": 0.5}, exog_saturation={"brand_spend": 5.0}
+    )
+    .exog["brand_spend"]
+    .mean()
+)
 i1 = int(np.argmin(np.abs(MULT - 1)))
 norm = res["If lifts last"]["1 year"][1][i1]
 for name, r in res.items():
@@ -127,47 +131,74 @@ for name, r in res.items():
         med = np.median(f, axis=1)
         print(name, label, "model", np.round(med[i1] / norm, 2), "truth", round(t[i1] / norm, 2))
 
-LIGHT, DARK, INK, MUTED = "#7fb0ea", "#1f5fb4", "#1f2328", "#6b7280"
-plt.rcParams.update(
-    {
-        "font.family": "DejaVu Sans",
-        "font.size": 11,
-        "axes.edgecolor": "#c9ced6",
-        "axes.labelcolor": INK,
-        "xtick.color": MUTED,
-        "ytick.color": MUTED,
-    }
-)
-fig, axes = plt.subplots(1, 3, figsize=(13, 4.6), dpi=150, sharey=True)
-for ax, (name, r) in zip(axes, res.items(), strict=True):
-    for label, colour in (("5 years", DARK), ("1 year", LIGHT)):
+X = MULT * mean * 1000.0  # £ a week; brand spend is in £1,000s
+CURRENT = mean * 1000.0
+
+
+def curve_layers(r):
+    layers = [
+        {"type": "vline", "x": CURRENT, "label": "current"},
+    ]
+    for label, colour in (("5 years", "blue"), ("1 year", "orange")):
         f, t = r[label]
         lo, med, hi = np.percentile(f / norm, [5.5, 50, 94.5], axis=1)
-        ax.fill_between(MULT, lo, hi, color=colour, alpha=0.18, lw=0)
-        ax.plot(MULT, med, color=colour, lw=2.2, label=f"Earned within {label}")
-        ax.plot(MULT, t / norm, color=INK, lw=1.0, ls="--")
-    ax.axvline(1.0, color=MUTED, lw=0.8, ls=":")
-    ax.set_title(name, loc="left", fontsize=11.5, color=INK)
-    ax.set_xticks([0, 0.5, 1.0, 1.5])
-    ax.set_xticklabels(["none", "0.5×", "current", "1.5×"])  # noqa: RUF001
-    ax.set_xlim(0, 1.5)
-    ax.set_ylim(0, None)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-    ax.grid(axis="y", color="#e5e7eb", lw=0.8)
-    ax.set_axisbelow(True)
-axes[0].plot([], [], color=INK, lw=1.0, ls="--", label="Truth")
-axes[0].legend(frameon=False, loc="upper left", fontsize=10)
-axes[0].set_ylabel("Extra sales (1 = first year at current spend, if lifts last)")
-axes[1].set_xlabel("Weekly brand spend during the campaign")
-fig.suptitle(
-    "Over five years the drain model pulls all three brands towards the middle",
-    x=0.01,
-    ha="left",
-    fontsize=13,
-    fontweight="bold",
-    color=INK,
+        layers += [
+            {"type": "band", "x": r_(X), "lo": r_(lo), "hi": r_(hi), "color": colour},
+            {
+                "type": "line",
+                "x": r_(X),
+                "y": r_(t / norm),
+                "color": "ink",
+                "dash": True,
+                "width": 1.2,
+                "name": f"Truth, {label}",
+            },
+            {
+                "type": "line",
+                "x": r_(X),
+                "y": r_(med),
+                "color": colour,
+                "width": 2.4,
+                "name": f"Within {label}",
+                "band": [r_(lo), r_(hi)],
+            },
+        ]
+    return layers
+
+
+XAXIS = {
+    "min": 0,
+    "max": float(X[-1]),
+    "ticks": [[v, f"£{v:,.0f}"] for v in (0, 500, 1000)],
+    "label": "Brand spend a week during the campaign",
+    "hover": "gbp_week",
+}
+LEGEND = [
+    {"label": "Earned within 5 years", "color": "blue", "kind": "line"},
+    {"label": "Earned within 1 year", "color": "orange", "kind": "line"},
+    {"label": "Truth", "color": "ink", "kind": "dash"},
+    {"label": "89% interval", "color": "muted", "kind": "band"},
+]
+
+save(
+    "fig08_response_curves",
+    {
+        "title": "Over five years the drain model pulls all three brands towards the middle",
+        "legend": LEGEND,
+        "height": 260,
+        "shareY": True,
+        "minPanel": 200,
+        "panels": [
+            {
+                "title": name,
+                "x": {**XAXIS, "label": "Brand spend a week"},
+                "y": {
+                    "min": 0,
+                    "label": "Extra sales (index)",
+                },
+                "layers": curve_layers(r),
+            }
+            for name, r in res.items()
+        ],
+    },
 )
-fig.tight_layout()
-fig.savefig(str(OUT / "fig08_response_curves.png"), bbox_inches="tight")
-print("saved")
