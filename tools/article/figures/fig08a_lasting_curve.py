@@ -1,24 +1,21 @@
-"""Part 1 chart: what a 13-week campaign earns on the lasting brand, fitted without the drain.
+"""Section 7 chart: what a 13-week campaign earns on the lasting brand, fitted without the drain.
 
 The same simulated brand and seed as the lasting panel of fig08: every lift lasts,
-brand spend has carryover (0.5) and saturation (5). Here it is fitted with Cain's
-permanent model, so no drain. Curves are extra sales against no campaign, summed
+brand spend has carryover (0.5) and saturation (5). Here it is fitted with the
+VECM without a drain, so no drain. Curves are extra sales against no campaign, summed
 over 1 and 5 years, indexed so the true 1-year return of a campaign at current
 spend is 1 (the same index as fig08).
 """
 
 import warnings
-from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
+from _spec import r as r_
+from _spec import save
 
 from bayesian_vecm import BayesianVECM, simulate_brand_data
 from bayesian_vecm._saturation import logistic_saturation
 
-ROOT = Path(__file__).resolve().parents[3]
-OUT = ROOT / "docs" / "_extra" / "walkthrough"
-OUT.mkdir(parents=True, exist_ok=True)
 warnings.filterwarnings("ignore")
 
 SEED, WEEKS, HORIZON = 1, 13, 260
@@ -110,45 +107,67 @@ for label, (f, t) in res.items():
         f"(89% {lo:.2f} to {hi:.2f}), truth {t[i1] / norm:.2f}"
     )
 
-LIGHT, DARK, INK, MUTED = "#7fb0ea", "#1f5fb4", "#1f2328", "#6b7280"
-plt.rcParams.update(
+X = MULT * mean * 1000.0  # £ a week; brand spend is in £1,000s
+CURRENT = mean * 1000.0
+
+
+def curve_layers(r):
+    layers = [
+        {"type": "vline", "x": CURRENT, "label": "current"},
+    ]
+    for label, colour in (("5 years", "blue"), ("1 year", "orange")):
+        f, t = r[label]
+        lo, med, hi = np.percentile(f / norm, [5.5, 50, 94.5], axis=1)
+        layers += [
+            {"type": "band", "x": r_(X), "lo": r_(lo), "hi": r_(hi), "color": colour},
+            {
+                "type": "line",
+                "x": r_(X),
+                "y": r_(t / norm),
+                "color": "ink",
+                "dash": True,
+                "width": 1.2,
+                "name": f"Truth, {label}",
+            },
+            {
+                "type": "line",
+                "x": r_(X),
+                "y": r_(med),
+                "color": colour,
+                "width": 2.4,
+                "name": f"Within {label}",
+                "band": [r_(lo), r_(hi)],
+            },
+        ]
+    return layers
+
+
+XAXIS = {
+    "min": 0,
+    "max": float(X[-1]),
+    "ticks": [[v, f"£{v:,.0f}"] for v in (0, 500, 1000)],
+    "label": "Brand spend a week during the campaign",
+    "hover": "gbp_week",
+}
+LEGEND = [
+    {"label": "Earned within 5 years", "color": "blue", "kind": "line"},
+    {"label": "Earned within 1 year", "color": "orange", "kind": "line"},
+    {"label": "Truth", "color": "ink", "kind": "dash"},
+    {"label": "89% interval", "color": "muted", "kind": "band"},
+]
+
+save(
+    "fig08a_lasting_curve",
     {
-        "font.family": "DejaVu Sans",
-        "font.size": 11,
-        "axes.edgecolor": "#c9ced6",
-        "axes.labelcolor": INK,
-        "xtick.color": MUTED,
-        "ytick.color": MUTED,
-    }
+        "title": "What a 13-week campaign earns if every lift lasts",
+        "legend": LEGEND,
+        "height": 300,
+        "panels": [
+            {
+                "x": XAXIS,
+                "y": {"min": 0, "label": "Extra sales (1 = first year at current spend)"},
+                "layers": curve_layers(res),
+            }
+        ],
+    },
 )
-fig, ax = plt.subplots(figsize=(6.4, 4.6), dpi=150)
-for label, colour in (("5 years", DARK), ("1 year", LIGHT)):
-    f, t = res[label]
-    lo, med, hi = np.percentile(f / norm, [5.5, 50, 94.5], axis=1)
-    ax.fill_between(MULT, lo, hi, color=colour, alpha=0.18, lw=0)
-    ax.plot(MULT, med, color=colour, lw=2.2, label=f"Earned within {label}")
-    ax.plot(MULT, t / norm, color=INK, lw=1.0, ls="--")
-ax.plot([], [], color=INK, lw=1.0, ls="--", label="Truth")
-ax.axvline(1.0, color=MUTED, lw=0.8, ls=":")
-ax.set_xticks([0, 0.5, 1.0, 1.5])
-ax.set_xticklabels(["none", "0.5×", "current", "1.5×"])  # noqa: RUF001
-ax.set_xlim(0, 1.5)
-ax.set_ylim(0, None)
-for side in ("top", "right"):
-    ax.spines[side].set_visible(False)
-ax.grid(axis="y", color="#e5e7eb", lw=0.8)
-ax.set_axisbelow(True)
-ax.legend(frameon=False, loc="upper left", fontsize=10)
-ax.set_ylabel("Extra sales (1 = first year at current spend)")
-ax.set_xlabel("Weekly brand spend during the campaign")
-fig.suptitle(
-    "If every lift lasts, five years earn about six times the first",
-    x=0.01,
-    ha="left",
-    fontsize=13,
-    fontweight="bold",
-    color=INK,
-)
-fig.tight_layout()
-fig.savefig(str(OUT / "fig08a_lasting_curve.png"), bbox_inches="tight")
-print("saved")

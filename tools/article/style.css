@@ -1,6 +1,6 @@
 /* Layout: one 700px reading column under a dark title band, sticky numbered section nav.
    Matches the house article style (how_wrong_is_your_mmm overview). Light only on purpose:
-   every figure is a white-ground PNG, so the page commits to one light look. */
+   the charts are drawn on white, so the page commits to one light look. */
 :root {
   --ink: #111827;
   --muted: #6b7280;
@@ -169,3 +169,77 @@ footer p { margin: 0 auto; }
 .part-t { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; margin: 0; }
 .aims { margin: 0 0 1.4rem; padding-left: 1.4rem; max-width: 64ch; }
 .aims li { padding: 0.3rem 0 0.3rem 0.2rem; font-size: 1.03rem; line-height: 1.65; }
+
+.eqfig .fig-h { padding: 0.85rem 1.1rem 0; font-weight: 700; font-size: 0.98rem; }
+.eqn {
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start;
+  gap: 0.9rem 0.3rem; margin: 0.9rem 1.1rem 1.1rem; padding: 1.1rem 0.6rem;
+  background: var(--wash); border-radius: 8px;
+}
+.eqn .term { display: flex; flex-direction: column; align-items: center; min-width: 2.6rem; }
+.eqn .sym { font-family: "Cambria Math", "STIX Two Math", Georgia, serif; font-size: 1.3rem; font-weight: 600; height: 2.1rem; line-height: 2.1rem; white-space: nowrap; }
+.eqn .lab { font-size: 0.72rem; color: var(--muted); margin-top: 0.15rem; max-width: 5.2rem; text-align: center; line-height: 1.3; }
+.eqn .op { font-size: 1.25rem; color: var(--muted); line-height: 2.1rem; }
+.eqn .term.new .sym { color: #c2410c; }
+.eqn .term.new .lab { color: #c2410c; font-weight: 600; }
+
+/* Charts drawn by charts.js */
+.chart-card { position: relative; overflow: visible; }
+.fig-h { padding: 0.85rem 1.1rem 0; font-weight: 700; font-size: 0.98rem; line-height: 1.35; }
+.panels { padding: 0.6rem 1.1rem 0.9rem; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; margin-bottom: 0.6rem; font-size: 0.8rem; color: #374151; }
+.chart-legend > span { display: inline-flex; align-items: center; gap: 0.4rem; }
+.panel-grid { display: grid; gap: 1rem 16px; }
+svg.chart { display: block; width: 100%; height: auto; overflow: visible; font-family: var(--font); }
+svg.chart .tick { font-size: 11px; fill: var(--muted); }
+svg.chart .ax-label { font-size: 11.5px; fill: #374151; }
+svg.chart .p-title { font-size: 13px; font-weight: 700; }
+svg.chart .p-sub { font-size: 12px; fill: var(--muted); }
+svg.chart .note-t, svg.chart .line-lab { font-size: 11.5px; fill: var(--muted); }
+svg.chart .line-lab { font-weight: 600; }
+.tip {
+  position: absolute; pointer-events: none; opacity: 0; transition: opacity 0.1s; z-index: 5;
+  background: #fff; border: 1px solid var(--rule); border-radius: 6px; padding: 0.45rem 0.6rem;
+  font-size: 0.78rem; line-height: 1.45; box-shadow: 0 2px 8px rgba(17, 24, 39, 0.08); white-space: nowrap;
+}
+.tip i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.35rem; }
+.tip-m { color: var(--muted); }
+
+/* System diagram */
+.diagram .system { display: flex; align-items: stretch; justify-content: center; padding: 1rem 1.1rem 1.2rem; }
+.sys-col { display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; }
+.node {
+  border-radius: 8px; padding: 0.55rem 0.8rem; font-size: 0.85rem; font-weight: 650; line-height: 1.3;
+  text-align: center; border: 1.5px solid; background: #fff; min-width: 7.5rem;
+}
+.node small { display: block; font-weight: 400; font-size: 0.72rem; color: var(--muted); margin-top: 0.15rem; }
+.node.drv { border-color: #d6d3cd; color: #4b4943; background: #f7f6f3; min-width: 8rem; padding: 0.35rem 0.7rem; font-weight: 600; font-size: 0.8rem; }
+.node.aw { border-color: #059669; color: #047857; background: #ecfdf5; }
+.node.co { border-color: #7c3aed; color: #6d28d9; background: #f5f3ff; }
+.node.sa { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
+.arrow { align-self: center; color: #9ca3af; font-size: 1.3rem; padding: 0 0.4rem; }
+.sys-col.macro { gap: 0.15rem; align-items: center; }
+.sys-col.macro .node { width: 100%; }
+.varrow { color: #9ca3af; font-size: 1.1rem; line-height: 1; text-align: center; }
+@media (max-width: 640px) {
+  .diagram .system { flex-direction: column; align-items: stretch; }
+  .sys-col { flex-direction: row; flex-wrap: wrap; justify-content: center; }
+  .sys-col.macro { flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 0.3rem; }
+  .sys-col.macro .node { width: auto; min-width: 0; flex: 1; padding-left: 0.4rem; padding-right: 0.4rem; }
+  .sys-col.macro .node.co { flex: 1.3; }
+  .varrow { transform: rotate(-90deg); }
+  .node.drv { min-width: 0; }
+  .arrow { transform: rotate(90deg); padding: 0.2rem 0; }
+}
+
+/* Wide tables become one card per row on phones */
+@media (max-width: 560px) {
+  .tbl.stack thead { display: none; }
+  .tbl.stack table, .tbl.stack tbody, .tbl.stack tr, .tbl.stack td { display: block; width: 100%; }
+  .tbl.stack tr { border-bottom: 1px solid var(--rule); padding: 0.6rem 0; }
+  .tbl.stack td { border: 0; padding: 0.15rem 0; }
+  .tbl.stack td + td::before {
+    content: attr(data-label); display: block; font-size: 0.72rem; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--muted); margin-top: 0.35rem;
+  }
+}

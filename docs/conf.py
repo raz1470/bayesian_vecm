@@ -32,8 +32,8 @@ extensions = [
     "sphinx_copybutton",
 ]
 
-# Pages in docs/. _extra/ holds the walkthrough article (walkthrough.html and its
-# figures in walkthrough/), built by tools/article/build.py. Sphinx copies the
+# Pages in docs/. _extra/ holds the walkthrough article (walkthrough.html, a single
+# file with its charts inline), built by tools/article/build.py. Sphinx copies the
 # folder's contents to the site root as-is, so the URL
 # raz1470.github.io/bayesian_vecm/walkthrough.html keeps working.
 exclude_patterns = ["_build", "**.ipynb_checkpoints", "_extra"]
