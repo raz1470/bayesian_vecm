@@ -28,6 +28,7 @@
 
   function fmtY(v, fmt) {
     if (fmt === "pct") return (v > 0 ? "+" : "") + Math.round(v) + "%";
+    if (fmt === "pct_plain") return Math.round(v) + "%";
     return Math.abs(v) >= 10 || Number.isInteger(v) ? String(Math.round(v)) : v.toFixed(1);
   }
 
@@ -40,7 +41,7 @@
   function extent(panel) {
     let lo = Infinity, hi = -Infinity;
     for (const L of panel.layers) {
-      const vals = L.type === "band" ? L.lo.concat(L.hi) : L.type === "line" || L.type === "bars" ? L.y : [];
+      const vals = L.type === "band" || L.type === "interval" ? L.lo.concat(L.hi) : L.type === "line" || L.type === "bars" ? L.y : [];
       for (const v of vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
     }
     return [lo, hi];
@@ -108,10 +109,11 @@
         if (L.label) el("text", { x: xs(L.x) + 4, y: m.t + 10, class: "note-t" }, svg, L.label);
       }
       if (L.type === "bars") {
-        const bw = Math.max(iw / L.x.length, 1);
+        const bw = L.barWidth ? Math.abs(xs(L.barWidth) - xs(0)) : Math.max(iw / L.x.length, 1);
         const base = L.base !== undefined ? L.base : 0;
         let d = "";
-        L.x.forEach((x, i) => { if (L.y[i] > base) d += `M${xs(x) - bw / 2},${ys(base)}V${ys(L.y[i])}h${bw}V${ys(base)}Z`; });
+        const dx = L.offset || 0;
+        L.x.forEach((x, i) => { if (L.y[i] > base) d += `M${xs(x + dx) - bw / 2},${ys(base)}V${ys(L.y[i])}h${bw}V${ys(base)}Z`; });
         el("path", { d, fill: col(L.color) }, g);
       }
       if (L.type === "band") {
@@ -127,6 +129,17 @@
           el("text", { x: Math.min(xs(L.x[n]), m.l + iw) - 2, y: ys(L.y[n]) - 7, class: "line-lab", "text-anchor": "end", fill: col(L.color) }, svg, L.label);
         }
         if (L.name) hoverLines.push(L);
+      }
+      if (L.type === "interval") {
+        // One vertical range per category, with a dot at the middle value and a native tooltip.
+        const dx = L.offset || 0;
+        L.x.forEach((x, i) => {
+          const cx = xs(x + dx);
+          const mark = el("g", {}, svg);
+          el("line", { x1: cx, x2: cx, y1: ys(L.lo[i]), y2: ys(L.hi[i]), stroke: col(L.color), "stroke-width": 6, "stroke-opacity": 0.3, "stroke-linecap": "round" }, mark);
+          el("circle", { cx, cy: ys(L.mid[i]), r: 4.5, fill: col(L.color) }, mark);
+          if (L.tips) el("title", {}, mark, L.tips[i]);
+        });
       }
       if (L.type === "text") el("text", { x: xs(L.x), y: ys(L.y), class: "note-t", fill: col(L.color), "text-anchor": L.anchor || "start", "font-weight": L.weight }, svg, L.text);
     }

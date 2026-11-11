@@ -1,6 +1,6 @@
 """Which PyMC-Marketing trend gives the VECM a usable base, and is a one-step VECM as good?
 
-Data from ``simulate_brand_data(total_sales=True)``, 260 weeks, 5 seeds, 2%
+Data from ``simulate_brand_data(total_sales=True)``, 260 weeks, 5 seeds by default, 2%
 weekly noise outside the brand system. The short-term part now has carryover
 and saturation, which a UCM with linear regressors cannot fit:
 
@@ -35,6 +35,11 @@ Scored as in ``tools/ucm_base_check.py``. MMM bases are cached in
 package dependency); tested with 1.3.0.
 
     uv run --with pymc-marketing python tools/mmm_trend_check.py
+
+The article reruns four arms on 20 seeds:
+
+    uv run --with pymc-marketing==1.3.0 python tools/mmm_trend_check.py \
+        --seeds 20 --arms true_base total_adstock mmm78_minus mmm78_trend
 """
 
 from __future__ import annotations
@@ -187,13 +192,13 @@ ARMS = (
 )
 
 
-def main() -> None:
+def main(seeds=SEEDS, arms=ARMS) -> None:
     done = set()
     if RESULTS.exists():
         prev = pd.read_csv(RESULTS, dtype={"arm": str})
         done = set(zip(prev["seed"], prev["arm"], strict=True))
-    for seed in SEEDS:
-        for arm in ARMS:
+    for seed in seeds:
+        for arm in arms:
             if (seed, arm) in done:
                 continue
             start = time.perf_counter()
@@ -208,5 +213,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seeds", type=int, default=len(SEEDS), help="run seeds 0 to N - 1")
+    parser.add_argument("--arms", nargs="+", default=list(ARMS), choices=ARMS)
+    args = parser.parse_args()
     np.seterr(all="ignore")
-    main()
+    main(range(args.seeds), args.arms)
