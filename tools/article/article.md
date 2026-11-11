@@ -26,10 +26,10 @@ The gap between these is the whole question. Over five years a lasting lift earn
 This article has three aims:
 
 1. **Explain the method**, a vector error correction model (VECM) in which every lift lasts (Part 1).
-2. **Extend it so that a lift can fade.** I call the extension the drain. It is mine, not Cain's (Part 2).
-3. **Ask whether the data a real brand has can recover the parameters.** Most brands have five years of weekly data or less, one brand tracker and no experiments (Part 3).
+2. **Ask whether the data a real brand has can recover it** (Part 2). Most brands have five years of data or less, base sales handed over from an MMM, and performance budgets that chase demand.
+3. **Improve it** (Part 3). The method assumes every lift lasts, so I add a term that lets a lift fade. I call it the drain, and it is mine, not Cain's. For brands without a tracker I sketch the same system built on share of search.
 
-The short answer: the 1-year return is firm either way. The 5-year return isn't, because the data say little about how much of a lift fades. A long dark spell is the best evidence there is, and even a year dark doesn't settle it alone.
+The short answer: the 1-year return is firm. It stays close to the truth with less data, with a rough base sales series and with performance spend that chases demand. Those problems cost precision, and they distort how fast sales respond, but not how far. The 5-year return isn't firm, because the data say little about how much of a lift fades. A long dark spell is the best evidence there is, and even a year dark doesn't settle it alone.
 
 We illustrate each step on a brand we simulated, so we always know the right answer.
 
@@ -62,7 +62,7 @@ Brand trackers measure the middle of the funnel:
 - **Awareness** is the share of people who know the brand.
 - **Consideration** is the share who would think about buying it.
 
-Together with sales these form the system. Sales here means base sales: sales without the short-term lift from performance media and promotions. Section 9 covers how to get that series right.
+Together with sales these form the system. Sales here means base sales: sales without the short-term lift from performance media and promotions. Sections 9 and 10 cover how to get that series right.
 
 Around the system sit the drivers. Brand spend, PR and sponsorship push on awareness. Interest rates and consumer confidence push on consideration from outside. The drivers move the brand, but the brand does not move them.
 
@@ -76,7 +76,7 @@ To show each step of the method we simulated five years of weekly data for a bra
 | How far a lift carries | A lasting 1% rise in awareness ends up as about 0.9% in consideration and about 1.1% in sales |
 | Who catches up | Sales close about a quarter of any gap to consideration each week. Consideration closes about a fifth of its gap to awareness. Awareness never catches up to anything: it leads |
 | Weekly surprises | News and competitors hit all three series in the same week |
-| Does a lift last? | Yes, for good. Part 2 adds two versions where lifts fade |
+| Does a lift last? | Yes, for good. Part 3 adds two versions where lifts fade |
 
 The rest of the article shows how the method recovers each of these from the data alone.
 
@@ -131,7 +131,7 @@ A second tie runs between awareness and consideration. Two ties among three seri
 
 The number of ties is the cointegration rank. With more than two series, Johansen's trace test finds it by asking in turn: none, at most one, at most two? It stops at the first answer it can't reject. On our brand it stops at two, the number we built in.
 
-The test is a guide rather than a ruling. On short histories it often finds too few ties (section 9). A business view of the funnel is a useful check: three brand series sharing one trend should have two ties.
+The test is a guide rather than a ruling. On short histories it often finds too few ties (section 8). A business view of the funnel is a useful check: three brand series sharing one trend should have two ties.
 
 ## 6. The model in one equation
 
@@ -172,7 +172,7 @@ These sit inside the drivers. The ties, momentum and growth are untouched.
 
 **Awareness reaches consideration, partly in the same week.** Momentum carries last week's awareness into this week's consideration. Some of the effect may land in the same week, and that is harder to measure. Awareness and consideration share their weekly shocks (section 6), so a plain regression of one on the other finds a same-week link even when there is none.
 
-The fix, as in [Cain (2022)](https://doi.org/10.1016/j.ijresmar.2021.06.006), is an instrument. Brand spend moves awareness but reaches consideration only through awareness. So its effect on consideration, divided by its effect on awareness, is the same-week link. That assumption is a business judgement, not something the data can settle (section 9).
+The fix, as in [Cain (2022)](https://doi.org/10.1016/j.ijresmar.2021.06.006), is an instrument. Brand spend moves awareness but reaches consideration only through awareness. So its effect on consideration, divided by its effect on awareness, is the same-week link. That assumption is a business judgement, not something the data can settle (section 11).
 
 **Consideration reaches sales.** The ties then pull consideration and sales up to meet the new level of awareness, and hold them there.
 
@@ -184,9 +184,97 @@ The chart shows the response curve for the brand we built, fitted with the VECM.
 
 This is the payoff of Part 1. Within a year a campaign at current spend earns 0.8 on the chart's scale, against a true 1.0. Within five years it earns 5.2, against a true 6.2. Both intervals hold the truth. Five years earn about six times the first year, because the lift never goes away.
 
-All of that rests on one assumption: that every lift lasts. Part 2 relaxes it.
+That is the method on clean data: five years of weekly figures, a true base sales series and drivers set from outside the brand. Real brands rarely have all three. Part 2 asks what happens when they don't. Part 3 then relaxes the method's strongest assumption, that every lift lasts.
 
-## 8. Adding a drain
+## 8. How much data is enough?
+
+Part 1 ran on five years of weekly data. Most brands have less. A tracker may have started three years ago, or it may report monthly. So we cut the brand we built four ways:
+
+- **Weekly, five years**: 261 weeks, as in Part 1.
+- **Weekly, three years**: the first 157 weeks.
+- **Monthly, five years**: the same weeks summed into 60 months.
+- **Monthly, three years**: 36 months.
+
+We did this for 20 versions of the brand, each with its own random shocks. On each we ran the rank test, then fitted the VECM with the two ties we built in and measured the 5-year return on brand spend.
+
+[[chart fig_data_size | The 5-year return as a share of the truth, and how often the rank test found two ties, for weekly and monthly data over three and five years | Left: the median across 20 data sets of each fit's median and 89% interval, divided by the true return. Right: the share of data sets where the Johansen trace test found the two ties we built in.]]
+
+Two things happen, and they depend on different parts of the data.
+
+**Years find the ties.** The rank test looks for gaps that keep coming back, and a gap needs time to wander off and return. With five years it found the two ties in about nine data sets in ten on weekly data, and almost as often on monthly. With three years it found them in only two in five, weekly or monthly. Most misses found too few ties.
+
+**Data points set the precision.** The return stayed close to the truth in every version, and its intervals held the truth nine times in ten or more. What changed was their width. Five years of weekly data put the 5-year return within about a quarter of the truth either way. Three years of weekly data widened that to about a third. Five years of monthly data, only 60 points, did worse than three years of weekly: about half the truth either way. Three years of monthly data gave an interval running from almost nothing to nearly twice the truth, and its middle drifted about a sixth low.
+
+That last case is where the priors do most of the work. With 36 months and a model of three equations, there is little data per number being estimated. A Bayesian fit admits this with a wide interval. A classical fit doesn't: on 60 periods its intervals for the ties held the truth only about 60% of the time when they should have held it 90%. The Bayesian intervals stayed close to 90%. That is the main practical reason to fit the model by sampling.
+
+What to do:
+
+- **Use weekly data if it exists**, even if the tracker reports monthly figures for the board.
+- **Four years or more** if the rank test is to be trusted. With less, set the rank from the funnel: three brand series sharing one trend have two ties.
+- **With monthly data, expect wide intervals** and report them as they are.
+
+## 9. Base sales from an MMM
+
+The VECM models base sales: sales without the short-term lift from performance media and promotions. Nobody observes that series. In practice it comes from an MMM, and there is more than one way to take it.
+
+We built a brand whose total sales add a short-term layer to the base: brand spend's same-week hit, paid search and paid social with carryover and diminishing returns, promotions, seasonality and noise. Then we gave the VECM four versions of base sales, on 20 data sets each:
+
+- **The true base**, which only a simulation has.
+- **Total sales minus the MMM's short-term contributions**: channels, promotions and seasonality taken off, week by week.
+- **Total sales as they are**, with the short-term drivers added to the VECM's sales equation instead.
+- **The MMM's trend**: the smooth, slowly changing baseline many MMMs report.
+
+[[chart fig_base_sales | The long-run lift from brand spend and the speed at which sales catch up, for four versions of base sales | Twenty simulated brands. The median across data sets of each fit's median and 90% interval, divided by the truth. "Minus MMM" is total sales minus the MMM's short-term contributions.]]
+
+**The long run survives a rough base.** The first three versions put the long-run lift from brand spend within 2% of the truth, with intervals that held it nine times in ten or more. The long run is read from the level base sales settle at, and short-term noise around that level averages out.
+
+**The speed doesn't.** How fast sales close their gap to consideration depends on every wiggle in the series:
+
+- **Minus the MMM's contributions** was close: about 13% fast. The noise the MMM can't take out makes sales look a little quicker than they are.
+- **Total sales as they are** made sales about 1.5 times too fast, and its intervals held the truth only three times in ten.
+- **The MMM's trend** was the worst. It smooths away the week-to-week movement the VECM learns speed from, so sales looked twenty times too slow. In 12 of 20 data sets sales looked like the leader of the brand, a link that doesn't exist. It also put the long-run lift about 17% high.
+
+What to do:
+
+- **Use total sales minus the MMM's short-term contributions**, and don't smooth it.
+- **Never use the MMM's trend** as base sales.
+- **Trust the long-run return more than any speed or half-life.**
+
+## 10. Performance spend that chases demand
+
+Performance budgets follow demand. When more people are in the market, more of them search for the brand, and search spend rises with the searches. An MMM fitted to total sales then sees search spend move with sales the brand produced. It can credit search with some of that demand, and take it out of base sales.
+
+So we made search spend chase demand. Each week its spend rose and fell with how fast consideration had grown over the past month, which base sales follow. We tried three strengths: none, moderate and strong. At moderate the correlation between search spend and demand was about 0.65, and at strong about 0.85. The true effect of search on sales stayed the same throughout. We then fitted an MMM to total sales, built base sales by taking off its short-term contributions, and fitted the VECM to that, ten times at each strength.
+
+[[chart fig_perf_feedback | MMM credit to paid search, the long-run lift from brand spend and the 4-week lift, as search spend chases demand more strongly | Ten simulated brands at each strength. Left: the median MMM contribution of paid search, against the truth. Middle and right: the median across data sets of each fit's median and 90% interval, divided by the truth.]]
+
+**The MMM gets search wrong.** With no feedback it put search's contribution about 13% low. Once search chased demand it put it 30 to 40% too high. That is a problem for anyone reading the MMM's return on search.
+
+**The brand's long-run return doesn't notice.** The long-run lift from brand spend came within 3% of the truth at every strength, and its intervals held the truth every time. The demand the MMM gave to search was weeks of extra growth here and there. It did not move the level that base sales settle at, and the long run is read from that level.
+
+**The short run slips a little.** Four weeks after spend, the lift came out about 13% low with no feedback and about 25% low with strong feedback.
+
+**A check needs the tracker.** Before fitting, ask whether past demand helps predict search spend. Asked with past sales, the test flagged the feedback in only one or two data sets in ten, about as often as it did when there was none. Asked with past consideration, it flagged it every time, with two false alarms in ten when there was no feedback.
+
+What to do:
+
+- **Run the check with the brand metrics, not sales.** If past consideration predicts search spend, search is chasing demand.
+- **Read the MMM's search return with care** when it does. The VECM's long-run brand return is safe.
+
+## 11. Other things that can go wrong
+
+Sections 8 to 10 took the three problems most brands will hit. The rest are quicker to state. For each we built the problem into the simulation, refitted, and looked at what broke.
+
+| Problem, and what we built in | What happened | What to do |
+|---|---|---|
+| **Awareness looks like a follower.** Nothing changed: this happens by chance | In about one data set in ten the model gave awareness a small but clear α, which the truth doesn't have | If awareness's α is small next to the followers', treat awareness as the leader |
+| **A channel left out.** PR and sponsorship dropped from the model, on monthly data | Brand spend took their effect and came out about 40% too high, against about 12% too low with every channel in | Include every brand activity, even ones without a budget line |
+| **Carryover or diminishing returns left out.** Fitted without carryover, or with a straight line instead of a saturation curve | Without carryover the model missed about half of brand spend's effect. The straight line put the effect of doubling spend at more than twice the truth. Near current spend the two barely differed | Include both. Trust the curve most near the spend levels the data has seen |
+| **A same-week link with the wrong instrument.** Brand spend also reached consideration directly, which the instrument assumes it doesn't | The same-week link came out too large, and the test for this rarely noticed | Choose instruments on business grounds and say why. For a campaign's return alone, the link can be left out |
+| **Seasonality.** A seasonal pattern added to sales | With the pattern left in, the rank test found the right number of ties one time in five. On a deseasonalised copy it was four in five | Give the sales equation seasonal terms. Run the rank test on a deseasonalised copy |
+| **Brand budgets that follow the brand.** Not built in: our drivers are set outside the brand | Not tested here. If brand spend rises after good weeks, its effect is overstated | Run the same check as section 10 on brand spend: do past brand metrics predict it? |
+
+## 12. Letting lifts fade
 
 In the VECM so far nothing pulls a lift back. Once a campaign moves awareness, the ties carry the whole lift down to sales and keep it there. That is why the 5-year return in section 7 is so large.
 
@@ -202,7 +290,6 @@ This is where a fading lift differs from a long adstock. A long adstock in an MM
 
 The priors are deliberately loose. The drain share is flat between zero and one. The half-life is centred on a year but allows anything from a few months to several years.
 
-
 To test it we built two more versions of the brand, the same as before apart from the fade. In one, half of each lift drains away. In the other, all of it does. The draining share has a half-life of a year. We fitted all three versions with the drain, including the brand whose lifts last:
 
 - **If lifts last**, the 5-year curve still sits far above the 1-year curve, as in section 7.
@@ -211,39 +298,59 @@ To test it we built two more versions of the brand, the same as before apart fro
 
 [[chart fig08_response_curves | Response curves for a 13-week campaign within one and five years, for a brand whose lifts last, half fade or all fade | Extra sales against no campaign, indexed so the true first-year return of a campaign at current spend, if lifts last, is 1. Each brand fitted with the drain; medians with 89% intervals; dashed lines show the truth.]]
 
-Over the first year the three brands look much alike, and the model's intervals hold the truth for all three. Over five years they differ by three times. At current spend the true 5-year returns are 6.2, 4.3 and 2.1 on the chart's scale. The model's are 4.0, 3.7 and 3.2. It pulls all three towards the middle. On the lasting brand that costs something: The VECM without a drain gave 5.2 in section 7, and the drain model gives 4.0. Five years of data say little about how much fades. Part 3 asks how little, and what helps.
+Over the first year the three brands look much alike, and the model's intervals hold the truth for all three. Over five years they differ by three times. At current spend the true 5-year returns are 6.2, 4.3 and 2.1 on the chart's scale. The model's are 4.0, 3.7 and 3.2. It pulls all three towards the middle. On the lasting brand that costs something: the VECM without a drain gave 5.2 in section 7, and the drain model gives 4.0.
 
-## 9. What the data can tell us
+The alternative is worse. On brands whose lifts fade with a half-life of six months, a year or two, the VECM without a drain overstated the 5-year return by 2 to 6 times, and its intervals missed the truth every time. The drain model ran 1.3 to 3 times high, but its intervals held the truth in most data sets. Five years of data say little about how much fades, and the drain at least says so.
 
-Part 2 ended with the model pulling all three brands towards the middle. That raises the third aim: can the data a real brand has recover the parameters? Most brands have five years of weekly data or less, one brand tracker and no experiments.
+### What settles it: going dark
 
-Real data won't tell you when something is off. So for each common problem we changed the simulation to build it in, refitted, and looked at what broke. The first three rows are about the fade, the question Part 2 left open. The rest are about the model's structure and the data that goes in.
+A dark spell is the clearest evidence there is. If lifts fade, sales sag once spend stops. If they last, sales hold. We switched brand spend off mid-sample on the brand whose lifts fade:
 
-| Problem, and what we built in | What happened | What to do |
-|---|---|---|
-| **Lifts that fade.** Every lift drained away, with a half-life of six months, one year or two | Assuming lifts last overstated the 5-year return by 2 to 6 times, and its intervals always missed the truth. The drain model ran 1.3 to 3 times high, and about a quarter low on a brand whose lifts last. Its intervals held the truth in most data sets, but they were wide | Fit with the drain. Treat the 1-year return as firm and the 5-year return as a range |
-| **Going dark.** Brand spend switched off for six months or a year, mid-sample | A year off halved the uncertainty in how much fades and brought the 5-year return much closer to the truth. It still didn't settle the question | Keep dark weeks in the data. A planned dark spell in one region or one quarter is worth more than any modelling choice |
-| **Brand run in pulses.** The same budget spent as two 13-week bursts a year, with nothing in between | The 1-year intervals were about half as wide. How much fades barely narrowed, because 13-week gaps are short next to a year's half-life | Pulsing is no substitute for going dark. Go dark for longer than you expect the lift to last |
-| **Too little history.** Three years of data instead of five | The rank test found the right number of ties under half the time, against four in five with five years. Most misses found too few | Use four or more years. Check the rank against the funnel: three brand series sharing one trend have two ties |
-| **Awareness looks like a follower.** Nothing changed: this happens by chance | In about one data set in ten, the model gave awareness a small but clear α, which the truth doesn't have | If awareness's α is small next to the followers', treat awareness as the leader |
-| **A channel left out.** PR and sponsorship dropped from the model, on monthly data | Brand spend took their effect and came out about 40% too high, against about 12% too low with every channel in | Include every brand activity, even ones without a budget line |
-| **Budgets that follow performance.** Not built in: our drivers are set outside the brand | Not tested here. On real data, if spend rises after good weeks, the drivers' effects are biased | Before fitting, test whether past brand metrics predict spend (a Granger test) |
-| **Carryover or diminishing returns left out.** Fitted without carryover, or with a straight line instead of a saturation curve | Without carryover the model missed about half of brand spend's effect. The straight line put the effect of doubling spend at more than twice the truth. Near current spend the two barely differed | Include both. Trust the curve most near the spend levels the data has seen |
-| **A same-week link with the wrong instrument.** Brand spend also reached consideration directly, which the instrument assumes it doesn't | The same-week link came out too large, and the test for this rarely noticed | Choose instruments on business grounds and say why. For a campaign's return alone, the link can be left out |
-| **Base sales built the wrong way.** Four versions of base sales, including the MMM's smooth baseline | The long-run return came within a few per cent of the truth every time. The short run didn't: the smooth baseline made sales far too slow, and in most fits made them look like the leader | Use total sales minus the MMM's short-term contributions, unsmoothed. Trust the long-run return more than any speed |
-| **Seasonality.** A seasonal pattern added to sales | With the pattern left in, the rank test found the right number of ties one time in five. On a deseasonalised copy it was four in five | Give the sales equation seasonal terms. Run the rank test on a deseasonalised copy |
-| **Monthly data.** The weeks summed into months | Effects that take a week or two landed in the same month, so a same-week link showed up where there was none | Use weekly data where it exists. Read a monthly same-period link as "within a month" |
-| **Short samples.** 60 periods of data | Classical intervals for the ties held the truth about 60% of the time when they should have held it 90%. Bayesian intervals stayed close to 90% | With short histories, prefer Bayesian intervals |
+- **Six months off** narrowed the interval on how much fades by about a fifth, and brought the 5-year return from 2 times the truth to 1.5.
+- **A year off** halved that interval and brought the 5-year return to 1.3 times the truth. Even a year didn't settle it alone.
+- **Running brand in pulses**, two 13-week bursts a year with the same budget, barely narrowed it. Thirteen-week gaps are short next to a year's half-life. Pulses did pin down the 1-year return, with intervals about half as wide.
 
-## 10. The first year is firm. The fifth is a range.
+Keep any dark weeks in the data. If the business can test, a planned dark spell in one region, longer than you expect a lift to last, is worth more than any modelling choice.
+
+## 13. Brands without a tracker: share of search
+
+Everything so far assumes a brand tracker: weekly awareness and consideration going back years. Many brands, especially smaller ones, have nothing like it. Others have it monthly, or only since the last change of agency, which section 8 showed is not enough.
+
+Share of search is a cheap stand-in. It is a brand's searches as a share of all searches for brands in its category. Les Binet [introduced it at the IPA's EffWorks Global in 2020](https://ipa.co.uk/news/binet-presents-fast-cheap-predictive-share-of-search-metric/). In cars, energy and mobile phones it tracked share of market and moved ahead of it, by up to a year for cars.
+
+It suits this method for three reasons:
+
+- **It has the history.** Google Trends gives weekly data for windows of up to five years and monthly data back to 2004. That is the length section 8 asked for.
+- **Google's scaling cancels out.** Trends rescales every request to run from 0 to 100, so its numbers aren't search counts. A share divides one brand by its category, so the scale drops out, as long as every brand comes from the same request.
+- **It trends.** A brand's share of search drifts with the brand, as awareness does. So it can be tied to base sales with cointegration.
+
+The sketch below is the system we would fit. It hasn't been tested yet.
+
+<figure class="fig diagram"><div class="fig-h">A brand system without a tracker</div><div class="system"><div class="sys-col"><div class="node drv">Brand spend</div><div class="node drv">PR reach</div><div class="node drv">Sponsorship reach</div></div><div class="arrow">→</div><div class="sys-col"><div class="node aw">Share of search<small>leads, if it works</small></div></div><div class="arrow">↔</div><div class="sys-col macro"><div class="node drv">Category searches</div><div class="varrow">↓</div><div class="node sa">Base sales<small>follows share of search</small></div></div></div><figcaption class="fig-cap">A sketch, not a fitted model. Two brand series with at most one tie. Category searches stand in for how many people are in the market.</figcaption></figure>
+
+- **Two series, one tie.** Share of search takes the place of awareness and consideration. With two series there is at most one tie, so the model is smaller and needs less data.
+- **The same drivers.** Brand spend, PR and sponsorship push on share of search.
+- **Category searches from outside.** Total searches for the category measure how many people are in the market. They push on base sales without being part of the brand.
+- **Performance spend stays in the MMM**, for the reasons in section 10.
+
+Four questions decide whether it works:
+
+- **Does share of search lead?** Some branded searches come from people who already buy the brand and search its name to reach the website. That part follows sales rather than leading them. The VECM can check this. If share of search closes part of its gap to sales each week, it is a follower, and a lift in it won't carry through.
+- **Brand or activation?** Binet found advertising moves share of search twice: a large short-term effect that fades fast, and a smaller one that builds up. The short-term part is activation sitting inside the series meant to measure the brand. That is the base sales problem of section 9 in a new place.
+- **Noisy data.** Trends is built from a sample of searches, so the same request can give slightly different numbers on different days. Small brands are rounded to zero in quiet weeks. Averaging several pulls helps.
+- **Which brands make the category?** The share depends on the list, and the list is a judgement call. Fix it before fitting and keep it fixed.
+
+The next step is to simulate a brand like this, run the same checks as Part 2, and then fit it to real share of search.
+
+## 14. The first year is firm. The fifth is a range.
 
 A marketing mix model sees the short-term lift that follows a campaign. It misses the slow climb in base sales that comes when a brand grows. This article set out to measure that climb, with three aims.
 
 **Explain the VECM.** Brand metrics and sales trend, and cointegration ties them together so a lasting lift in awareness carries down to sales. On the brand we built, the method found the two ties, picked out awareness as the leader and recovered the response curve. At current spend a campaign earned 0.8 within a year and 5.2 within five on the model, against a true 1.0 and 6.2. Both intervals held the truth.
 
-**Let a lift fade.** The drain, my extension, lets part of each lift drain away. On three versions of the brand, where lifts last, half fade or all fade, the true 5-year returns are 6.2, 4.3 and 2.1. The drain model gives 4.0, 3.7 and 3.2. Its 1-year intervals hold the truth for all three.
+**Can a real brand's data recover it?** Mostly, yes, as long as every lift lasts. Less data widened the intervals without moving the answer much: from about a quarter either side of the truth on five years of weekly data to most of the way to zero on three years of monthly data. Fewer years also hid the ties: with three years the rank test found them only two times in five. Base sales taken from an MMM's short-term contributions, even with search spend chasing demand, left the long-run return within a few per cent of the truth. What a rough base damaged was the short run: how fast sales respond, and, with the MMM's smooth trend, whether sales look like the leader. So trust the long run more than any speed or half-life.
 
-**Can the data recover it?** For the 1-year return, yes, whichever way the brand works. For the 5-year return, not well. Assume every lift lasts when lifts fade and the 5-year return comes out 2 to 6 times too high. Fit with the drain and it sits near the middle either way: 1.3 to 3 times high when lifts fade, about a quarter low when they last. The data say little about how much fades. A year dark halved that uncertainty, and even that didn't settle it.
+**Improve it.** The drain, my extension, lets part of each lift drain away. On three versions of the brand, where lifts last, half fade or all fade, the true 5-year returns are 6.2, 4.3 and 2.1. The drain model gives 4.0, 3.7 and 3.2, and its 1-year intervals hold the truth for all three. The data say little about how much fades. A year dark halved that uncertainty, and even that didn't settle it. For brands without a tracker, share of search could take the place of awareness and consideration. Whether it leads sales is the first thing to test.
 
 ### Try it yourself
 
@@ -254,9 +361,8 @@ Everything in this article was fitted with [bayesian_vecm](https://github.com/ra
 The method answers a lot, but the hardest question is still the one in the title. A few directions would help:
 
 - **Telling lasting from fading.** The data alone struggle to say how much of a lift drains away. Planned tests would add the missing evidence: going dark in some regions and not others for longer than the lift is expected to last. So would priors on fade rates drawn from many brands, such as the IPA databank.
-- **Brands without a tracker.** Many brands, especially smaller ones, don't have awareness or consideration data. [Share of search](https://ipa.co.uk/news/binet-presents-fast-cheap-predictive-share-of-search-metric/), a brand's share of Google searches in its category, is a cheap, weekly, always-on alternative. Les Binet's work for the IPA found it tracks share of market. A system built on share of search and sales would be worth testing as a stand-in for the funnel. The open question is whether it leads sales the way awareness does.
 - **Pooling across brands and markets.** One brand rarely has enough history to pin down the drain. A hierarchical model fitted across regions or sister brands could share that information.
-- **One model instead of two.** Base sales are handed over from an MMM, and section 9 showed that is where the short run goes wrong. Fitting the short-term and long-term parts together would carry the uncertainty through rather than losing it at the handover.
+- **One model instead of two.** Base sales are handed over from an MMM, and sections 9 and 10 showed that is where the short run goes wrong. Fitting the short-term and long-term parts together would carry the uncertainty through rather than losing it at the handover.
 - **Ties that change.** A pandemic, a change to the tracker or a repositioning can move the long-run links. Allowing the ties to shift at known dates, or slowly over time, would make the model safer on long histories.
 - **Competitors and the category.** Our brand moves on its own. Real brands share a market, and part of a lasting lift may come at a rival's expense or from growth in the category.
 
