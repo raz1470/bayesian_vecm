@@ -40,16 +40,20 @@ NAV = {
     "5": "Cointegration",
     "6": "The model",
     "7": "Response curves",
-    "8": "Fading lifts",
-    "9": "Estimating it",
-    "10": "Bringing it together",
+    "8": "How much data",
+    "9": "Base sales",
+    "10": "Performance spend",
+    "11": "Other checks",
+    "12": "Fading lifts",
+    "13": "Share of search",
+    "14": "Bringing it together",
 }
 
 # Section that opens each part -> (part label, part title)
 PARTS = {
     "2": ("Part 1", "The VECM"),
-    "8": ("Part 2", "Letting lifts fade"),
-    "9": ("Part 3", "Can we estimate it?"),
+    "8": ("Part 2", "Can we estimate it?"),
+    "12": ("Part 3", "Improvements"),
 }
 
 
