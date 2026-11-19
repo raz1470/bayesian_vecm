@@ -29,7 +29,7 @@ This article has three aims:
 2. **Ask whether the data a real brand has can recover it** (Part 2). Most brands have five years of data or less, base sales handed over from an MMM, and performance budgets that chase demand.
 3. **Improve it** (Part 3). The method assumes every lift lasts, so I add a term that lets a lift fade. I call it the drain, and it is mine, not Cain's. For brands without a tracker I sketch the same system built on share of search.
 
-The short answer: the 1-year return is firm. It stays close to the truth with less data, with a rough base sales series and with performance spend that chases demand. Those problems cost precision, and they distort how fast sales respond, but not how far. The 5-year return isn't firm, because the data say little about how much of a lift fades. A long dark spell is the best evidence there is, and even a year dark doesn't settle it alone.
+The short answer: the 1-year return is firm. It stays close to the truth with less data, with a rough base sales series and with performance spend that chases demand. Those problems cost precision, and they distort how fast sales respond, but not how far. A small effect needs more data: on short or monthly data its interval often reaches zero. The 5-year return isn't firm, because the data say little about how much of a lift fades. A long dark spell is the best evidence there is, and even a year dark doesn't settle it alone.
 
 We illustrate each step on a brand we simulated, so we always know the right answer.
 
@@ -175,13 +175,19 @@ That is the method on clean data: five years of weekly figures, a true base sale
 
 ## 8. How much data is enough?
 
-Part 1 ran on five years of weekly data. Most brands have less: a tracker that started three years ago, or one that reports monthly. So we cut the brand we built four ways: weekly or monthly, over five years or three. Monthly over three years leaves 36 points. On 20 versions of the brand, each with its own random shocks, we ran the rank test and measured the 5-year return on brand spend.
+Part 1 ran on five years of weekly data. Most brands have less: a tracker that started three years ago, or one that reports monthly. So we cut the brand we built four ways: weekly or monthly, over five years or three. Monthly over three years leaves 36 points.
 
-[[chart fig_data_size | The 5-year return as a share of the truth, and how often the rank test found two ties, for weekly and monthly data over three and five years | Left: the median across 20 data sets of each fit's median and 89% interval, divided by the true return. Right: the share of data sets where the Johansen trace test found the two ties we built in.]]
+Marketing's effect matters too. In the brand we built, marketing drives about half the week-to-week movement in awareness. That is a large effect. So we also halved and quartered it, which leaves marketing driving about a fifth and under a tenth. On 20 versions of each brand, each with its own random shocks, we ran the rank test and measured the 5-year return on brand spend.
 
-**Years find the ties.** A tie is a gap that keeps coming back, and a gap needs time to wander off and return. With five years the rank test found both ties about nine times in ten, weekly or monthly. With three years it found them two times in five. Most misses found too few.
+[[chart fig_data_size | The 5-year return as a share of the truth, and how often the rank test found two ties, for weekly and monthly data over three and five years and for large, medium and small marketing effects | Left: the median across 20 data sets of each fit's median and 89% interval, divided by the true return. Right: the share of data sets where the Johansen trace test found the two ties we built in.]]
+
+**Years find the ties.** A tie is a gap that keeps coming back, and a gap needs time to wander off and return. With five years the rank test found both ties eight or nine times in ten, weekly or monthly. With three years it found them two to five times in ten. Most misses found too few. The size of the effect made no difference here, because the ties come from the shared trend, not from marketing.
 
 **Data points set the precision.** The return stayed close to the truth throughout, and its intervals held the truth nine times in ten or more. What changed was their width. Five years of weekly data put it within about a quarter of the truth either way. Five years of monthly data, only 60 points, did worse than three years of weekly. Three years of monthly data gave an interval from almost nothing to nearly twice the truth.
+
+**Smaller effects need more data.** Halving the effect didn't halve the noise. In sales terms the intervals stayed about as wide, so as a share of the truth they roughly doubled each time the effect halved. Five years of weekly data put a medium effect within about 40% of the truth either way, and a small one within about 80%. With a small effect the interval reached zero in a quarter of the five-year weekly fits, and in most fits on less data. The intervals still held the truth nine times in ten or more. The model wasn't wrong; it was saying it couldn't tell.
+
+On the shortest data the middle of the interval also slipped towards zero: 0.6 of the truth for a medium effect on three years of monthly data, and 0.3 for a small one. That is the prior pulling a weak signal back.
 
 There the priors do most of the work, and a Bayesian fit says so with a wide interval. A classical fit doesn't: on 60 periods its intervals for the ties held the truth only about 60% of the time when they claimed 90%. That is the main practical reason to fit by sampling.
 
@@ -190,6 +196,7 @@ What to do:
 - **Use weekly data if it exists.**
 - **With under four years, set the rank from the funnel**: three brand series sharing one trend have two ties.
 - **With monthly data, expect wide intervals** and report them as they are.
+- **If brand spend moves awareness only a little, expect the long run to stay unclear.** Even five years of weekly data may give an interval that reaches zero.
 
 ## 9. Base sales from an MMM
 
@@ -277,7 +284,7 @@ A marketing mix model sees the short-term lift that follows a campaign and misse
 
 **The VECM** found the ties, picked out awareness as the leader and recovered the response curve: 0.8 within a year and 5.2 within five, against a true 1.0 and 6.2, with both intervals holding the truth.
 
-**On realistic data** the long-run return held up. Less data widened its interval and fewer years hid the ties. A rough base sales series, even with search spend chasing demand, left the long run within a few per cent of the truth. What it damaged was the short run.
+**On realistic data** the long-run return held up. Less data and smaller effects widened its interval, and fewer years hid the ties. A rough base sales series, even with search spend chasing demand, left the long run within a few per cent of the truth. What it damaged was the short run.
 
 **The drain** lets a lift fade. On brands whose lifts last, half fade or all fade, the true 5-year returns are 6.2, 4.3 and 2.1, and the drain model gives 4.0, 3.7 and 3.2. The 1-year return is firm whichever way the brand works. The 5-year return is a range, and a long dark spell is the best evidence for narrowing it. For brands without a tracker, share of search could stand in, if it leads.
 
