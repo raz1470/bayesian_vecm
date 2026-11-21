@@ -25,7 +25,7 @@ irf = model.irf(steps=52, method="girf")
 
 ## Where to start
 
-- **[The walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html)**: How Long Does Brand Last? The article that explains the method step by step, checked on simulated data.
+- **[The walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html)**: How to Measure Long-Term Brand Effects When Your MMM Can't. The article that explains the method step by step, checked on simulated data.
 - **[The user guide](user_guide.md)**: the practitioner notebook and pages on choosing the rank and lags and the Granger pretest.
 - **[The practitioner guide](guide/practitioner_walkthrough.ipynb)**: the full workflow in a notebook, from data to return per channel.
 - **[API reference](api/index.md)**: every public function and class.

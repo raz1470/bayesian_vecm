@@ -16,7 +16,7 @@ This is hard econometrics. Unit roots, the cointegration rank, base sales, carry
 | | |
 |---|---|
 | 📚 [Documentation](https://raz1470.github.io/bayesian_vecm/) | User guide, API reference and model details |
-| 📖 [Walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html) | How Long Does Brand Last? The method step by step, on simulated data |
+| 📖 [Walkthrough](https://raz1470.github.io/bayesian_vecm/walkthrough.html) | How to Measure Long-Term Brand Effects When Your MMM Can't. The method step by step, on simulated data |
 | 🔌 [Response curves on your data](https://github.com/raz1470/bayesian_vecm/blob/main/notebooks/guides/08_response_curves_on_your_data.ipynb) | Plug-in notebook: set your columns in one cell, get a response curve and return per £ for each channel |
 | 📓 [Practitioner walkthrough](https://github.com/raz1470/bayesian_vecm/blob/main/notebooks/guides/01_brand_vecm_walkthrough.ipynb) | Data → rank → fit → impulse responses → counterfactual ROI |
 | ⚖️ [Comparison with statsmodels](https://github.com/raz1470/bayesian_vecm/blob/main/notebooks/guides/02_statsmodels_comparison.ipynb) | Same estimates as statsmodels, with interval coverage |

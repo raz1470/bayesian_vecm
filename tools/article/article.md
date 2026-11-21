@@ -1,9 +1,9 @@
 <!-- Source text for docs/_extra/walkthrough.html. Build with tools/article/build.py. -->
 <!-- Charts: a line [[chart NAME | ALT | CAPTION]] places the chart in tools/article/data/NAME.json. -->
 
-# How Long Does Brand Last?
+# How to Measure Long-Term Brand Effects When Your MMM Can't
 
-*Why a marketing mix model undercounts brand, and how cointegration measures it*
+*A Bayesian VECM ties brand metrics to base sales. Simulations test how much data it needs, how big the effect must be, and what happens when lifts fade.*
 
 ## 1. Introduction
 
