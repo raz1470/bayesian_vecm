@@ -153,7 +153,7 @@ These sit inside the drivers. The ties, momentum and growth are untouched.
 
 **Awareness reaches consideration, partly in the same week.** Momentum carries last week's awareness into this week's consideration. Some of the effect may land in the same week, and that is harder to measure. Awareness and consideration share their weekly shocks (section 6), so a plain regression of one on the other finds a same-week link even when there is none.
 
-The fix, as in [Cain (2022)](https://doi.org/10.1016/j.ijresmar.2021.06.006), is an instrument. Brand spend moves awareness but reaches consideration only through awareness. So its effect on consideration, divided by its effect on awareness, is the same-week link. That assumption is a business judgement, not something the data can settle (section 11).
+Following [Cain (2022)](https://doi.org/10.1016/j.ijresmar.2021.06.006), we use an instrumental variable. Brand spend moves awareness but reaches consideration only through awareness. So its effect on consideration, divided by its effect on awareness, is the same-week link. That assumption is a business judgement, not something the data can settle (section 11).
 
 **Consideration reaches sales.** The ties then pull consideration and sales up to meet the new level of awareness, and hold them there.
 
@@ -161,7 +161,7 @@ The fix, as in [Cain (2022)](https://doi.org/10.1016/j.ijresmar.2021.06.006), is
 
 The chart shows the response curve on the simulated data, fitted with the VECM. Every lift lasts, so every week after the campaign adds the same extra sales, and the 5-year curve sits far above the 1-year curve.
 
-[[chart fig08a_lasting_curve | Response curves for a 13-week campaign within one and five years, for a brand whose lifts last, fitted with the VECM | Extra sales against no campaign, indexed so the true first-year return of a campaign at current spend (about £950 a week) is 1. Fitted without a drain; medians with 89% intervals; dashed lines show the truth.]]
+[[chart fig08a_lasting_curve | Response curves for a 13-week campaign within one and five years, for a brand whose lifts last, fitted with the VECM | Extra sales against no campaign. 1 is the true first-year return at current spend.]]
 
 This is the payoff of Part 1. Within a year a campaign at current spend earns 0.8 on the chart's scale, against a true 1.0. Within five years it earns 5.2, against a true 6.2. Both intervals hold the truth. Five years earn about six times the first year, because the lift never goes away.
 
@@ -243,7 +243,7 @@ This differs from a long adstock. A long adstock is fitted against the trend in 
 
 We built two more versions of the brand, where half or all of each lift drains with a half-life of a year, and fitted all three with the drain.
 
-[[chart fig08_response_curves | Response curves for a 13-week campaign within one and five years, for a brand whose lifts last, half fade or all fade | Extra sales against no campaign, indexed so the true first-year return of a campaign at current spend, if lifts last, is 1. Each brand fitted with the drain; medians with 89% intervals; dashed lines show the truth.]]
+[[chart fig08_response_curves | Response curves for a 13-week campaign within one and five years, for a brand whose lifts last, half fade or all fade | Extra sales against no campaign. 1 is the true first-year return at current spend if lifts last. Each brand fitted with the drain.]]
 
 Over the first year the three brands look much alike, and the intervals hold the truth for all three. Over five years the true returns are 6.2, 4.3 and 2.1. The model gives 4.0, 3.7 and 3.2: it pulls all three towards the middle. On the lasting brand that costs something, 4.0 against 5.2 without the drain.
 
