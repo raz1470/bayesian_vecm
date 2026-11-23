@@ -53,7 +53,7 @@ NAV = {
 PARTS = {
     "2": ("Part 1", "The VECM"),
     "8": ("Part 2", "Can we estimate it?"),
-    "12": ("Part 3", "Improvements"),
+    "11": ("Part 3", "Improvements"),
 }
 
 

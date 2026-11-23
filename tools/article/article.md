@@ -214,15 +214,7 @@ So we made search spend chase demand, at three strengths. At the strongest, its 
 
 **A check needs the tracker.** Ask whether past demand predicts search spend. Asked with past sales, the test flagged the feedback in only one or two data sets in ten. Asked with past consideration, it flagged it every time.
 
-## 11. Other things that can go wrong
-
-| Problem, and what we built in | What happened | What to do |
-|---|---|---|
-| **A channel left out.** PR and sponsorship dropped from the model, on monthly data | Brand spend took their effect and came out about 40% too high | Include every brand activity, even ones without a budget line |
-| **Carryover or diminishing returns left out** | Without carryover the model missed about half of brand spend's effect. A straight line put the effect of doubling spend at more than twice the truth | Include both. Trust the curve most near the spend levels the data has seen |
-| **The wrong instrument.** Brand spend also reached consideration directly | The same-week link came out too large, and the test for this rarely noticed | Choose instruments on business grounds and say why |
-
-## 12. Letting lifts fade
+## 11. Letting lifts fade
 
 In the VECM so far nothing pulls a lift back. Once a campaign moves awareness, the ties carry the whole lift down to sales and keep it there. That is why the 5-year return in section 7 is so large.
 
@@ -246,7 +238,7 @@ A dark spell is the clearest evidence there is. If lifts fade, sales sag once sp
 
 Keep any dark weeks in the data. A planned dark spell in one region, longer than you expect a lift to last, is worth more than any modelling choice.
 
-## 13. Brands without a tracker: share of search
+## 12. Brands without a tracker: share of search
 
 Everything so far assumes a brand tracker with years of weekly data. Many brands have nothing like it. Share of search is a cheap stand-in: a brand's searches as a share of all searches for brands in its category. Les Binet [introduced it at the IPA in 2020](https://ipa.co.uk/news/binet-presents-fast-cheap-predictive-share-of-search-metric/). In cars, energy and mobile phones it tracked share of market and moved ahead of it, by up to a year for cars.
 
@@ -263,7 +255,7 @@ Two questions decide whether it works:
 - **Does it lead?** Some branded searches come from existing customers looking for the website. That part follows sales. The VECM can test this: if share of search closes part of its gap to sales each week, it is a follower.
 - **Brand or activation?** Binet found advertising moves share of search twice: a large short-term effect that fades fast, and a smaller one that builds up. The short-term part is activation inside a series meant to measure the brand, the base sales problem of section 9 in a new place.
 
-## 14. The first year is firm. The fifth is a range.
+## 13. The first year is firm. The fifth is a range.
 
 A marketing mix model sees the short-term lift that follows a campaign and misses the slow climb in base sales. This article set out to measure that climb.
 
