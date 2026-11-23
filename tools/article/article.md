@@ -35,15 +35,15 @@ We illustrate each step on simulated data, so we always know the right answer.
 
 An MMM explains weekly sales with spend, price, seasonality and a baseline. Spend enters through adstock: each week keeps a share of the previous week's effect, so a burst of TV fades out over a few weeks. That suits the question an MMM is built for: how did this quarter's spend move this quarter's sales?
 
-It doesn't suit brand. The usual fix is a second, much longer adstock for brand spend: a short decay for activation and a long one for brand building. Peter Cain calls this [the adstock illusion](https://ideas.repec.org/a/aza/ama000/y2025v11i1p23-42.html).
+It doesn't suit brand. The usual fix is a second, much longer adstock for brand spend: a short decay for activation and a long one for brand building. Cain (2025) refers to this practice as [the adstock illusion](https://ideas.repec.org/a/aza/ama000/y2025v11i1p23-42.html).
 
 The problem is the trend. Sales drift over years. A slowly decaying spend series drifts too. Put one against the other and they line up whether or not brand drives sales. The long adstock ends up fitting the drift in the baseline, and it tells us nothing about how brand building works.
 
 The chart shows it. The baseline is a slow trend we built with no link to spend at all. The long adstock of brand spend climbs alongside it, and a regression happily credits brand with the climb.
 
-[[chart fig02_adstock_trend | Five years of flighted brand spend, a baseline trend built with no link to spend, and the long adstock of spend fitted to it | Brand spend grows slowly over the five years, as budgets often do. Its adstock (decay 0.97) climbs with it. The baseline is a random walk with drift that never sees spend, yet the regression slope has a t-statistic of 34.]]
+[[chart fig02_adstock_trend | Five years of flighted brand spend, a baseline trend built with no link to spend, and the long adstock of spend fitted to it | ]]
 
-Cain's alternative, a VECM, separates the two. Short-term activation is the week-to-week movement around base sales. Long-term brand building is the base itself: the slow level of sales, which moves with awareness and consideration.
+Cain (2022) proposes an alternative, the VECM, which separates the two. Short-term activation is the week-to-week movement around base sales. Long-term brand building is the base itself: the slow level of sales, which moves with awareness and consideration.
 
 That needs three things an MMM leaves out:
 
