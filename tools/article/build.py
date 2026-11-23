@@ -44,7 +44,7 @@ NAV = {
     "9": "Base sales",
     "10": "Fading lifts",
     "11": "Share of search",
-    "12": "Bringing it together",
+    "12": "Summary",
 }
 
 # Section that opens each part -> (part label, part title)

@@ -230,27 +230,17 @@ Two questions decide whether it works:
 - **Does it lead?** Some branded searches come from existing customers looking for the website. That part follows sales. The VECM can test this: if share of search closes part of its gap to sales each week, it is a follower.
 - **Brand or activation?** Binet found advertising moves share of search twice: a large short-term effect that fades fast, and a smaller one that builds up. The short-term part is activation inside a series meant to measure the brand, the base sales problem of section 9 in a new place.
 
-## 12. The first year is firm. The fifth is a range.
+## 12. Summary
 
-A marketing mix model sees the short-term lift that follows a campaign and misses the slow climb in base sales. This article set out to measure that climb.
+A marketing mix model sees the short-term lift that follows a campaign and misses the slow climb in base sales. A longer adstock doesn't fix this: it fits the trend in sales whether or not brand caused it.
 
-**The VECM** found the ties, picked out awareness as the leader and recovered the response curve: 0.8 within a year and 5.2 within five, against a true 1.0 and 6.2, with both intervals holding the truth.
-
-**On realistic data** the long-run return held up. Less data and smaller effects widened its interval, and fewer years hid the ties. A rough base sales series left the long run within a few per cent of the truth. What it damaged was the short run.
-
-**The drain** lets a lift fade. On brands whose lifts last, half fade or all fade, the true 5-year returns are 6.2, 4.3 and 2.1, and the drain model gives 4.0, 3.7 and 3.2. The 1-year return is firm whichever way the brand works. The 5-year return is a range. For brands without a tracker, share of search could stand in, if it leads.
-
-### Try it yourself
+- **The VECM** ties sales to awareness and consideration, finds which series leads, and turns a campaign into a response curve. On simulated data it gave 0.8 within a year and 5.2 within five, against a true 1.0 and 6.2, with both intervals holding the truth.
+- **Data.** Years find the ties; data points and effect size set the precision. Three years often missed the ties, and a small effect on short or monthly data gave intervals that reached zero.
+- **Base sales.** Total sales minus the MMM's short-term contributions kept the long run within a few per cent of the truth, though its speed ran fast. The MMM's smoothed trend got the speed badly wrong.
+- **Fading lifts.** The drain lets the data say how much of a lift fades. The 1-year return held up whichever way the brand worked. The 5-year return is a range: 4.0, 3.7 and 3.2 against a true 6.2, 4.3 and 2.1.
+- **Brands without a tracker** might use share of search in place of awareness, but whether it leads sales needs testing first.
 
 Everything in this article was fitted with [bayesian_vecm](https://github.com/raz1470/bayesian_vecm), an open-source Python package. To run it on your own brand, start with [the notebook built for your own data](https://github.com/raz1470/bayesian_vecm/blob/main/notebooks/guides/08_response_curves_on_your_data.ipynb): edit one cell and it runs every check in order and draws the response curves.
-
-### What comes next
-
-- **Pooling across brands and markets.** One brand rarely has enough history to pin down the drain. A hierarchical model across regions or sister brands could share it.
-- **One model instead of two.** Fitting the MMM and the VECM together would carry the uncertainty in base sales through, rather than losing it at the handover.
-- **Testing share of search** on simulated and then real brands.
-
-The method is Peter Cain's, and the package is an open Bayesian version of it. Read [*Modelling short- and long-term marketing effects in the consumer purchase journey*](https://doi.org/10.1016/j.ijresmar.2021.06.006) for the method on real brand data.
 
 ### References
 
