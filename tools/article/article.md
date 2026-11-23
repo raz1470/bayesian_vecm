@@ -51,7 +51,7 @@ That needs three things an MMM leaves out:
 - **The trends treated as information**, not something to remove.
 - **A way for a change in one series to carry through to the others.**
 
-## 3. The brand we built
+## 3. The brand funnel
 
 A brand works through a funnel. Marketing makes people aware of the brand. Some of those people come to consider it, and some of those buy. Each step feeds the next, so a lasting rise at the top should show up lower down.
 
@@ -60,11 +60,11 @@ Brand trackers measure the middle of the funnel:
 - **Awareness** is the share of people who know the brand.
 - **Consideration** is the share who would think about buying it.
 
-Together with sales these form the system. Sales here means base sales: sales without the short-term lift from performance media and promotions. Sections 9 and 10 cover how to get that series right.
+Together with sales these form the system. Sales here means base sales: sales without the short-term lift from performance media and promotions.
 
 Around the system sit the drivers. Brand spend, PR and sponsorship push on awareness. Interest rates and consumer confidence push on consideration from outside. The drivers move the brand, but the brand does not move them.
 
-<figure class="fig diagram"><div class="fig-h">Marketing moves awareness. Consideration and sales follow.</div><div class="system"><div class="sys-col"><div class="node drv">Brand spend</div><div class="node drv">PR reach</div><div class="node drv">Sponsorship reach</div></div><div class="arrow">→</div><div class="sys-col"><div class="node aw">Awareness<small>leads the system</small></div></div><div class="arrow">→</div><div class="sys-col macro"><div class="node drv">Interest rate</div><div class="varrow">↓</div><div class="node co">Consideration<small>follows awareness</small></div><div class="varrow">↑</div><div class="node drv">Consumer confidence</div></div><div class="arrow">→</div><div class="sys-col"><div class="node sa">Base sales<small>follows consideration</small></div></div></div><figcaption class="fig-cap">The brand we built. Drivers act from outside. The three brand series trend and are tied together.</figcaption></figure>
+<figure class="fig diagram"><div class="fig-h">Marketing moves awareness. Consideration and sales follow.</div><div class="system"><div class="sys-col"><div class="node drv">Brand spend</div><div class="node drv">PR reach</div><div class="node drv">Sponsorship reach</div></div><div class="arrow">→</div><div class="sys-col"><div class="node aw">Awareness<small>leads the system</small></div></div><div class="arrow">→</div><div class="sys-col macro"><div class="node drv">Interest rate</div><div class="varrow">↓</div><div class="node co">Consideration<small>follows awareness</small></div><div class="varrow">↑</div><div class="node drv">Consumer confidence</div></div><div class="arrow">→</div><div class="sys-col"><div class="node sa">Base sales<small>follows consideration</small></div></div></div><figcaption class="fig-cap">The simulated system. Drivers act from outside. The three brand series trend and are tied together.</figcaption></figure>
 
 To show each step of the method we simulated five years of weekly data for a brand like this. Because we built it, we know the right answer at every step. This is what we built in:
 
@@ -74,7 +74,7 @@ To show each step of the method we simulated five years of weekly data for a bra
 | How far a lift carries | A lasting 1% rise in awareness ends up as about 0.9% in consideration and about 1.1% in sales |
 | Who catches up | Sales close about a quarter of any gap to consideration each week. Consideration closes about a fifth of its gap to awareness. Awareness never catches up to anything: it leads |
 | Weekly surprises | News and competitors hit all three series in the same week |
-| Does a lift last? | Yes, for good. Part 3 adds two versions where lifts fade |
+| Does a lift last? | Yes, for good |
 
 The rest of the article shows how the method recovers each of these from the data alone.
 
@@ -96,7 +96,7 @@ The usual fix is to difference the data: model the weekly change instead of the 
 
 This gives a simple way to label series. A series that is stationary as it stands is I(0), "integrated of order zero". A series that becomes stationary once differenced is I(1). Trending brand series are usually I(1). The method in the rest of this article is built for I(1) series.
 
-The Augmented Dickey-Fuller (ADF) test sorts them: it asks whether the data can reject a unit root. On the brand we built, sales, awareness, consideration and the interest rate are I(1). Brand spend, PR, sponsorship and consumer confidence move around a stable level, so they're I(0).
+The Augmented Dickey-Fuller (ADF) test sorts them: it asks whether the data can reject a unit root. On the simulated data, sales, awareness, consideration and the interest rate are I(1). Brand spend, PR, sponsorship and consumer confidence move around a stable level, so they're I(0).
 
 So we need a method that keeps the levels without being fooled by them. That method rests on cointegration.
 
@@ -136,7 +136,7 @@ The parts, in order:
 
 **Who closes the gap.** Go back to the drunk and her dog. When they drift apart, someone has to move, and α says who. A series with a large α is a follower: when a tie is stretched, it moves to close the gap. A series with α near zero on every tie ignores the gaps. It leads.
 
-In the brand we built, sales close about a quarter of any gap to consideration each week. Consideration closes about a fifth of its gap to awareness. Awareness closes neither, and the fitted model finds the same: its α is close to zero on both ties.
+In the simulated data, sales close about a quarter of any gap to consideration each week. Consideration closes about a fifth of its gap to awareness. Awareness closes neither, and the fitted model finds the same: its α is close to zero on both ties.
 
 This is why the question "does brand last?" runs through awareness. A lift that lands on sales alone stretches a tie, and sales are pulled back within weeks. A lift that lands on awareness is never pulled back. Consideration and then sales climb to meet it and stay there. So a campaign that moves awareness keeps paying, and section 7 adds up how much.
 
@@ -163,7 +163,7 @@ The fix, as in [Cain (2022)](https://doi.org/10.1016/j.ijresmar.2021.06.006), is
 
 **From sales to a response curve.** Add up the extra sales each week and we have what the campaign earned. Because the ties carry the lift forward, the total keeps growing with the window, so we report it at one year and at five. Repeat for campaigns of different sizes, from nothing up to half as much again as current spend, and we have a response curve.
 
-The chart shows the response curve for the brand we built, fitted with the VECM. Every lift lasts, so every week after the campaign adds the same extra sales, and the 5-year curve sits far above the 1-year curve.
+The chart shows the response curve on the simulated data, fitted with the VECM. Every lift lasts, so every week after the campaign adds the same extra sales, and the 5-year curve sits far above the 1-year curve.
 
 [[chart fig08a_lasting_curve | Response curves for a 13-week campaign within one and five years, for a brand whose lifts last, fitted with the VECM | Extra sales against no campaign, indexed so the true first-year return of a campaign at current spend (about £950 a week) is 1. Fitted without a drain; medians with 89% intervals; dashed lines show the truth.]]
 
@@ -173,9 +173,9 @@ That is the method on clean data: five years of weekly figures, a true base sale
 
 ## 8. How much data is enough?
 
-Part 1 ran on five years of weekly data. Most brands have less: a tracker that started three years ago, or one that reports monthly. So we cut the brand we built four ways: weekly or monthly, over five years or three. Monthly over three years leaves 36 points.
+Part 1 ran on five years of weekly data. Most brands have less: a tracker that started three years ago, or one that reports monthly. So we cut the simulated data four ways: weekly or monthly, over five years or three. Monthly over three years leaves 36 points.
 
-Marketing's effect matters too. In the brand we built, marketing drives about half the week-to-week movement in awareness. That is a large effect. So we also halved and quartered it, which leaves marketing driving about a fifth and under a tenth. On 20 versions of each brand, each with its own random shocks, we ran the rank test and measured the 5-year return on brand spend.
+Marketing's effect matters too. In the simulated data, marketing drives about half the week-to-week movement in awareness. That is a large effect. So we also halved and quartered it, which leaves marketing driving about a fifth and under a tenth. On 20 versions of each brand, each with its own random shocks, we ran the rank test and measured the 5-year return on brand spend.
 
 [[chart fig_data_size | The 5-year return as a share of the truth, and how often the rank test found two ties, for weekly and monthly data over three and five years and for large, medium and small marketing effects | Left: the median across 20 data sets of each fit's median and 89% interval, divided by the true return. Right: the share of data sets where the Johansen trace test found the two ties we built in.]]
 
