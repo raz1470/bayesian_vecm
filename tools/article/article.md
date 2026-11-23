@@ -114,9 +114,9 @@ We can test for this with the ADF test from section 4: take the gap and ask whet
 
 A second tie runs between awareness and consideration. Two ties among three series leave one shared trend. Here that trend belongs to awareness, and it is why a lasting lift in awareness carries through to sales.
 
-The number of ties is the cointegration rank. With more than two series, Johansen's trace test finds it by asking in turn: none, at most one, at most two? It stops at the first answer it can't reject. On the simulated data it finds two, which is correct.
+The number of ties is the cointegration rank. With more than two series, Johansen's trace test finds it by asking in turn: none, at most one, at most two? It stops at the first answer it can't reject.
 
-## 6. The model in one equation
+## 6. The VECM
 
 A vector error correction model (VECM) describes the weekly change in each brand series and splits it into parts. Each part has a plain reading for the brand.
 
@@ -132,15 +132,13 @@ The parts, in order:
 - **Growth (c).** A constant that lets each series grow at a steady rate.
 - **Shock (ε).** The part of this week that nothing in the model predicts. The three shocks are correlated, because news and competitors hit the series in the same week.
 
-**Who closes the gap.** Go back to the drunk and her dog. When they drift apart, someone has to move, and α says who. A series with a large α is a follower: when a tie is stretched, it moves to close the gap. A series with α near zero on every tie ignores the gaps. It leads.
+**Who closes the gap.** When the drunk and her dog drift apart, someone has to move, and α says who. A series with a large α follows: it moves to close a stretched tie. A series with α near zero on every tie leads.
 
-In the simulated data, sales close about a quarter of any gap to consideration each week. Consideration closes about a fifth of its gap to awareness. Awareness closes neither, and the fitted model finds the same: its α is close to zero on both ties.
+In the simulated data, sales close about a quarter of their gap to consideration each week, and consideration about a fifth of its gap to awareness. Awareness closes neither, and the fitted model agrees.
 
-This is why the question "does brand last?" runs through awareness. A lift that lands on sales alone stretches a tie, and sales are pulled back within weeks. A lift that lands on awareness is never pulled back. Consideration and then sales climb to meet it and stay there. So a campaign that moves awareness keeps paying, and section 7 adds up how much.
+So a lift in awareness is never pulled back. Consideration and sales rise to meet it and stay there, which is why a campaign that moves awareness keeps paying. A lift in sales alone is pulled back within weeks.
 
-Two choices remain: how many weeks of momentum to include and how many ties. Information criteria such as Hannan-Quinn choose the momentum lags, and the rank test from section 5 chooses the ties. For the simulated data that gives one week of momentum and two ties.
-
-We fit the model with Bayesian sampling, so every estimate comes with an interval.
+Hannan-Quinn picks the number of momentum lags and the rank test the number of ties: one week and two ties here. We fit the model by Bayesian sampling, which gives the intervals used from section 7 on.
 
 ## 7. From a campaign to a response curve
 
