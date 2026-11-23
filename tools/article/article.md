@@ -142,30 +142,28 @@ Hannan-Quinn picks the number of momentum lags and the rank test the number of t
 
 ## 7. From a campaign to a response curve
 
-The pieces so far explain how the brand works. A budget decision needs something else: what a campaign earns. To get it we follow one campaign through the whole system.
+The ties, momentum and drivers explain how the brand works. A budget decision needs what a campaign earns, so we follow one campaign through the system.
 
 **Spend reaches awareness.** Take a 13-week burst of brand spend. Before it moves awareness, it goes through the two steps familiar from MMM:
 
 - **Carryover.** Each week keeps a share of the last week's spend, so the push on awareness builds and then tails off.
 - **Diminishing returns.** A saturation curve means each extra pound moves awareness a little less than the one before.
 
-These sit inside the drivers. The ties, momentum and growth are untouched.
+Both sit inside the drivers. The ties, momentum and growth are untouched.
 
-**Awareness reaches consideration, partly in the same week.** Momentum carries last week's awareness into this week's consideration. Some of the effect may land in the same week, and that is harder to measure. Awareness and consideration share their weekly shocks (section 6), so a plain regression of one on the other finds a same-week link even when there is none.
+**Awareness reaches consideration, partly in the same week.** Momentum carries last week's awareness into this week's consideration. A same-week effect is harder to measure. Awareness and consideration share their weekly shocks, so a plain regression of one on the other finds a same-week link even when there is none.
 
-Following [Cain (2022)](https://doi.org/10.1016/j.ijresmar.2021.06.006), we use an instrumental variable. Brand spend moves awareness but reaches consideration only through awareness. So its effect on consideration, divided by its effect on awareness, is the same-week link. That assumption is a business judgement, not something the data can settle (section 11).
+Following [Cain (2022)](https://doi.org/10.1016/j.ijresmar.2021.06.006), we use an instrumental variable. Brand spend moves awareness but reaches consideration only through awareness. So its effect on consideration, divided by its effect on awareness, is the same-week link. That assumption is a business judgement, not something the data can settle.
 
-**Consideration reaches sales.** The ties then pull consideration and sales up to meet the new level of awareness, and hold them there.
+**Consideration reaches sales.** The ties pull consideration and sales up to meet the new level of awareness, and hold them there.
 
-**From sales to a response curve.** Add up the extra sales each week and we have what the campaign earned. Because the ties carry the lift forward, the total keeps growing with the window, so we report it at one year and at five. Repeat for campaigns of different sizes, from nothing up to half as much again as current spend, and we have a response curve.
-
-The chart shows the response curve on the simulated data, fitted with the VECM. Every lift lasts, so every week after the campaign adds the same extra sales, and the 5-year curve sits far above the 1-year curve.
+**From sales to a response curve.** Summing the extra sales each week gives what the campaign earned. The ties carry the lift forward, so the total keeps growing with the window, and we report it at one year and at five. Repeating this for campaigns from nothing up to half as much again as current spend gives a response curve.
 
 [[chart fig08a_lasting_curve | Response curves for a 13-week campaign within one and five years, for a brand whose lifts last, fitted with the VECM | Extra sales against no campaign. 1 is the true first-year return at current spend.]]
 
-This is the payoff of Part 1. Within a year a campaign at current spend earns 0.8 on the chart's scale, against a true 1.0. Within five years it earns 5.2, against a true 6.2. Both intervals hold the truth. Five years earn about six times the first year, because the lift never goes away.
+Within a year a campaign at current spend earns 0.8 on the chart's scale, against a true 1.0. Within five years it earns 5.2, against a true 6.2. Both intervals hold the truth. Because every lift lasts, five years earn about six times the first year.
 
-That is the method on clean data: five years of weekly figures, a true base sales series and drivers set from outside the brand. Real brands rarely have all three. Part 2 asks what happens when they don't. Part 3 then relaxes the method's strongest assumption, that every lift lasts.
+This is the method on clean data: five years of weekly figures, a true base sales series and drivers set from outside the brand. Real brands rarely have all three.
 
 ## 8. How much data is enough?
 
