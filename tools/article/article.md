@@ -59,6 +59,8 @@ Brand trackers measure the middle of the funnel:
 - **Awareness** is the share of people who know the brand.
 - **Consideration** is the share who would think about buying it.
 
+Tracker data has its own problems. Consideration can rise because more people are in the market, not because of the brand; a measure of category demand as a driver helps separate the two. Panels often over-represent existing customers. A constant bias washes out in the ties, but one that shifts as the customer base grows does not: growing sales would then lift measured awareness, and the model could read sales as leading. Small samples add noise on top.
+
 Together with sales these form the system. Sales here means base sales: sales without the short-term lift from performance media and promotions.
 
 Around the system sit the drivers. Brand spend, PR and sponsorship push on awareness. Interest rates and consumer confidence push on consideration from outside. The drivers move the brand, but the brand does not move them.
@@ -215,7 +217,7 @@ Leaving the drain out is worse. On brands whose lifts fade, the VECM without it 
 
 ## 11. Brands without a tracker: share of search
 
-Everything so far assumes a brand tracker with years of weekly data. Many brands have nothing like it. Share of search is a cheap stand-in: a brand's searches as a share of all searches for brands in its category. Les Binet [introduced it at the IPA in 2020](https://ipa.co.uk/news/binet-presents-fast-cheap-predictive-share-of-search-metric/). In cars, energy and mobile phones it tracked share of market and moved ahead of it, by up to a year for cars.
+Everything so far assumes a brand tracker with years of weekly data. Many brands have nothing like it, and others have one they can't trust. Share of search is a cheap stand-in: a brand's searches as a share of all searches for brands in its category. Les Binet [introduced it at the IPA in 2020](https://ipa.co.uk/news/binet-presents-fast-cheap-predictive-share-of-search-metric/). In cars, energy and mobile phones it tracked share of market and moved ahead of it, by up to a year for cars.
 
 It suits this method:
 
