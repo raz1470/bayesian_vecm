@@ -196,9 +196,9 @@ Nobody observes base sales. In practice they come from an MMM, and there is more
 
 **The long run survives a rough base.** The first three versions put the long-run lift from brand spend within 2% of the truth. The long run is read from the level base sales settle at, and short-term noise around that level averages out.
 
-**The speed doesn't.** How fast sales close their gap to consideration depends on every wiggle. Minus MMM made sales about 13% too fast. Total sales as they are made them 1.5 times too fast. The MMM's trend smooths away the wiggles altogether, so sales looked twenty times too slow. In 12 of 20 data sets it also made sales look like the leader, and it put the long run 17% high.
+**The speed doesn't.** How fast sales close their gap to consideration depends on every wiggle. Minus MMM made sales about 13% too fast. Total sales as they are made them 1.5 times too fast. The MMM's trend smooths away the wiggles altogether, so sales looked twenty times too slow, with a narrow interval: confidently wrong. In 12 of 20 data sets it also made sales look like the leader, and it put the long run 17% high.
 
-What to do: use total sales minus the MMM's short-term contributions, unsmoothed. Never use the MMM's trend. Trust the long-run return more than any speed or half-life.
+Of the versions a real team has, total sales minus the MMM's short-term contributions did best. Its long run held up; its speed ran about 13% fast.
 
 ## 10. Performance spend that chases demand
 
