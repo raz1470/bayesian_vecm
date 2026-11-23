@@ -35,25 +35,22 @@ source = re.sub(r"<!--.*?-->", "", source, flags=re.S)
 NAV = {
     "1": "Introduction",
     "2": "Adstock",
-    "3": "The brand",
+    "3": "The brand funnel",
     "4": "Trends",
     "5": "Cointegration",
-    "6": "The model",
+    "6": "The VECM",
     "7": "Response curves",
     "8": "How much data",
     "9": "Base sales",
-    "10": "Performance spend",
-    "11": "Other checks",
-    "12": "Fading lifts",
-    "13": "Share of search",
-    "14": "Bringing it together",
+    "10": "Fading lifts",
+    "11": "Share of search",
+    "12": "Summary",
 }
 
 # Section that opens each part -> (part label, part title)
 PARTS = {
     "2": ("Part 1", "The VECM"),
-    "8": ("Part 2", "Can we estimate it?"),
-    "12": ("Part 3", "Improvements"),
+    "8": ("Part 2", "Using it on a real brand"),
 }
 
 
@@ -84,7 +81,8 @@ def chart(spec: str) -> str:
         f'<figure class="fig chart-card" role="group" aria-label="{html.escape(alt)}">'
         f'<div class="fig-h">{html.escape(CHARTS[name]["title"])}</div>'
         f'<div class="panels" id="{name}"></div><div class="tip" aria-hidden="true"></div>'
-        f'<figcaption class="fig-cap">{inline(cap)}</figcaption></figure>'
+        + (f'<figcaption class="fig-cap">{inline(cap)}</figcaption>' if cap else "")
+        + "</figure>"
     )
 
 

@@ -9,7 +9,7 @@ from bayesian_vecm import select_coint_rank, simulate_brand_data
 
 data = simulate_brand_data(exog_unit_root=("interest_rate",))
 e = data.endog
-B = 1.272
+B = 1.25
 s = 100 * (e["organic_sales"] - e["organic_sales"].mean())
 c = 100 * B * (e["brand_consideration"] - e["brand_consideration"].mean())
 gap = s - c
@@ -31,7 +31,7 @@ save(
         "title": "Sales and consideration wander together. The gap between them does not.",
         "legend": [
             {"label": "Base sales", "color": "blue", "kind": "line"},
-            {"label": "1.27 × consideration", "color": "purple", "kind": "line"},  # noqa: RUF001
+            {"label": "1.25 × consideration", "color": "purple", "kind": "line"},  # noqa: RUF001
             {"label": "The gap", "color": "ink", "kind": "line"},
         ],
         "height": 240,
@@ -57,7 +57,7 @@ save(
                         "y": r(c),
                         "color": "purple",
                         "width": 1.6,
-                        "name": "1.27 × consideration",  # noqa: RUF001
+                        "name": "1.25 × consideration",  # noqa: RUF001
                     },
                 ],
             },

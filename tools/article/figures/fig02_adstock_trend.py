@@ -38,8 +38,7 @@ save(
                 "kind": "line",
             },
             {
-                "label": "Long adstock of brand spend, as a regression fits it"
-                f" (slope t-statistic {ols.tvalues[1]:.0f})",
+                "label": "Long adstock of brand spend, fitted to the baseline",
                 "color": "orange",
                 "kind": "line",
             },

@@ -100,7 +100,19 @@ save(
         "minPanel": 300,
         "panels": [
             interval_panel("Long-run lift from brand spend", lift, 2.0),
-            interval_panel("How fast sales catch up", alpha, 2.0),
+            {
+                **(speed := interval_panel("How fast sales catch up", alpha, 2.0)),
+                "layers": [
+                    *speed["layers"],
+                    {
+                        "type": "text",
+                        "x": X[-1],
+                        "y": float(alpha["hi"].iloc[-1]) + 0.12,
+                        "text": f"{alpha['mid'].iloc[-1]:.2f}",
+                        "anchor": "middle",
+                    },
+                ],
+            },
         ],
     },
 )
