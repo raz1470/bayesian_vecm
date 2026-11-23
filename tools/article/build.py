@@ -84,7 +84,8 @@ def chart(spec: str) -> str:
         f'<figure class="fig chart-card" role="group" aria-label="{html.escape(alt)}">'
         f'<div class="fig-h">{html.escape(CHARTS[name]["title"])}</div>'
         f'<div class="panels" id="{name}"></div><div class="tip" aria-hidden="true"></div>'
-        f'<figcaption class="fig-cap">{inline(cap)}</figcaption></figure>'
+        + (f'<figcaption class="fig-cap">{inline(cap)}</figcaption>' if cap else "")
+        + "</figure>"
     )
 
 

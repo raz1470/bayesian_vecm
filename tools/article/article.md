@@ -11,15 +11,15 @@ Brand teams and marketing mix models disagree about time. Brand teams say a camp
 
 Both can be right. An MMM measures the short-term lift in sales that follows a burst of spend. What it struggles to see is the slow climb: more people who know the brand, more who would consider it, and a higher level of sales that stays.
 
-Les Binet and Peter Field made this case with the IPA databank in [*The Long and the Short of It*](https://ipa.co.uk/knowledge/effectiveness-research-analysis/les-binet-peter-field) (2013). Measuring the effect for one brand from its own data is harder. Peter Cain has shown how. In [*Modelling short- and long-term marketing effects in the consumer purchase journey*](https://doi.org/10.1016/j.ijresmar.2021.06.006) (2022) he ties brand metrics to base sales with cointegration, so a lasting lift in awareness carries through to sales.
+Les Binet and Peter Field made this case with the IPA databank in [*The Long and the Short of It*](https://ipa.co.uk/knowledge/effectiveness-research-analysis/les-binet-peter-field) (2013). Measuring the effect for one brand from its own data is harder, but it can be done. In [*Modelling short- and long-term marketing effects in the consumer purchase journey*](https://doi.org/10.1016/j.ijresmar.2021.06.006) (2022), Peter Cain ties brand metrics to base sales with cointegration, so a lasting lift in awareness carries through to sales. More recently, [PyMC-Marketing](https://www.pymc-marketing.io/en/stable/notebooks/mmm/mmm_brand_metrics_long_term.html) has taken a similar route: an MMM with a baseline that moves over time, and a Bayesian VAR that links that baseline to awareness and consideration. [Recast](https://getrecast.com/research-update-long-term-brand-effects/) does something similar on top of its MMM: brand spend moves awareness, awareness moves consideration, and consideration moves base sales, with the surveys treated as noisy readings.
 
 The chart shows three ways a campaign can play out:
 
 - **Adstock.** The lift fades back to zero within weeks. This is what an MMM assumes.
 - **A lasting lift.** Awareness moves to a new level and sales follow it up for good. This is what the method in Part 1 assumes.
-- **A fading lift.** Awareness rises and then drains slowly back towards where it was heading. For most brands this is probably the more realistic case. The method in Part 1 doesn't allow it, so this article adds it.
+- **A fading lift.** Awareness rises and then drains slowly back towards where it was heading. For most brands this is probably the more realistic case.
 
-[[chart fig01_three_ways | Three sketches of sales after a 13-week burst of spend: adstock fading to zero, a lasting lift, a fading lift | A sketch, not an estimate. Grey bars: 13 weeks of brand spend.]]
+[[chart fig01_three_ways | Three sketches of sales after a 13-week burst of spend: adstock fading to zero, a lasting lift, a fading lift | ]]
 
 The gap between these is the whole question. Over five years a lasting lift earns many times what an MMM credits it with. A fading lift earns less, but still more than adstock suggests. Telling the two apart from the data is hard.
 
@@ -27,11 +27,9 @@ This article has three aims:
 
 1. **Explain the method**, a vector error correction model (VECM) in which every lift lasts (Part 1).
 2. **Ask whether the data a real brand has can recover it** (Part 2). Most brands have five years of data or less, base sales handed over from an MMM, and performance budgets that chase demand.
-3. **Improve it** (Part 3). The method assumes every lift lasts, so I add a term that lets a lift fade. I call it the drain, and it is mine, not Cain's. For brands without a tracker I sketch the same system built on share of search.
+3. **Improve it** (Part 3). The method assumes every lift lasts, so I add a term that lets a lift fade.
 
-The short answer: the 1-year return is firm. It stays close to the truth with less data, with a rough base sales series and with performance spend that chases demand. Those problems cost precision, and they distort how fast sales respond, but not how far. A small effect needs more data: on short or monthly data its interval often reaches zero. The 5-year return isn't firm, because the data say little about how much of a lift fades. A long dark spell is the best evidence there is, and even a year dark doesn't settle it alone.
-
-We illustrate each step on a brand we simulated, so we always know the right answer.
+We illustrate each step on simulated data, so we always know the right answer.
 
 ## 2. The problem with adstock
 
@@ -243,7 +241,7 @@ In the VECM so far nothing pulls a lift back. Once a campaign moves awareness, t
 
 It is a strong assumption. It says a campaign that ran five years ago lifts this week's sales as much as it ever did. People forget brands, and rivals answer campaigns with their own.
 
-So I added a term to the model that lets a lift fade. I call it the drain, and it is my extension, not Cain's. Each week a little of the lift that past spend created drains away. Two numbers set it: the share of each lift that eventually drains, and the half-life of the drain. With a share of zero nothing drains and the model is the VECM from Part 1. The priors are loose: the share is flat between zero and one, and the half-life is centred on a year.
+So I added a term to the model that lets a lift fade, which I call the drain. Each week a little of the lift that past spend created drains away. Two numbers set it: the share of each lift that eventually drains, and the half-life of the drain. With a share of zero nothing drains and the model is the VECM from Part 1. The priors are loose: the share is flat between zero and one, and the half-life is centred on a year.
 
 This differs from a long adstock. A long adstock is fitted against the trend in sales, so it soaks up drift (section 2). Here the ties handle the trends first, and the drain only asks how much of a driver's lift is later given back.
 
