@@ -39,7 +39,7 @@ It doesn't suit brand. The usual fix is a second, much longer adstock for brand 
 
 The problem is the trend. Sales drift over years. A slowly decaying spend series drifts too. Put one against the other and they line up whether or not brand drives sales. The long adstock ends up fitting the drift in the baseline, and it tells us nothing about how brand building works.
 
-The chart shows it. The baseline is a slow trend we built with no link to spend at all. The long adstock of brand spend climbs alongside it, and a regression happily credits brand with the climb.
+The chart shows it. The baseline is a slow trend we built with no link to spend at all. The long adstock of brand spend climbs alongside it, and a regression credits brand with the climb.
 
 [[chart fig02_adstock_trend | Five years of flighted brand spend, a baseline trend built with no link to spend, and the long adstock of spend fitted to it | ]]
 
@@ -86,7 +86,7 @@ Brand series don't behave like that. Each week starts from where the last one en
 
 Regress one trending series on another and the two will often look related when they aren't. This is a spurious regression, first shown by [Granger and Newbold (1974)](https://doi.org/10.1016/0304-4076%2874%2990034-7).
 
-The chart shows two random walks that we built completely independently. Regress one on the other and the slope comes out highly significant. The leftover gap between them wanders as much as the series do, which gives the game away.
+The chart shows two random walks that we built completely independently. Regress one on the other and the slope comes out highly significant. The leftover gap between them wanders as much as the series do.
 
 [[chart fig03_spurious | Two unrelated random walks, and what is left over after regressing one on the other | ]]
 
@@ -106,17 +106,15 @@ Some trending series are tied together. Each one wanders, but a weighted gap bet
 
 Michael Murray gave it its best-known picture in "A Drunk and Her Dog" (1994). A drunk leaves the pub and wanders home. Her path is a random walk. So is her dog's. Watch either alone and you can't say where it will be in ten minutes. But when they drift too far apart, she calls and the dog comes back towards her. Both paths wander, but the distance between them does not.
 
-In our brand one such tie runs between consideration and sales. Each series trends, but the gap between log sales and about 1.25 times log consideration stays close to its average for all five years.
+In the simulated data one such tie runs between consideration and sales. Each series trends, but the gap between log sales and about 1.25 times log consideration stays close to its average for all five years.
 
-[[chart fig04_cointegration | Base sales and 1.27 times consideration over five years, and the gap between them | Left: both series as % from their average, in logs. The data put the multiple at 1.27; we built in 1.25. Right: the gap stays within 8% of zero.]]
+[[chart fig04_cointegration | Base sales and 1.27 times consideration over five years, and the gap between them | Left: both series as % from their average, in logs.]]
 
 We can test for this with the ADF test from section 4: take the gap and ask whether it is stationary. For the two unrelated random walks in section 4 it is not. For sales and consideration it clearly is. This two-step check is the Engle-Granger test.
 
-A second tie runs between awareness and consideration. Two ties among three series leave one shared trend. In our brand that trend belongs to awareness, and it is why a lasting lift in awareness carries through to sales. Section 6 shows why.
+A second tie runs between awareness and consideration. Two ties among three series leave one shared trend. Here that trend belongs to awareness, and it is why a lasting lift in awareness carries through to sales.
 
-The number of ties is the cointegration rank. With more than two series, Johansen's trace test finds it by asking in turn: none, at most one, at most two? It stops at the first answer it can't reject. On our brand it stops at two, the number we built in.
-
-The test is a guide rather than a ruling. On short histories it often finds too few ties (section 8). A business view of the funnel is a useful check: three brand series sharing one trend should have two ties.
+The number of ties is the cointegration rank. With more than two series, Johansen's trace test finds it by asking in turn: none, at most one, at most two? It stops at the first answer it can't reject. On the simulated data it finds two, which is correct.
 
 ## 6. The model in one equation
 
@@ -140,7 +138,7 @@ In the simulated data, sales close about a quarter of any gap to consideration e
 
 This is why the question "does brand last?" runs through awareness. A lift that lands on sales alone stretches a tie, and sales are pulled back within weeks. A lift that lands on awareness is never pulled back. Consideration and then sales climb to meet it and stay there. So a campaign that moves awareness keeps paying, and section 7 adds up how much.
 
-Two choices remain: how many weeks of momentum to include and how many ties. Information criteria such as Hannan-Quinn choose the momentum lags, and the rank test from section 5 chooses the ties. For our brand that gives one week of momentum and two ties.
+Two choices remain: how many weeks of momentum to include and how many ties. Information criteria such as Hannan-Quinn choose the momentum lags, and the rank test from section 5 chooses the ties. For the simulated data that gives one week of momentum and two ties.
 
 We fit the model with Bayesian sampling, so every estimate comes with an interval.
 
