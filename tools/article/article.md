@@ -84,19 +84,19 @@ Most analysts would start with a regression. Regression assumes each series is s
 
 Brand series don't behave like that. Each week starts from where the last one ended, and nothing pulls the series back to a fixed level. Awareness that rises after a strong year stays risen until something else moves it. A series like this is non-stationary. Economists say it has a unit root.
 
-Regress one trending series on another and the two will often look related when they aren't. This is a spurious regression, first shown by [Granger and Newbold (1974)](https://doi.org/10.1016/0304-4076(74)90034-7).
+Regress one trending series on another and the two will often look related when they aren't. This is a spurious regression, first shown by [Granger and Newbold (1974)](https://doi.org/10.1016/0304-4076%2874%2990034-7).
 
 The chart shows two random walks that we built completely independently. Regress one on the other and the slope comes out highly significant. The leftover gap between them wanders as much as the series do, which gives the game away.
 
-[[chart fig03_spurious | Two unrelated random walks, and what is left over after regressing one on the other | Two random walks built independently. The slope has a t-statistic of 15.9 and an R² of 0.50. The leftover never settles back to zero.]]
+[[chart fig03_spurious | Two unrelated random walks, and what is left over after regressing one on the other | ]]
 
 This isn't bad luck. Across 1,000 pairs of unrelated random walks of five years each, 84% gave a significant slope.
 
 The usual fix is to difference the data: model the weekly change instead of the level. Weekly changes are stationary, so the regression is safe. But differencing throws away the levels, and the levels hold the long-run story. A campaign that lifts awareness for good shows up only in the level.
 
-This gives a simple way to label series. A series that is stationary as it stands is I(0), "integrated of order zero". A series that becomes stationary once differenced is I(1). Trending brand series are usually I(1). The method in the rest of this article is built for I(1) series.
+A series that is stationary as it stands is I(0). One that becomes stationary once differenced is I(1). Trending brand series are usually I(1), and the method in this article is built for them.
 
-The Augmented Dickey-Fuller (ADF) test sorts them: it asks whether the data can reject a unit root. On the simulated data, sales, awareness, consideration and the interest rate are I(1). Brand spend, PR, sponsorship and consumer confidence move around a stable level, so they're I(0).
+The Augmented Dickey-Fuller (ADF) test tells the two apart. On the simulated data, sales, awareness, consideration and the interest rate are I(1). Brand spend, PR, sponsorship and consumer confidence are I(0).
 
 So we need a method that keeps the levels without being fooled by them. That method rests on cointegration.
 
