@@ -171,24 +171,17 @@ Part 1 ran on five years of weekly data. Most brands have less: a tracker that s
 
 Marketing's effect matters too. In the simulated data, marketing drives about half the week-to-week movement in awareness. That is a large effect. So we also halved and quartered it, which leaves marketing driving about a fifth and under a tenth. On 20 versions of each brand, each with its own random shocks, we ran the rank test and measured the 5-year return on brand spend.
 
-[[chart fig_data_size | The 5-year return as a share of the truth, and how often the rank test found two ties, for weekly and monthly data over three and five years and for large, medium and small marketing effects | Left: the median across 20 data sets of each fit's median and 89% interval, divided by the true return. Right: the share of data sets where the Johansen trace test found the two ties we built in.]]
+[[chart fig_data_rank | How often the rank test found two ties, for weekly and monthly data over three and five years | Pooled over the three effect sizes: 60 data sets per bar.]]
 
-**Years find the ties.** A tie is a gap that keeps coming back, and a gap needs time to wander off and return. With five years the rank test found both ties eight or nine times in ten, weekly or monthly. With three years it found them two to five times in ten. Most misses found too few. The size of the effect made no difference here, because the ties come from the shared trend, not from marketing.
+**Years find the ties.** A tie is a gap that keeps coming back, and that takes time to see. With five years the rank test found both ties about 85% of the time; with three, about a third. Effect size made no difference, because the ties come from the shared trend.
 
-**Data points set the precision.** The return stayed close to the truth throughout, and its intervals held the truth nine times in ten or more. What changed was their width. Five years of weekly data put it within about a quarter of the truth either way. Five years of monthly data, only 60 points, did worse than three years of weekly. Three years of monthly data gave an interval from almost nothing to nearly twice the truth.
+[[chart fig_data_size | The 5-year return as a share of the truth for weekly and monthly data over three and five years, for large, medium and small marketing effects | The median across 20 data sets of each fit's median and 89% interval, divided by the true return.]]
 
-**Smaller effects need more data.** Halving the effect didn't halve the noise. In sales terms the intervals stayed about as wide, so as a share of the truth they roughly doubled each time the effect halved. Five years of weekly data put a medium effect within about 40% of the truth either way, and a small one within about 80%. With a small effect the interval reached zero in a quarter of the five-year weekly fits, and in most fits on less data. The intervals still held the truth nine times in ten or more. The model wasn't wrong; it was saying it couldn't tell.
+**Data points set the precision.** The intervals held the truth at least nine times in ten throughout; what changed was their width. With the large effect, five years of weekly data put the return within about a quarter of the truth. Three years of monthly data gave anything from almost nothing to twice the truth.
 
-On the shortest data the middle of the interval also slipped towards zero: 0.6 of the truth for a medium effect on three years of monthly data, and 0.3 for a small one. That is the prior pulling a weak signal back.
+**Smaller effects need more data.** Relative to the truth, the intervals roughly doubled each time the effect halved. With a small effect, even five years of weekly data gave an interval reaching zero in a quarter of fits. On the shortest data the estimate also shrank towards zero, as the prior pulled a weak signal back.
 
-There the priors do most of the work, and a Bayesian fit says so with a wide interval. A classical fit doesn't: on 60 periods its intervals for the ties held the truth only about 60% of the time when they claimed 90%. That is the main practical reason to fit by sampling.
-
-What to do:
-
-- **Use weekly data if it exists.**
-- **With under four years, set the rank from the funnel**: three brand series sharing one trend have two ties.
-- **With monthly data, expect wide intervals** and report them as they are.
-- **If brand spend moves awareness only a little, expect the long run to stay unclear.** Even five years of weekly data may give an interval that reaches zero.
+A Bayesian fit at least shows this with a wide interval. A classical fit on 60 periods claimed 90% intervals for the ties that held the truth only about 60% of the time.
 
 ## 9. Base sales from an MMM
 

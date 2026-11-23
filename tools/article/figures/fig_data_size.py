@@ -1,10 +1,11 @@
-"""Section 8 chart: how the 5-year return and the rank test hold up as data shrinks.
+"""Section 8 charts: how the rank test and the 5-year return hold up as data shrinks.
 
 Reads ``tools/data_size_check_results.csv`` (20 seeds; weekly or monthly, 5 or
 3 years; large, medium and small marketing effects). Left: the 5-year return on
 brand spend as a ratio to the truth, the median across seeds of each fit's
-median and 89% interval ends. Right: the share of seeds where the Johansen trace
-test finds the two ties we built in.
+median and 89% interval ends (``fig_data_size``). The share of data sets where the
+Johansen trace test finds the two ties, pooled over effect sizes because they
+barely differ (``fig_data_rank``).
 """
 
 from pathlib import Path
@@ -16,7 +17,6 @@ CSV = Path(__file__).resolve().parents[2] / "data_size_check_results.csv"
 ORDER = ["weekly 5y", "weekly 3y", "monthly 5y", "monthly 3y"]
 LABELS = ["Weekly 5y", "Weekly 3y", "Monthly 5y", "Monthly 3y"]
 EFFECTS = {"large": "blue", "medium": "aqua", "small": "orange"}
-SHARE = {"large": "about half", "medium": "about a fifth", "small": "under a tenth"}
 OFFSET = {"large": -0.24, "medium": 0.0, "small": 0.24}
 
 d = pd.read_csv(CSV)
@@ -55,22 +55,54 @@ def tips(effect: str) -> list[str]:
     ]
 
 
+rank = d.groupby("data")["rank"].apply(lambda s: (s == 2).mean()).loc[ORDER]
+print(rank.round(2).to_string())
+
+save(
+    "fig_data_rank",
+    {
+        "title": "Five years find the ties. Three years often miss them.",
+        "height": 260,
+        "minPanel": 300,
+        "panels": [
+            {
+                "title": "Rank test finds the two ties",
+                "x": XAXIS,
+                "y": {"min": 0, "max": 100, "fmt": "pct_plain", "label": "% of data sets"},
+                "layers": [
+                    {
+                        "type": "bars",
+                        "x": X,
+                        "y": r(100 * rank),
+                        "color": "blue",
+                        "barWidth": 0.55,
+                    },
+                    *[
+                        {
+                            "type": "text",
+                            "x": x,
+                            "y": 100 * v + 4,
+                            "text": f"{100 * v:.0f}%",
+                            "anchor": "middle",
+                        }
+                        for x, v in zip(X, rank, strict=True)
+                    ],
+                ],
+            }
+        ],
+    },
+)
+
 save(
     "fig_data_size",
     {
-        "title": (
-            "Smaller effects and fewer data points widen the interval. Fewer years hide the ties."
-        ),
+        "title": "Smaller effects and fewer data points widen the interval",
         "legend": [
-            {
-                "label": f"{e.capitalize()} effect: {SHARE[e]} of awareness growth",
-                "color": c,
-                "kind": "bar",
-            }
+            {"label": f"{e.capitalize()} effect", "color": c, "kind": "bar"}
             for e, c in EFFECTS.items()
         ]
         + [{"label": "Truth", "color": "ink", "kind": "dash"}],
-        "height": 300,
+        "height": 320,
         "minPanel": 300,
         "panels": [
             {
@@ -94,23 +126,7 @@ save(
                         for e, c in EFFECTS.items()
                     ],
                 ],
-            },
-            {
-                "title": "Rank test finds the two ties",
-                "x": XAXIS,
-                "y": {"min": 0, "max": 100, "fmt": "pct_plain", "label": "% of data sets"},
-                "layers": [
-                    {
-                        "type": "bars",
-                        "x": X,
-                        "offset": OFFSET[e],
-                        "y": r(100 * g.loc[e, "rank2"]),
-                        "color": c,
-                        "barWidth": 0.22,
-                    }
-                    for e, c in EFFECTS.items()
-                ],
-            },
+            }
         ],
     },
 )
