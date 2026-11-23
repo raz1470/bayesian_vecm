@@ -35,25 +35,23 @@ source = re.sub(r"<!--.*?-->", "", source, flags=re.S)
 NAV = {
     "1": "Introduction",
     "2": "Adstock",
-    "3": "The brand",
+    "3": "The brand funnel",
     "4": "Trends",
     "5": "Cointegration",
-    "6": "The model",
+    "6": "The VECM",
     "7": "Response curves",
     "8": "How much data",
     "9": "Base sales",
-    "10": "Performance spend",
-    "11": "Other checks",
-    "12": "Fading lifts",
-    "13": "Share of search",
-    "14": "Bringing it together",
+    "10": "Fading lifts",
+    "11": "Share of search",
+    "12": "Bringing it together",
 }
 
 # Section that opens each part -> (part label, part title)
 PARTS = {
     "2": ("Part 1", "The VECM"),
     "8": ("Part 2", "Can we estimate it?"),
-    "11": ("Part 3", "Improvements"),
+    "10": ("Part 3", "Improvements"),
 }
 
 

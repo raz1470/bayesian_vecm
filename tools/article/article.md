@@ -26,7 +26,7 @@ The gap between these is the whole question. Over five years a lasting lift earn
 This article has three aims:
 
 1. **Explain the method**, a vector error correction model (VECM) in which every lift lasts (Part 1).
-2. **Ask whether the data a real brand has can recover it** (Part 2). Most brands have five years of data or less, base sales handed over from an MMM, and performance budgets that chase demand.
+2. **Ask whether the data a real brand has can recover it** (Part 2). Most brands have five years of data or less, and base sales handed over from an MMM.
 3. **Improve it** (Part 3). The method assumes every lift lasts, so I add a term that lets a lift fade.
 
 We illustrate each step on simulated data, so we always know the right answer.
@@ -200,21 +200,7 @@ Nobody observes base sales. In practice they come from an MMM, and there is more
 
 Of the versions a real team has, total sales minus the MMM's short-term contributions did best. Its long run held up; its speed ran about 13% fast.
 
-## 10. Performance spend that chases demand
-
-Performance budgets follow demand. When more people are in the market, search volume rises and search spend with it. An MMM then sees search spend move with sales the brand produced, and can credit search with some of them.
-
-So we made search spend chase demand, at three strengths. At the strongest, its correlation with demand was about 0.85. Its true effect on sales stayed the same. We fitted an MMM to total sales, took base sales as total minus its contributions, and fitted the VECM, ten times at each strength.
-
-[[chart fig_perf_feedback | MMM credit to paid search, the long-run lift from brand spend and the 4-week lift, as search spend chases demand more strongly | Ten simulated brands at each strength. Left: the median MMM contribution of paid search, against the truth. Middle and right: the median across data sets of each fit's median and 90% interval, divided by the truth.]]
-
-**The MMM gets search wrong.** With no feedback it put search's contribution about 13% low. Once search chased demand it put it 30 to 40% too high.
-
-**The brand's long run doesn't notice.** The long-run lift from brand spend came within 3% of the truth at every strength, and its intervals always held it. The demand handed to search was weeks of extra growth here and there, not a change in the level base sales settle at. The short run slipped a little: four weeks after spend, the lift went from about 13% low to about 25% low.
-
-**A check needs the tracker.** Ask whether past demand predicts search spend. Asked with past sales, the test flagged the feedback in only one or two data sets in ten. Asked with past consideration, it flagged it every time.
-
-## 11. Letting lifts fade
+## 10. Letting lifts fade
 
 In the VECM so far nothing pulls a lift back. Once a campaign moves awareness, the ties carry the whole lift down to sales and keep it there. That is why the 5-year return in section 7 is so large.
 
@@ -238,7 +224,7 @@ A dark spell is the clearest evidence there is. If lifts fade, sales sag once sp
 
 Keep any dark weeks in the data. A planned dark spell in one region, longer than you expect a lift to last, is worth more than any modelling choice.
 
-## 12. Brands without a tracker: share of search
+## 11. Brands without a tracker: share of search
 
 Everything so far assumes a brand tracker with years of weekly data. Many brands have nothing like it. Share of search is a cheap stand-in: a brand's searches as a share of all searches for brands in its category. Les Binet [introduced it at the IPA in 2020](https://ipa.co.uk/news/binet-presents-fast-cheap-predictive-share-of-search-metric/). In cars, energy and mobile phones it tracked share of market and moved ahead of it, by up to a year for cars.
 
@@ -255,13 +241,13 @@ Two questions decide whether it works:
 - **Does it lead?** Some branded searches come from existing customers looking for the website. That part follows sales. The VECM can test this: if share of search closes part of its gap to sales each week, it is a follower.
 - **Brand or activation?** Binet found advertising moves share of search twice: a large short-term effect that fades fast, and a smaller one that builds up. The short-term part is activation inside a series meant to measure the brand, the base sales problem of section 9 in a new place.
 
-## 13. The first year is firm. The fifth is a range.
+## 12. The first year is firm. The fifth is a range.
 
 A marketing mix model sees the short-term lift that follows a campaign and misses the slow climb in base sales. This article set out to measure that climb.
 
 **The VECM** found the ties, picked out awareness as the leader and recovered the response curve: 0.8 within a year and 5.2 within five, against a true 1.0 and 6.2, with both intervals holding the truth.
 
-**On realistic data** the long-run return held up. Less data and smaller effects widened its interval, and fewer years hid the ties. A rough base sales series, even with search spend chasing demand, left the long run within a few per cent of the truth. What it damaged was the short run.
+**On realistic data** the long-run return held up. Less data and smaller effects widened its interval, and fewer years hid the ties. A rough base sales series left the long run within a few per cent of the truth. What it damaged was the short run.
 
 **The drain** lets a lift fade. On brands whose lifts last, half fade or all fade, the true 5-year returns are 6.2, 4.3 and 2.1, and the drain model gives 4.0, 3.7 and 3.2. The 1-year return is firm whichever way the brand works. The 5-year return is a range, and a long dark spell is the best evidence for narrowing it. For brands without a tracker, share of search could stand in, if it leads.
 
