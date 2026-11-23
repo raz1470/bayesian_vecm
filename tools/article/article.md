@@ -26,7 +26,7 @@ The gap between these is the whole question. Over five years a lasting lift earn
 This article has two aims:
 
 1. **Explain the method**, a vector error correction model (VECM) in which every lift lasts (Part 1).
-2. **Test it on what a real brand brings** (Part 2): less data, base sales handed over from an MMM, lifts that fade, and no brand tracker.
+2. **Test it on what a real brand brings** (Part 2): less data, base sales handed over from an MMM, and lifts that fade. A last section looks at brands with no tracker.
 
 We illustrate each step on simulated data, so we always know the right answer.
 
@@ -42,7 +42,7 @@ The chart shows it. The baseline is a slow trend we built with no link to spend 
 
 [[chart fig02_adstock_trend | Five years of flighted brand spend, a baseline trend built with no link to spend, and the long adstock of spend fitted to it | ]]
 
-Cain (2022) proposes an alternative, the VECM, which separates the two. Short-term activation is the week-to-week movement around base sales. Long-term brand building is the base itself: the slow level of sales, which moves with awareness and consideration.
+Cain (2022) uses an alternative, the VECM, which separates the two. Short-term activation is the week-to-week movement around base sales. Long-term brand building is the base itself: the slow level of sales, which moves with awareness and consideration.
 
 That needs three things an MMM leaves out:
 
@@ -59,7 +59,7 @@ Brand trackers measure the middle of the funnel:
 - **Awareness** is the share of people who know the brand.
 - **Consideration** is the share who would think about buying it.
 
-Tracker data has its own problems. Consideration can rise because more people are in the market, not because of the brand; a measure of category demand as a driver helps separate the two. Panels often over-represent existing customers. A constant bias washes out in the ties, but one that shifts as the customer base grows does not: growing sales would then lift measured awareness, and the model could read sales as leading. Small samples add noise on top.
+Tracker data has its own problems. Consideration can rise because more people are in the market, not because of the brand; a measure of category demand as a driver helps separate the two. Panels often over-represent existing customers. A constant bias cancels out, but one that shifts as the customer base grows does not: growing sales would then lift measured awareness, and the model could read sales as leading. Small samples add noise on top.
 
 Together with sales these form the system. Sales here means base sales: sales without the short-term lift from performance media and promotions.
 
@@ -91,7 +91,7 @@ The chart shows two random walks that we built completely independently. Regress
 
 [[chart fig03_spurious | Two unrelated random walks, and what is left over after regressing one on the other | ]]
 
-This isn't bad luck. Across 1,000 pairs of unrelated random walks of five years each, 84% gave a significant slope.
+This isn't bad luck. Across 1,000 pairs of unrelated random walks of five years each, 84% gave a slope significant at the 5% level.
 
 The usual fix is to difference the data: model the weekly change instead of the level. Weekly changes are stationary, so the regression is safe. But differencing throws away the levels, and the levels hold the long-run story. A campaign that lifts awareness for good shows up only in the level.
 
@@ -109,13 +109,13 @@ Michael Murray gave it its best-known picture in "A Drunk and Her Dog" (1994). A
 
 In the simulated data one such tie runs between consideration and sales. Each series trends, but the gap between log sales and about 1.25 times log consideration stays close to its average for all five years.
 
-[[chart fig04_cointegration | Base sales and 1.27 times consideration over five years, and the gap between them | Left: both series as % from their average, in logs.]]
+[[chart fig04_cointegration | Base sales and 1.25 times consideration over five years, and the gap between them | Left: both series as % from their average, in logs.]]
 
 We can test for this with the ADF test from section 4: take the gap and ask whether it is stationary. For the two unrelated random walks in section 4 it is not. For sales and consideration it clearly is. This two-step check is the Engle-Granger test.
 
 A second tie runs between awareness and consideration. Two ties among three series leave one shared trend. Here that trend belongs to awareness, and it is why a lasting lift in awareness carries through to sales.
 
-The number of ties is the cointegration rank. With more than two series, Johansen's trace test finds it by asking in turn: none, at most one, at most two? It stops at the first answer it can't reject.
+The number of ties is the cointegration rank. With more than two series, Johansen's (1991) trace test finds it by asking in turn: none, at most one, at most two? It stops at the first answer it can't reject.
 
 ## 6. The VECM
 
@@ -129,7 +129,7 @@ The parts, in order:
 
 - **Error correction (αβ′y).** β′y<sub>t−1</sub> measures how far each tie from section 5 was stretched last week, for example how far sales sat from 1.25 times consideration. α turns that stretch into this week's move. This is what keeps the series together.
 - **Momentum (ΓΔy).** Last week's changes carry into this week. If awareness jumped last week, some of that jump shows up in consideration now. These effects fade within weeks.
-- **Drivers (Bx).** This week's brand spend, PR and other drivers push on each series. Drivers that move around a stable level enter as they are. A trending driver, like the interest rate, enters as its weekly change: a trend can't explain movement in a gap that keeps coming back.
+- **Drivers (Bx).** This week's brand spend, PR and other drivers push on each series. Drivers that move around a stable level enter as they are. A trending driver, like the interest rate, enters as its weekly change, because the left side is a weekly change and doesn't trend.
 - **Growth (c).** A constant that lets each series grow at a steady rate.
 - **Shock (ε).** The part of this week that nothing in the model predicts. The three shocks are correlated, because news and competitors hit the series in the same week.
 
@@ -139,7 +139,7 @@ In the simulated data, sales close about a quarter of their gap to consideration
 
 So a lift in awareness is never pulled back. Consideration and sales rise to meet it and stay there, which is why a campaign that moves awareness keeps paying. A lift in sales alone is pulled back within weeks.
 
-Hannan-Quinn picks the number of momentum lags and the rank test the number of ties: one week and two ties here. We fit the model by Bayesian sampling, which gives the intervals used from section 7 on.
+Hannan-Quinn picks the number of momentum lags and the rank test the number of ties: one week and two ties here. We fit the model by Bayesian sampling, which gives the intervals used from section 7 on. Intervals are 89% unless stated.
 
 ## 7. From a campaign to a response curve
 
@@ -174,7 +174,7 @@ Marketing's effect matters too. In the simulated data, marketing drives about ha
 
 [[chart fig_data_rank | How often the rank test found two ties, for weekly and monthly data over three and five years | Pooled over the three effect sizes: 60 data sets per bar.]]
 
-**Years find the ties.** A tie is a gap that keeps coming back, and that takes time to see. With five years the rank test found both ties about 85% of the time; with three, about a third. Effect size made no difference, because the ties come from the shared trend.
+**Years find the ties.** A tie is a gap that keeps coming back, and that takes time to see. With five years the rank test found both ties about 85% of the time; with three, a third to two in five. Effect size made little difference, because the ties come from the shared trend.
 
 [[chart fig_data_size | The 5-year return as a share of the truth for weekly and monthly data over three and five years, for large, medium and small marketing effects | The median across 20 data sets of each fit's median and 89% interval, divided by the true return.]]
 
@@ -182,7 +182,7 @@ Marketing's effect matters too. In the simulated data, marketing drives about ha
 
 **Smaller effects need more data.** Relative to the truth, the intervals roughly doubled each time the effect halved. With a small effect, even five years of weekly data gave an interval reaching zero in a quarter of fits. On the shortest data the estimate also shrank towards zero, as the prior pulled a weak signal back.
 
-A Bayesian fit at least shows this with a wide interval. A classical fit on 60 periods claimed 90% intervals for the ties that held the truth only about 60% of the time.
+A Bayesian fit at least shows this with a wide interval. A classical fit on 60 weeks claimed 90% intervals for the ties that held the truth only about 60% of the time.
 
 ## 9. Base sales from an MMM
 
@@ -197,7 +197,7 @@ Nobody observes base sales. In practice they come from an MMM, and there is more
 
 **The long run survives a rough base.** The first three versions put the long-run lift from brand spend within 2% of the truth. The long run is read from the level base sales settle at, and short-term noise around that level averages out.
 
-**The speed doesn't.** How fast sales close their gap to consideration depends on every wiggle. Minus MMM made sales about 13% too fast. Total sales as they are made them 1.5 times too fast. The MMM's trend smooths away the wiggles altogether, so sales looked twenty times too slow, with a narrow interval: confidently wrong. In 12 of 20 data sets it also made sales look like the leader, and it put the long run 17% high.
+**The speed doesn't.** How fast sales close their gap to consideration depends on every wiggle. Minus MMM made sales about 13% too fast. Total sales as they are made them 1.5 times too fast. The MMM's trend smooths away the wiggles altogether, so sales looked twenty times too slow, with a narrow interval. In 12 of 20 data sets it also made sales look like the leader, and it put the long run 17% high.
 
 Of the versions a real team has, total sales minus the MMM's short-term contributions did best. Its long run held up; its speed ran about 13% fast.
 
@@ -205,7 +205,7 @@ Of the versions a real team has, total sales minus the MMM's short-term contribu
 
 So far nothing pulls a lift back: once a campaign moves awareness, the ties carry the whole lift to sales and keep it there. That is a strong assumption. People forget brands, and rivals answer campaigns with their own.
 
-So I added a term that lets a lift fade, which I call the drain. Each week part of the lift from past spend drains away, set by two numbers: the share of each lift that eventually drains, and the half-life. With a share of zero the model is the VECM from Part 1. Unlike a long adstock, the drain doesn't fit the trend in sales, because the ties handle the trends first.
+So we added a term that lets a lift fade, which we call the drain. Each week part of the lift from past spend drains away, set by two numbers: the share of each lift that eventually drains, and the half-life. With a share of zero the model is the VECM from Part 1. Unlike a long adstock, the drain doesn't fit the trend in sales, because the ties handle the trends first.
 
 We simulated two more versions of the brand, where half or all of each lift drains with a one-year half-life, and fitted all three with the drain.
 
@@ -213,7 +213,7 @@ We simulated two more versions of the brand, where half or all of each lift drai
 
 Over the first year the three look much alike, and the intervals hold the truth for all three. Over five years the true returns are 6.2, 4.3 and 2.1. The model gives 4.0, 3.7 and 3.2, pulling all three towards the middle.
 
-Leaving the drain out is worse. On brands whose lifts fade, the VECM without it overstated the 5-year return by 2 to 6 times, and its intervals missed the truth every time.
+Leaving the drain out is worse. On brands whose whole lift fades, with half-lives from six months to two years, the VECM without it overstated the 5-year return by 2 to 6 times, and its intervals missed the truth in all 15 fits.
 
 ## 11. Brands without a tracker: share of search
 
@@ -237,9 +237,9 @@ Two questions decide whether it works:
 A marketing mix model sees the short-term lift that follows a campaign and misses the slow climb in base sales. A longer adstock doesn't fix this: it fits the trend in sales whether or not brand caused it.
 
 - **The VECM** ties sales to awareness and consideration, finds which series leads, and turns a campaign into a response curve. On simulated data it gave 0.8 within a year and 5.2 within five, against a true 1.0 and 6.2, with both intervals holding the truth.
-- **Data.** Years find the ties; data points and effect size set the precision. Three years often missed the ties, and a small effect on short or monthly data gave intervals that reached zero.
+- **Data.** Years find the ties; data points and effect size set the precision. Three years often missed the ties, and a small effect gave intervals that reached zero in a quarter of fits even on five years of weekly data.
 - **Base sales.** Total sales minus the MMM's short-term contributions kept the long run within a few per cent of the truth, though its speed ran fast. The MMM's smoothed trend got the speed badly wrong.
-- **Fading lifts.** The drain lets the data say how much of a lift fades. The 1-year return held up whichever way the brand worked. The 5-year return is a range: 4.0, 3.7 and 3.2 against a true 6.2, 4.3 and 2.1.
+- **Fading lifts.** The 1-year return held up whichever way the brand worked. Over five years the drain couldn't tell lasting and fading brands apart: it gave 4.0, 3.7 and 3.2 against a true 6.2, 4.3 and 2.1. Leaving it out was worse, overstating fading brands by 2 to 6 times.
 - **Brands without a tracker** might use share of search in place of awareness, but whether it leads sales needs testing first.
 
 Everything in this article was fitted with [bayesian_vecm](https://github.com/raz1470/bayesian_vecm), an open-source Python package. To run it on your own brand, start with [the notebook built for your own data](https://github.com/raz1470/bayesian_vecm/blob/main/notebooks/guides/08_response_curves_on_your_data.ipynb): edit one cell and it runs every check in order and draws the response curves.
@@ -254,4 +254,3 @@ Everything in this article was fitted with [bayesian_vecm](https://github.com/ra
 - Granger, C. W. J. and Newbold, P. (1974). Spurious regressions in econometrics. *Journal of Econometrics*, 2(2), 111–120.
 - Johansen, S. (1991). Estimation and hypothesis testing of cointegration vectors in Gaussian vector autoregressive models. *Econometrica*, 59(6), 1551–1580.
 - Murray, M. P. (1994). A drunk and her dog: An illustration of cointegration and error correction. *The American Statistician*, 48(1), 37–39.
-- Pesaran, H. H. and Shin, Y. (1998). Generalized impulse response analysis in linear multivariate models. *Economics Letters*, 58(1), 17–29.
