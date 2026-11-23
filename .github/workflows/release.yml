@@ -1,0 +1,77 @@
+# Publish to PyPI when a version tag is pushed, e.g. `git tag v0.1.0 && git push origin v0.1.0`.
+#
+# Uses PyPI trusted publishing, so no token is stored. One-off setup on pypi.org:
+# Account -> Publishing -> Add a pending publisher, with project name `bayesian_vecm`,
+# owner `raz1470`, repository `bayesian_vecm`, workflow `release.yml`, environment `pypi`.
+# Then create an environment called `pypi` in the GitHub repo (Settings -> Environments).
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    name: Build and check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Tag matches the package version
+        run: |
+          version=$(grep -m1 '^version = ' pyproject.toml | cut -d '"' -f2)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match pyproject version $version" >&2
+            exit 1
+          fi
+
+      - name: Build
+        run: uv build
+
+      - name: Check metadata
+        run: uvx twine check --strict dist/*
+
+      - name: Install the wheel in a clean environment
+        run: uv run --isolated --no-project --with dist/*.whl -- python -c "import bayesian_vecm; print(bayesian_vecm.__version__)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/bayesian_vecm
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md for what changed."
