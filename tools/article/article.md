@@ -202,27 +202,17 @@ Of the versions a real team has, total sales minus the MMM's short-term contribu
 
 ## 10. Letting lifts fade
 
-In the VECM so far nothing pulls a lift back. Once a campaign moves awareness, the ties carry the whole lift down to sales and keep it there. That is why the 5-year return in section 7 is so large.
+So far nothing pulls a lift back: once a campaign moves awareness, the ties carry the whole lift to sales and keep it there. That is a strong assumption. People forget brands, and rivals answer campaigns with their own.
 
-It is a strong assumption. It says a campaign that ran five years ago lifts this week's sales as much as it ever did. People forget brands, and rivals answer campaigns with their own.
+So I added a term that lets a lift fade, which I call the drain. Each week part of the lift from past spend drains away, set by two numbers: the share of each lift that eventually drains, and the half-life. With a share of zero the model is the VECM from Part 1. Unlike a long adstock, the drain doesn't fit the trend in sales, because the ties handle the trends first.
 
-So I added a term to the model that lets a lift fade, which I call the drain. Each week a little of the lift that past spend created drains away. Two numbers set it: the share of each lift that eventually drains, and the half-life of the drain. With a share of zero nothing drains and the model is the VECM from Part 1. The priors are loose: the share is flat between zero and one, and the half-life is centred on a year.
-
-This differs from a long adstock. A long adstock is fitted against the trend in sales, so it soaks up drift (section 2). Here the ties handle the trends first, and the drain only asks how much of a driver's lift is later given back.
-
-We built two more versions of the brand, where half or all of each lift drains with a half-life of a year, and fitted all three with the drain.
+We simulated two more versions of the brand, where half or all of each lift drains with a one-year half-life, and fitted all three with the drain.
 
 [[chart fig08_response_curves | Response curves for a 13-week campaign within one and five years, for a brand whose lifts last, half fade or all fade | Extra sales against no campaign. 1 is the true first-year return at current spend if lifts last. Each brand fitted with the drain.]]
 
-Over the first year the three brands look much alike, and the intervals hold the truth for all three. Over five years the true returns are 6.2, 4.3 and 2.1. The model gives 4.0, 3.7 and 3.2: it pulls all three towards the middle. On the lasting brand that costs something, 4.0 against 5.2 without the drain.
+Over the first year the three look much alike, and the intervals hold the truth for all three. Over five years the true returns are 6.2, 4.3 and 2.1. The model gives 4.0, 3.7 and 3.2, pulling all three towards the middle.
 
-Leaving the drain out is worse. On brands whose lifts fade with a half-life of six months to two years, the VECM without it overstated the 5-year return by 2 to 6 times, and its intervals missed the truth every time. The drain model ran 1.3 to 3 times high, but its intervals mostly held the truth.
-
-### What settles it: going dark
-
-A dark spell is the clearest evidence there is. If lifts fade, sales sag once spend stops; if they last, sales hold. Switching brand spend off for a year halved the uncertainty in how much fades, and brought the 5-year return from 2 times the truth to 1.3. Six months helped less. Running brand in two 13-week pulses a year barely helped: thirteen-week gaps are short next to a year's half-life.
-
-Keep any dark weeks in the data. A planned dark spell in one region, longer than you expect a lift to last, is worth more than any modelling choice.
+Leaving the drain out is worse. On brands whose lifts fade, the VECM without it overstated the 5-year return by 2 to 6 times, and its intervals missed the truth every time.
 
 ## 11. Brands without a tracker: share of search
 
@@ -249,7 +239,7 @@ A marketing mix model sees the short-term lift that follows a campaign and misse
 
 **On realistic data** the long-run return held up. Less data and smaller effects widened its interval, and fewer years hid the ties. A rough base sales series left the long run within a few per cent of the truth. What it damaged was the short run.
 
-**The drain** lets a lift fade. On brands whose lifts last, half fade or all fade, the true 5-year returns are 6.2, 4.3 and 2.1, and the drain model gives 4.0, 3.7 and 3.2. The 1-year return is firm whichever way the brand works. The 5-year return is a range, and a long dark spell is the best evidence for narrowing it. For brands without a tracker, share of search could stand in, if it leads.
+**The drain** lets a lift fade. On brands whose lifts last, half fade or all fade, the true 5-year returns are 6.2, 4.3 and 2.1, and the drain model gives 4.0, 3.7 and 3.2. The 1-year return is firm whichever way the brand works. The 5-year return is a range. For brands without a tracker, share of search could stand in, if it leads.
 
 ### Try it yourself
 
