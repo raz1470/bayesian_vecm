@@ -50,8 +50,7 @@ NAV = {
 # Section that opens each part -> (part label, part title)
 PARTS = {
     "2": ("Part 1", "The VECM"),
-    "8": ("Part 2", "Can we estimate it?"),
-    "10": ("Part 3", "Improvements"),
+    "8": ("Part 2", "Using it on a real brand"),
 }
 
 

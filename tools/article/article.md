@@ -23,11 +23,10 @@ The chart shows three ways a campaign can play out:
 
 The gap between these is the whole question. Over five years a lasting lift earns many times what an MMM credits it with. A fading lift earns less, but still more than adstock suggests. Telling the two apart from the data is hard.
 
-This article has three aims:
+This article has two aims:
 
 1. **Explain the method**, a vector error correction model (VECM) in which every lift lasts (Part 1).
-2. **Ask whether the data a real brand has can recover it** (Part 2). Most brands have five years of data or less, and base sales handed over from an MMM.
-3. **Improve it** (Part 3). The method assumes every lift lasts, so I add a term that lets a lift fade.
+2. **Test it on what a real brand brings** (Part 2): less data, base sales handed over from an MMM, lifts that fade, and no brand tracker.
 
 We illustrate each step on simulated data, so we always know the right answer.
 
